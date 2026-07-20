@@ -713,3 +713,32 @@ enforcer.BuildRoleLinks()
 - [Casbin GitHub 仓库](https://github.com/casbin/casbin)
 - [Session Role Manager（参考实现）](https://github.com/casbin/session-role-manager)
 - [Casbin Issue #681 — 大规模讨论](https://github.com/casbin/casbin/issues/681)
+
+---
+
+## 审查报告（2026-07-21）
+
+> **审查背景：** 项目已确认采用 **Role-in-JWT + casbin_rule 仅存 p 规则** 方案。审查旨在发现与决策不符的根本性错误。
+
+### 审查结果
+
+| # | 位置 | 严重度 | 问题 | 建议修复 |
+|---|------|--------|------|----------|
+| **1** | **§3 方案A — Casbin 模型定义** | 🔴 根本错误 | 定义了 `[role_definition] g = _, _` 和 `[matchers] m = g(r.sub, p.sub) && ...`。但你的方案中 `sub` 直接传 role（从 JWT 提取），**不需要 `g()` 函数**。`g()` 是 Casbin 内部解析用户→角色用的，你没有 g-rules，`g()` 就是死代码。 | 模型简化为：`[matchers] m = r.sub == p.sub && r.obj == p.obj && r.act == p.act`（完全不需要 role_definition） |
+| **2** | **§2 自定义RoleManager — Go 代码** | 🔴 根本错误 | import 路径写 `github.com/casbin/casbin/v3/rbac` 和 `github.com/casbin/casbin/v3`，但 **Casbin 官方稳定版是 v2**（`github.com/casbin/casbin/v2`），v3 尚未发布稳定版。 | 改为 `github.com/casbin/casbin/v2/rbac` 和 `github.com/casbin/casbin/v2` |
+| **3** | **§7 推荐架构** | 🟡 与决策不符 | 推荐"自定义RoleManager + 短效JWT"（方案C），但你的最终方案是 **"JWT内置角色 + casbin_rule 仅存 p 规则 + APISIX authz-casbin 做匹配"**。推荐与决策相反。 | 重写推荐章节，对齐你的决策：最佳方案是"Role-in-JWT + casbin_rule 仅存 p 规则" |
+| **4** | **§5 性能基准** | 🟡 严重误导 | 外推"100万用户 ~240ms、~760MB"是基于 1100 万条规则（p+g 混合），但你的 casbin_rule **只有 p 规则**（几万条），不存在此问题。数字严重误导。 | 应说明：你的方案 Enforce 延迟取决于 p 规则数量（几万条 ≈ 几ms），并引用官方"Policy Sharding"思路佐证 |
+
+### 额外发现
+
+| 项目 | 说明 |
+|------|------|
+| **APISIX 端口冲突** | 文档未提及：Pigsty INFRA 的 Grafana（:3000）与 PostgREST（:3000）在 Windows 侧端口冲突，需修改其中一个端口 |
+| **JWT 认证职责** | `authz-casbin` 本身不做 JWT 验证，只匹配权限。需明确哪个组件负责 JWT 签发/验证（Casdoor 或 `jwt-auth` 插件），并说明 roles 如何从 JWT 传递到 `authz-casbin` |
+
+### 验证来源
+
+- Apache APISIX `authz-casbin` 官方文档：https://apisix.apache.org/zh/docs/apisix/plugins/authz-casbin/
+- Casbin 官方 RBAC 文档：https://casbin.org/docs/rbac
+- Casbin 官方性能优化：https://casbin.org/docs/performance
+- 关键确认：Casbin 官方明确 `[role_definition]` 是可选的，支持只存 p 规则不存 g 规则的 RBAC 方案

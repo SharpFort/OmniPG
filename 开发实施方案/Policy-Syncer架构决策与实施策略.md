@@ -428,4 +428,33 @@ curl http://localhost:9180/apisix/admin/plugin_metadata/authz-casbin \
 | 日期 | 变更 | 说明 |
 |:---|:---|:---|
 | 2026-07-10 | 初始版本 | 基于讨论结果整理 |
-| | | |
+| 2026-07-21 | 追加审查报告 | 根据 Role-in-JWT 方案审查，发现 5 处问题，见 §11 |
+
+---
+
+## 11. 审查报告（2026-07-21）
+
+> **审查背景：** 项目已确认采用 **Role-in-JWT + casbin_rule 仅存 p 规则 + Syncer 监控权限变更并全量推送 p 规则** 的精简方案。审查旨在发现与决策不符的内容。
+
+### 审查结果
+
+| # | 位置 | 严重度 | 问题 | 建议修复 |
+|---|------|--------|------|----------|
+| **1** | **§1.1 + 全文** | 🔴 关键 | **最关键的架构缺失**：全文未说明 JWT 中的角色如何被 `authz-casbin` 消费。APISIX 的 `authz-casbin` **从请求 Header 提取 `sub`，不解析 JWT**。你的方案需要完整认证→授权链路：① `jwt-auth` 插件验证 JWT → ② 将 roles 写入 Header（如 `X-User-Roles`）→ ③ `authz-casbin` 用该 Header 做 subject。整条链路缺失。 | 补充说明：JWT → jwt-auth → roles 写入 Header → authz-casbin |
+| **2** | **§2.1 数据流图** | 🟡 不符 | 仍描述完整事件驱动（LISTEN/NOTIFY + 1s 防抖 + 10min 对账）。你已精简为"轮询全量同步 p 规则"，文档与决策不符 | 可保留为"生产方案"，但需新增"精简方案：轮询同步 p 规则"作为主推荐 |
+| **3** | **§5.3 Shell 脚本** | 🟡 错误 | 将 policy CSV base64 编码后放入 JSON body。APISIX Admin API 的 `policy` 字段期望**纯文本格式**（`"p,admin,/api/users,GET\n..."`），不是 base64 | 改为直接传 CSV 文本：`{"model":"...","policy":"p,admin,/api/users,GET\np,admin,/api/users,POST\n..."}` |
+| **4** | **§4.2 全量 vs 增量** | 🟡 不准确 | 写"VIEW 是虚拟表，无法追踪'哪些行变了'"——**不准确**。PG 语句级触发器可通过过渡表获取 `OLD`/`NEW`，底层表 `sys_role_api` 可以追踪变化 | 应改为：当前设计使用全量同步（非性能瓶颈，p 规则 < 1万条），但技术上可通过 `sys_role_api` 触发器实现增量同步 |
+| **5** | **§3.3 APISIX 限制** | 🟢 补充 | 写"PostgreSQL 连接：❌ Lua 没有 pg 适配器"——需补充：**官方确认 `authz-casbin` 不支持从 DB 加载策略**，策略必须在 worker 启动时通过文件或 plugin_metadata 加载到内存。这是必须保留 Syncer 的根本原因 | 补充说明官方确认的限制（已通过子代理验证） |
+
+### 额外发现
+
+| 项目 | 说明 |
+|------|------|
+| **Grafana 端口冲突** | 文档 §5.1 测试验证中 Grafana 端口 3000 与 PostgREST 端口 3000 冲突。Pigsty INFRA 部署的 Grafana 也在 3000。PostgREST 在 Docker 中，Grafana 在 WSL2 中，但都映射到 Windows 的 3000 端口——**Windows 侧会冲突** |
+| **JWT 认证职责** | `authz-casbin` 本身不做 JWT 验证，只匹配权限。文档应明确哪个组件负责 JWT 签发/验证（Casdoor 或 `jwt-auth` 插件） |
+
+### 验证来源
+
+- Apache APISIX `authz-casbin` 官方文档：https://apisix.apache.org/zh/docs/apisix/plugins/authz-casbin/
+- Apache APISIX `authz-casdoor` 官方文档：https://apisix.apache.org/zh/docs/apisix/plugins/authz-casdoor/
+- 关键确认：`authz-casbin` **不支持从数据库实时加载策略**，策略在 worker 启动时加载到内存
