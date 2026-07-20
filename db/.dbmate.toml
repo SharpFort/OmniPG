@@ -1,0 +1,17 @@
+# Dbmate 配置文件
+# 文档：https://github.com/amacneil/dbmate
+
+# 数据库连接 URL（通过环境变量读取，支持多环境）
+database_url = "${DBMATE_DATABASE_URL}"
+
+# Migration 文件目录
+migrations_dir = "./migrations"
+
+# 迁移表名（默认 schema_migrations）
+migration_table = "schema_migrations"
+
+# 是否自动创建迁移表（默认 true）
+auto_migration_table = true
+
+# 迁移文件命名格式
+id_format = "20060102150405"

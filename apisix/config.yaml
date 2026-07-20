@@ -1,0 +1,52 @@
+deployment:
+  role: traditional
+  role_traditional:
+    config_provider: etcd
+  admin:
+    allow_admin:
+      - 0.0.0.0/0
+    admin_listen:
+      ip: 0.0.0.0
+      port: 9180
+    admin_key:
+      - name: admin
+        key: edd1c9f034335f136f87ad84b625c8f1
+        role: admin
+  etcd:
+    host:
+      - "http://etcd:2379"
+    prefix: "/apisix"
+    timeout: 30
+
+nginx_config:
+  user: root
+  error_log: /usr/local/apisix/logs/error.log
+  error_log_level: "warn"
+  worker_processes: auto
+  worker_rlimit_nofile: 20480
+
+apisix:
+  node_listen: 9080
+  enable_heartbeat: true
+  enable_admin: true
+  enable_admin_cors: true
+  enable_debug: true
+  enable_dev_mode: true
+  enable_reuseport: true
+  enable_ipv6: true
+  config_center: yaml
+  enable_ssl: false
+
+plugin_attr:
+  prometheus:
+    export_uri: /apisix/prometheus/metrics
+  file-logger:
+    path: /usr/local/apisix/logs/access.log
+  limit-req:
+    allow_degradation: false
+    rejected_code: 429
+    rejected_msg: '{"error":"rate_limit","message":"Too many requests"}'
+    policy: redis
+    redis_host: app-redis
+    redis_port: 6379
+    redis_timeout: 1000

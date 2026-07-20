@@ -1,0 +1,89 @@
+CREATE OR REPLACE FUNCTION public.user_login_sso(p_username text, p_password text)
+RETURNS json AS $$
+DECLARE
+    v_user RECORD;
+    v_roles_json jsonb;
+    v_jti varchar;
+    v_new_rt varchar;
+    v_new_rt_hash varchar;
+    v_new_at varchar;
+    v_cookie_header text;
+    v_casdoor_url text;
+    v_response http_response;
+BEGIN
+    -- 1. 查询用户
+    SELECT id, username, password_hash, tenant_id, dept_id, is_active
+    INTO v_user
+    FROM sys_user
+    WHERE username = p_username;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Invalid Credentials' USING ERRCODE = 'P0001';
+    END IF;
+
+    -- 2. 检查账户是否激活
+    IF v_user.is_active = FALSE THEN
+        RAISE EXCEPTION 'Account Disabled' USING ERRCODE = 'P0002';
+    END IF;
+
+    -- 3. 验证密码
+    IF v_user.password_hash != crypt(p_password, v_user.password_hash) THEN
+        RAISE EXCEPTION 'Invalid Credentials' USING ERRCODE = 'P0001';
+    END IF;
+
+    -- 4. 查询用户角色
+    SELECT json_strip_nulls(json_agg(r.role_code))::jsonb INTO v_roles_json
+    FROM sys_user_role ur
+    JOIN sys_role r ON ur.role_id = r.id
+    WHERE ur.user_id = v_user.id;
+
+    IF v_roles_json IS NULL THEN
+        v_roles_json := '["role_guest"]'::jsonb;
+    END IF;
+
+    -- 5. 使该用户的旧 RT 全部失效（SSO 单设备登录）
+    UPDATE sys_user_session SET is_used = TRUE 
+    WHERE user_id = v_user.id AND is_used = FALSE;
+
+    -- 6. 生成新会话
+    v_jti := gen_random_uuid()::text;
+    v_new_rt := encode(gen_random_bytes(32), 'hex');
+    v_new_rt_hash := sha256(v_new_rt::bytea);
+
+    INSERT INTO sys_user_session (user_id, refresh_token_hash, active_jti, expired_at)
+    VALUES (v_user.id, v_new_rt_hash, v_jti, now() + interval '7 days');
+
+    -- 7. 调用 Casdoor 获取 JWT
+    v_casdoor_url := 'http://casdoor:8000';
+    SELECT key_value INTO v_casdoor_url FROM sys_secret WHERE key_name = 'casdoor_jwks_url';
+    
+    v_response := http_post(
+        v_casdoor_url || '/api/login/oauth/access_token',
+        'username=' || p_username || '&password=' || p_password || '&scope=read',
+        'application/x-www-form-urlencoded'
+    );
+    
+    IF v_response.status_code != 200 THEN
+        RAISE EXCEPTION 'Casdoor 认证失败' USING ERRCODE = 'P0098';
+    END IF;
+    
+    v_new_at := v_response.content::json->>'access_token';
+    IF v_new_at IS NULL THEN
+        RAISE EXCEPTION 'Casdoor 返回空 token' USING ERRCODE = 'P0098';
+    END IF;
+
+    -- 8. 注入 httpOnly Cookie
+    v_cookie_header := format(
+        '[{"Set-Cookie": "refresh_token=%s; Path=/rpc/refresh_token; HttpOnly; SameSite=Strict; Max-Age=604800"}]',
+        v_new_rt
+    );
+    PERFORM set_config('response.headers', v_cookie_header, true);
+
+    -- 9. 返回 Access Token + 用户信息
+    RETURN json_build_object(
+        'access_token', v_new_at,
+        'username', v_user.username
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+COMMENT ON FUNCTION public.user_login_sso(text, text) IS '用户登录：RS256 签名 JWT，SSO 单设备登录，httpOnly Cookie 写入 Refresh Token';

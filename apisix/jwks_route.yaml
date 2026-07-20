@@ -1,0 +1,18 @@
+uri: /well-known/jwks
+plugins:
+  mocking:
+    content_type: "application/json; charset=utf-8"
+    response_status: 200
+    response_example: |
+      {
+        "keys": [
+          {
+            "kty": "RSA",
+            "kid": "cert-rsa",
+            "use": "sig",
+            "alg": "RS256",
+            "n": "AUTO_REPLACE_FROM_CASDOOR",
+            "e": "AQAB"
+          }
+        ]
+      }
