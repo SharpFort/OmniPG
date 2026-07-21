@@ -5,69 +5,62 @@
 -- migrate:up
 
 -- ==============================================================================
--- 步骤 1：生成 RSA 密钥对
--- 注意：以下私钥为测试用途，生产环境请替换为实际生成的 2048 位 RSA 私钥
+-- 步骤 1：Casdoor 集成配置
 -- ==============================================================================
-
--- 生成私钥（一次性执行，生产环境替换为实际密钥）
--- openssl genrsa -out private.pem 2048
--- openssl rsa -in private.pem -pubout -out public.pem
-
--- [修复 P0-2] JWT 签发已委托 Casdoor，不再存储 RSA 私钥
 INSERT INTO sys_secret (key_name, key_value) VALUES
 ('casdoor_jwks_url', 'http://casdoor:8000/.well-known/jwks.json')
 ON CONFLICT (key_name) DO UPDATE SET key_value = EXCLUDED.key_value;
 
 -- ==============================================================================
--- 步骤 2：默认租户 + 默认部门
+-- 步骤 2：默认租户
 -- ==============================================================================
-INSERT INTO sys_department (id, dept_name) VALUES 
-('00000000-0000-0000-0000-000000000001', '默认部门')
-ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at;
+INSERT INTO sys_tenant (id, tenant_code, tenant_name, status) VALUES 
+('00000000-0000-0000-0000-000000000001', 'default', '默认租户', 'active')
+ON CONFLICT (id) DO NOTHING;
 
 -- ==============================================================================
--- 步骤 3：默认管理员用户（密码：admin123）
+-- 步骤 3：默认部门
+-- ==============================================================================
+INSERT INTO sys_department (id, dept_name, tenant_id) VALUES 
+('00000000-0000-0000-0000-000000000002', '默认部门', '00000000-0000-0000-0000-000000000001')
+ON CONFLICT (id) DO NOTHING;
+
+-- ==============================================================================
+-- 步骤 4：默认管理员用户（密码：admin123，使用 Argon2id 哈希）
 -- ==============================================================================
 INSERT INTO sys_user (id, username, password_hash, tenant_id, dept_id) VALUES 
 (
     '00000000-0000-0000-0000-100000000001',
     'admin',
-    crypt('admin123', gen_salt('bf', 10)),
-    'tenant_default',
-    '00000000-0000-0000-0000-000000000001'
+    generate_user_password('admin123'),
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000002'
 )
-ON CONFLICT (username) DO UPDATE SET 
-    password_hash = EXCLUDED.password_hash,
-    tenant_id = EXCLUDED.tenant_id,
-    dept_id = EXCLUDED.dept_id,
-    updated_at = EXCLUDED.updated_at;
+ON CONFLICT (username) DO NOTHING;
 
 -- ==============================================================================
--- 步骤 4：默认角色
+-- 步骤 5：默认角色（全局角色，tenant_id = NULL）
 -- ==============================================================================
-INSERT INTO sys_role (id, role_code, role_name, description) VALUES 
-('00000000-0000-0000-0000-200000000001', 'super_admin', '超级管理员', '系统全部权限'),
-('00000000-0000-0000-0000-200000000002', 'role_admin', '系统管理员', '权限管理系统'),
-('00000000-0000-0000-0000-200000000003', 'role_editor', '编辑者', '可编辑内容'),
-('00000000-0000-0000-0000-200000000004', 'role_guest', '访客', '只读访问')
-ON CONFLICT (role_code) DO UPDATE SET 
-    role_name = EXCLUDED.role_name,
-    description = EXCLUDED.description,
-    updated_at = EXCLUDED.updated_at;
+INSERT INTO sys_role (id, role_code, role_name, tenant_id) VALUES 
+('00000000-0000-0000-0000-200000000001', 'super_admin', '超级管理员', NULL),
+('00000000-0000-0000-0000-200000000002', 'role_admin', '系统管理员', NULL),
+('00000000-0000-0000-0000-200000000003', 'role_editor', '编辑者', NULL),
+('00000000-0000-0000-0000-200000000004', 'role_guest', '访客', NULL)
+ON CONFLICT (id) DO NOTHING;
 
 -- 将 admin 绑定为超级管理员
-INSERT INTO sys_user_role (user_id, role_id) VALUES 
-('00000000-0000-0000-0000-100000000001', '00000000-0000-0000-0000-200000000001')
+INSERT INTO sys_user_role (user_id, role_id, tenant_id) VALUES 
+('00000000-0000-0000-0000-100000000001', '00000000-0000-0000-0000-200000000001', '00000000-0000-0000-0000-000000000001')
 ON CONFLICT DO NOTHING;
 
 -- ==============================================================================
--- 步骤 5：默认菜单（管理后台基础导航树）
+-- 步骤 6：默认菜单（管理后台基础导航树）
 -- ==============================================================================
 
 -- 根目录
 INSERT INTO sys_menu (id, parent_id, type, name, path, component, title, icon, sort_order) VALUES
 ('00000000-0000-0000-0000-300000000001', NULL, 'DIR', 'System', '/system', 'Layout', '系统管理', 'setting', 1)
-ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at;
+ON CONFLICT DO NOTHING;
 
 -- 菜单项
 INSERT INTO sys_menu (id, parent_id, type, name, path, component, title, icon, sort_order) VALUES
@@ -75,14 +68,14 @@ INSERT INTO sys_menu (id, parent_id, type, name, path, component, title, icon, s
 ('00000000-0000-0000-0000-300000000003', '00000000-0000-0000-0000-300000000001', 'MENU', 'RoleList', 'role', 'system/role/index', '角色管理', 'peoples', 2),
 ('00000000-0000-0000-0000-300000000004', '00000000-0000-0000-0000-300000000001', 'MENU', 'MenuList', 'menu', 'system/menu/index', '菜单管理', 'tree-table', 3),
 ('00000000-0000-0000-0000-300000000005', '00000000-0000-0000-0000-300000000001', 'MENU', 'ApiList', 'api', 'system/api/index', 'API 管理', 'api', 4)
-ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at;
+ON CONFLICT DO NOTHING;
 
 -- 按钮权限
 INSERT INTO sys_menu (id, parent_id, type, name, title, permission_code, sort_order) VALUES
 ('00000000-0000-0000-0000-300000000006', '00000000-0000-0000-0000-300000000002', 'BUTTON', 'UserAdd', '新增用户', 'user:add', 1),
 ('00000000-0000-0000-0000-300000000007', '00000000-0000-0000-0000-300000000002', 'BUTTON', 'UserEdit', '编辑用户', 'user:edit', 2),
 ('00000000-0000-0000-0000-300000000008', '00000000-0000-0000-0000-300000000002', 'BUTTON', 'UserDelete', '删除用户', 'user:delete', 3)
-ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at;
+ON CONFLICT DO NOTHING;
 
 -- 超级管理员默认拥有所有菜单权限
 INSERT INTO sys_role_menu (role_id, menu_id)
@@ -90,7 +83,7 @@ SELECT '00000000-0000-0000-0000-200000000001', id FROM sys_menu
 ON CONFLICT DO NOTHING;
 
 -- ==============================================================================
--- 步骤 6：默认 API（PostgREST 基础端点）
+-- 步骤 7：默认 API（PostgREST 基础 CRUD 端点）
 -- ==============================================================================
 
 -- 业务表 CRUD API
@@ -111,8 +104,7 @@ INSERT INTO sys_api (id, path, method, api_name) VALUES
 ('00000000-0000-0000-0000-400000000014', '/sys_api', 'POST', '新增API'),
 ('00000000-0000-0000-0000-400000000015', '/sys_api', 'PATCH', '更新API'),
 ('00000000-0000-0000-0000-400000000016', '/sys_api', 'DELETE', '删除API')
-ON CONFLICT (id) DO UPDATE SET 
-    api_name = EXCLUDED.api_name, path = EXCLUDED.path, method = EXCLUDED.method, updated_at = EXCLUDED.updated_at;
+ON CONFLICT DO NOTHING;
 
 -- RPC 函数 API
 INSERT INTO sys_api (id, path, method, api_name) VALUES
@@ -121,8 +113,7 @@ INSERT INTO sys_api (id, path, method, api_name) VALUES
 ('00000000-0000-0000-0000-400000000019', '/rpc/refresh_token_rtr', 'POST', '刷新Token'),
 ('00000000-0000-0000-0000-400000000020', '/rpc/kick_user', 'POST', '踢用户下线'),
 ('00000000-0000-0000-0000-400000000021', '/rpc/approve_role_request', 'POST', '审批角色申请')
-ON CONFLICT (id) DO UPDATE SET 
-    api_name = EXCLUDED.api_name, path = EXCLUDED.path, method = EXCLUDED.method, updated_at = EXCLUDED.updated_at;
+ON CONFLICT DO NOTHING;
 
 -- 超级管理员拥有所有 API 权限
 INSERT INTO sys_role_api (role_id, api_id)
@@ -130,8 +121,6 @@ SELECT '00000000-0000-0000-0000-200000000001', id FROM sys_api
 ON CONFLICT DO NOTHING;
 
 -- migrate:down
-
--- 注意：按依赖关系倒序删除
 DELETE FROM sys_role_api WHERE role_id = '00000000-0000-0000-0000-200000000001';
 DELETE FROM sys_api WHERE id LIKE '00000000-0000-0000-0000-4%';
 
@@ -141,5 +130,6 @@ DELETE FROM sys_menu WHERE id LIKE '00000000-0000-0000-0000-3%';
 DELETE FROM sys_user_role WHERE user_id = '00000000-0000-0000-0000-100000000001';
 DELETE FROM sys_role WHERE id LIKE '00000000-0000-0000-0000-2%';
 DELETE FROM sys_user WHERE id = '00000000-0000-0000-0000-100000000001';
-DELETE FROM sys_department WHERE id = '00000000-0000-0000-0000-000000000001';
+DELETE FROM sys_department WHERE id = '00000000-0000-0000-0000-000000000002';
+DELETE FROM sys_tenant WHERE id = '00000000-0000-0000-0000-000000000001';
 DELETE FROM sys_secret WHERE key_name = 'casdoor_jwks_url';

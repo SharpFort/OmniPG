@@ -1,0 +1,315 @@
+-- ==============================================================================
+-- Migration 017: Phase 5 — 审计 + 会话监控 API
+-- ==============================================================================
+
+-- migrate:up
+
+-- ==============================================================================
+-- 1. 增强视图（4 个）
+-- ==============================================================================
+
+-- 1.1 v_online_users：在线用户视图
+CREATE OR REPLACE VIEW api_v1.v_online_users AS
+SELECT 
+    s.id,
+    s.user_id,
+    s.tenant_id,
+    s.active_jti,
+    s.client_ip,
+    s.user_agent,
+    s.created_at AS session_created_at,
+    s.expired_at,
+    u.username,
+    u.email,
+    t.tenant_name
+FROM public.sys_user_session s
+JOIN public.sys_user u ON s.user_id = u.id
+LEFT JOIN public.sys_tenant t ON s.tenant_id = t.id
+WHERE s.is_used = FALSE
+  AND s.expired_at > now()
+  AND u.deleted_at IS NULL;
+COMMENT ON VIEW api_v1.v_online_users IS '在线用户视图（活跃会话）';
+
+-- 1.2 v_audit_log_timeline：审计时间线（按天聚合）
+CREATE OR REPLACE VIEW api_v1.v_audit_log_timeline AS
+SELECT 
+    DATE_TRUNC('day', created_at) AS log_date,
+    table_name,
+    operation,
+    COUNT(*) AS change_count,
+    COUNT(DISTINCT user_id) AS unique_users
+FROM public.sys_audit_log
+GROUP BY DATE_TRUNC('day', created_at), table_name, operation
+ORDER BY log_date DESC, change_count DESC;
+COMMENT ON VIEW api_v1.v_audit_log_timeline IS '审计时间线（按天聚合）';
+
+-- 1.3 v_token_blacklist_detail：Token 黑名单详情
+CREATE OR REPLACE VIEW api_v1.v_token_blacklist_detail AS
+SELECT 
+    b.jti,
+    b.blacklisted_at,
+    b.expired_at,
+    b.reason,
+    b.user_id,
+    u.username,
+    CASE 
+        WHEN b.expired_at > now() THEN 'expired'
+        ELSE 'active'
+    END AS token_status
+FROM public.sys_token_blacklist b
+LEFT JOIN public.sys_user u ON b.user_id = u.id
+ORDER BY b.blacklisted_at DESC;
+COMMENT ON VIEW api_v1.v_token_blacklist_detail IS 'Token 黑名单详情视图';
+
+-- 1.4 v_system_stats_realtime：实时系统统计
+CREATE OR REPLACE VIEW api_v1.v_system_stats_realtime AS
+SELECT 
+    (SELECT COUNT(*) FROM public.sys_user_session WHERE is_used = FALSE AND expired_at > now()) AS online_users,
+    (SELECT COUNT(*) FROM public.sys_token_blacklist WHERE expired_at > now()) AS blacklisted_tokens,
+    (SELECT COUNT(*) FROM public.sys_user_role_request WHERE status = 'pending') AS pending_requests,
+    (SELECT MAX(execution_time) FROM public.sys_cron_log WHERE job_name = 'cleanup-expired-tokens') AS last_cleanup_time,
+    (SELECT COUNT(*) FROM public.sys_audit_log WHERE created_at > now() - interval '24 hours') AS audit_24h,
+    now() AS stats_time;
+COMMENT ON VIEW api_v1.v_system_stats_realtime IS '实时系统统计视图';
+
+-- ==============================================================================
+-- 2. 审计 + 会话监控 RPC 函数（6 个）
+-- ==============================================================================
+
+-- 2.1 get_online_users：获取在线用户列表
+CREATE OR REPLACE FUNCTION api_v1.get_online_users(
+    p_limit int DEFAULT 50,
+    p_offset int DEFAULT 0
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'total', (SELECT COUNT(*) FROM api_v1.v_online_users),
+        'limit', p_limit,
+        'offset', p_offset,
+        'items', COALESCE(
+            (SELECT json_agg(row_to_json(u.*) ORDER BY u.session_created_at DESC)
+             FROM (
+                 SELECT * FROM api_v1.v_online_users
+                 ORDER BY session_created_at DESC
+                 LIMIT p_limit OFFSET p_offset
+             ) u),
+            '[]'::json
+        )
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_online_users(int, int) IS '获取在线用户列表（分页）';
+GRANT EXECUTE ON FUNCTION api_v1.get_online_users(int, int) TO authenticated;
+
+-- 2.2 force_logout_user：强制用户下线
+CREATE OR REPLACE FUNCTION api_v1.force_logout_user(p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_count int;
+BEGIN
+    -- 将用户所有活跃会话的 JTI 加入黑名单
+    WITH blacklisted AS (
+        INSERT INTO public.sys_token_blacklist (jti, expired_at, reason, user_id)
+        SELECT s.active_jti, s.expired_at, 'force_logout', s.user_id
+        FROM public.sys_user_session s
+        WHERE s.user_id = p_user_id
+          AND s.is_used = FALSE
+          AND s.active_jti IS NOT NULL
+        ON CONFLICT (jti) DO NOTHING
+        RETURNING jti
+    )
+    SELECT COUNT(*) INTO v_count FROM blacklisted;
+    
+    -- 标记会话已使用
+    UPDATE public.sys_user_session
+    SET is_used = TRUE
+    WHERE user_id = p_user_id AND is_used = FALSE;
+    
+    RETURN json_build_object(
+        'user_id', p_user_id,
+        'sessions_revoked', v_count
+    );
+END;
+$$;
+COMMENT ON FUNCTION api_v1.force_logout_user(uuid) IS '强制用户下线（加入黑名单并标记会话）';
+GRANT EXECUTE ON FUNCTION api_v1.force_logout_user(uuid) TO authenticated;
+
+-- 2.3 get_audit_log_timeline：获取审计时间线
+CREATE OR REPLACE FUNCTION api_v1.get_audit_log_timeline(
+    p_start_date timestamp DEFAULT (now() - interval '7 days'),
+    p_end_date timestamp DEFAULT now()
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'start_date', p_start_date,
+        'end_date', p_end_date,
+        'items', COALESCE(
+            (SELECT json_agg(row_to_json(t.*) ORDER BY t.log_date DESC)
+             FROM (
+                 SELECT * FROM api_v1.v_audit_log_timeline
+                 WHERE log_date >= p_start_date AND log_date <= p_end_date
+             ) t),
+            '[]'::json
+        )
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_audit_log_timeline(timestamp, timestamp) IS '获取审计时间线（按天聚合）';
+GRANT EXECUTE ON FUNCTION api_v1.get_audit_log_timeline(timestamp, timestamp) TO authenticated;
+
+-- 2.4 search_audit_log：搜索审计日志
+CREATE OR REPLACE FUNCTION api_v1.search_audit_log(
+    p_query text DEFAULT NULL,
+    p_table_name text DEFAULT NULL,
+    p_operation text DEFAULT NULL,
+    p_limit int DEFAULT 20,
+    p_offset int DEFAULT 0
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'total', (SELECT COUNT(*) FROM api_v1.v_audit_log_detail
+                  WHERE (p_table_name IS NULL OR table_name = p_table_name)
+                    AND (p_operation IS NULL OR operation = p_operation)
+                    AND (p_query IS NULL OR old_data::text ILIKE '%' || p_query || '%' OR new_data::text ILIKE '%' || p_query || '%')),
+        'limit', p_limit,
+        'offset', p_offset,
+        'items', COALESCE(
+            (SELECT json_agg(row_to_json(a.*) ORDER BY a.created_at DESC)
+             FROM (
+                 SELECT * FROM api_v1.v_audit_log_detail
+                 WHERE (p_table_name IS NULL OR table_name = p_table_name)
+                   AND (p_operation IS NULL OR operation = p_operation)
+                   AND (p_query IS NULL OR old_data::text ILIKE '%' || p_query || '%' OR new_data::text ILIKE '%' || p_query || '%')
+                 ORDER BY created_at DESC
+                 LIMIT p_limit OFFSET p_offset
+             ) a),
+            '[]'::json
+        )
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.search_audit_log(text, text, text, int, int) IS '搜索审计日志（支持关键词、表名、操作筛选）';
+GRANT EXECUTE ON FUNCTION api_v1.search_audit_log(text, text, text, int, int) TO authenticated;
+
+-- 2.5 get_user_sessions：获取用户会话列表
+CREATE OR REPLACE FUNCTION api_v1.get_user_sessions(p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    -- 校验：只能查看自己的会话（除非 super_admin）
+    IF p_user_id != current_user_id() AND NOT is_super_admin() THEN
+        RAISE EXCEPTION 'Permission denied' USING ERRCODE = 'P0005';
+    END IF;
+    
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'id', s.id,
+            'active_jti', s.active_jti,
+            'client_ip', s.client_ip,
+            'user_agent', s.user_agent,
+            'created_at', s.created_at,
+            'expired_at', s.expired_at,
+            'is_used', s.is_used,
+            'is_active', s.is_used = FALSE AND s.expired_at > now()
+        ) ORDER BY s.created_at DESC
+    ), '[]'::json) INTO v_result
+    FROM public.sys_user_session s
+    WHERE s.user_id = p_user_id;
+    
+    RETURN json_build_object('user_id', p_user_id, 'sessions', v_result);
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_user_sessions(uuid) IS '获取用户会话列表（只能查看自己的，除非 super_admin）';
+GRANT EXECUTE ON FUNCTION api_v1.get_user_sessions(uuid) TO authenticated;
+
+-- 2.6 cleanup_expired_sessions：手动清理过期会话
+CREATE OR REPLACE FUNCTION api_v1.cleanup_expired_sessions()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_blacklist_count int;
+    v_session_count int;
+BEGIN
+    -- 清理过期黑名单
+    WITH deleted_blacklist AS (
+        DELETE FROM public.sys_token_blacklist WHERE expired_at < now() RETURNING jti
+    )
+    SELECT COUNT(*) INTO v_blacklist_count FROM deleted_blacklist;
+    
+    -- 清理过期会话
+    WITH deleted_sessions AS (
+        DELETE FROM public.sys_user_session 
+        WHERE expired_at < now() - interval '1 day' RETURNING id
+    )
+    SELECT COUNT(*) INTO v_session_count FROM deleted_sessions;
+    
+    RETURN json_build_object(
+        'blacklist_removed', v_blacklist_count,
+        'sessions_removed', v_session_count,
+        'cleanup_time', now()
+    );
+END;
+$$;
+COMMENT ON FUNCTION api_v1.cleanup_expired_sessions() IS '手动清理过期会话和 Token 黑名单（仅 super_admin）';
+GRANT EXECUTE ON FUNCTION api_v1.cleanup_expired_sessions() TO authenticated;
+
+-- ==============================================================================
+-- 3. 权限授予
+-- ==============================================================================
+
+-- 视图查询权限
+GRANT SELECT ON api_v1.v_online_users TO authenticated;
+GRANT SELECT ON api_v1.v_audit_log_timeline TO authenticated;
+GRANT SELECT ON api_v1.v_token_blacklist_detail TO authenticated;
+GRANT SELECT ON api_v1.v_system_stats_realtime TO authenticated;
+
+-- migrate:down
+DROP FUNCTION IF EXISTS api_v1.cleanup_expired_sessions();
+DROP FUNCTION IF EXISTS api_v1.get_user_sessions(uuid);
+DROP FUNCTION IF EXISTS api_v1.search_audit_log(text, text, text, int, int);
+DROP FUNCTION IF EXISTS api_v1.get_audit_log_timeline(timestamp, timestamp);
+DROP FUNCTION IF EXISTS api_v1.force_logout_user(uuid);
+DROP FUNCTION IF EXISTS api_v1.get_online_users(int, int);
+DROP VIEW IF EXISTS api_v1.v_system_stats_realtime;
+DROP VIEW IF EXISTS api_v1.v_token_blacklist_detail;
+DROP VIEW IF EXISTS api_v1.v_audit_log_timeline;
+DROP VIEW IF EXISTS api_v1.v_online_users;

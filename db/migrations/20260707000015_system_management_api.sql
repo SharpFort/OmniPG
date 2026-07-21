@@ -1,0 +1,485 @@
+-- ==============================================================================
+-- Migration 015: Phase 3 — 系统管理 API
+-- ==============================================================================
+
+-- migrate:up
+
+-- ==============================================================================
+-- 1. 增强视图（5 个）
+-- ==============================================================================
+
+-- 1.1 v_user_list：用户列表（含 tenant_name、dept_name、role_codes）
+CREATE OR REPLACE VIEW api_v1.v_user_list AS
+SELECT 
+    u.id,
+    u.username,
+    u.email,
+    u.phone,
+    u.tenant_id,
+    u.dept_id,
+    t.tenant_name,
+    t.tenant_code,
+    d.dept_name,
+    u.is_active,
+    u.created_at,
+    u.updated_at,
+    u.deleted_at,
+    COALESCE(
+        (SELECT json_agg(r.role_code ORDER BY r.role_code)
+         FROM public.sys_user_role ur2
+         JOIN public.sys_role r ON ur2.role_id = r.id
+         WHERE ur2.user_id = u.id AND r.deleted_at IS NULL),
+        '[]'::json
+    ) AS roles
+FROM public.sys_user u
+LEFT JOIN public.sys_tenant t ON u.tenant_id = t.id
+LEFT JOIN public.sys_department d ON u.dept_id = d.id;
+COMMENT ON VIEW api_v1.v_user_list IS '用户列表视图：含租户名、部门名、角色列表';
+
+-- 1.2 v_role_list：角色列表（含 api_count、menu_count、users_count）
+CREATE OR REPLACE VIEW api_v1.v_role_list AS
+SELECT 
+    r.id,
+    r.role_code,
+    r.role_name,
+    r.tenant_id,
+    r.description,
+    r.is_active,
+    r.created_at,
+    r.updated_at,
+    r.deleted_at,
+    COALESCE(t.tenant_name, '全局') AS tenant_name,
+    (SELECT COUNT(*) FROM public.sys_role_api ra WHERE ra.role_id = r.id) AS api_count,
+    (SELECT COUNT(*) FROM public.sys_role_menu rm WHERE rm.role_id = r.id) AS menu_count,
+    (SELECT COUNT(*) FROM public.sys_user_role ur WHERE ur.role_id = r.id) AS users_count
+FROM public.sys_role r
+LEFT JOIN public.sys_tenant t ON r.tenant_id = t.id;
+COMMENT ON VIEW api_v1.v_role_list IS '角色列表视图：含权限数量统计';
+
+-- 1.3 v_dept_list：部门列表（含 tenant_name、user_count）
+CREATE OR REPLACE VIEW api_v1.v_dept_list AS
+SELECT 
+    d.id,
+    d.dept_name,
+    d.tenant_id,
+    d.parent_id,
+    t.tenant_name,
+    d.sort_order,
+    d.is_active,
+    d.created_at,
+    d.updated_at,
+    d.deleted_at,
+    (SELECT COUNT(*) FROM public.sys_user u WHERE u.dept_id = d.id AND u.deleted_at IS NULL) AS user_count
+FROM public.sys_department d
+LEFT JOIN public.sys_tenant t ON d.tenant_id = t.id;
+COMMENT ON VIEW api_v1.v_dept_list IS '部门列表视图：含用户数量统计';
+
+-- 1.4 v_audit_log_detail：审计日志（含 username、tenant_name）
+CREATE OR REPLACE VIEW api_v1.v_audit_log_detail AS
+SELECT 
+    a.id,
+    a.table_name,
+    a.operation,
+    a.old_data,
+    a.new_data,
+    a.user_id,
+    u.username,
+    a.tenant_id,
+    t.tenant_name,
+    a.created_at
+FROM public.sys_audit_log a
+LEFT JOIN public.sys_user u ON a.user_id = u.id
+LEFT JOIN public.sys_tenant t ON a.tenant_id = t.id;
+COMMENT ON VIEW api_v1.v_audit_log_detail IS '审计日志视图：含用户名、租户名';
+
+-- 1.5 v_system_stats：系统统计面板
+CREATE OR REPLACE VIEW api_v1.v_system_stats AS
+SELECT 
+    (SELECT COUNT(*) FROM public.sys_tenant WHERE deleted_at IS NULL) AS total_tenants,
+    (SELECT COUNT(*) FROM public.sys_tenant WHERE status = 'active' AND deleted_at IS NULL) AS active_tenants,
+    (SELECT COUNT(*) FROM public.sys_user WHERE deleted_at IS NULL) AS total_users,
+    (SELECT COUNT(*) FROM public.sys_user WHERE is_active = TRUE AND deleted_at IS NULL) AS active_users,
+    (SELECT COUNT(*) FROM public.sys_role WHERE deleted_at IS NULL) AS total_roles,
+    (SELECT COUNT(*) FROM public.sys_department WHERE deleted_at IS NULL) AS total_departments,
+    (SELECT COUNT(*) FROM public.sys_menu WHERE deleted_at IS NULL) AS total_menus,
+    (SELECT COUNT(*) FROM public.sys_api WHERE deleted_at IS NULL) AS total_apis,
+    (SELECT COUNT(*) FROM public.sys_user_session WHERE is_used = FALSE AND expired_at > now()) AS online_users,
+    (SELECT COUNT(*) FROM public.sys_user_role_request WHERE status = 'pending') AS pending_requests,
+    now() AS stats_time;
+COMMENT ON VIEW api_v1.v_system_stats IS '系统统计面板视图（单行汇总）';
+
+-- ==============================================================================
+-- 2. 系统管理 RPC 函数（8 个）
+-- ==============================================================================
+
+-- 2.1 get_dept_tree：递归部门树
+CREATE OR REPLACE FUNCTION api_v1.get_dept_tree(p_tenant_id uuid DEFAULT NULL)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    WITH RECURSIVE dept_tree AS (
+        SELECT 
+            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            1 AS level,
+            ARRAY[d.id] AS path_ids,
+            ARRAY[d.dept_name] AS path_names
+        FROM public.sys_department d
+        WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
+          AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
+        
+        UNION ALL
+        
+        SELECT 
+            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            dt.level + 1,
+            dt.path_ids || d.id,
+            dt.path_names || d.dept_name
+        FROM public.sys_department d
+        JOIN dept_tree dt ON d.parent_id = dt.id
+        WHERE d.deleted_at IS NULL AND dt.level < 10
+    )
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'id', dt.id,
+            'dept_name', dt.dept_name,
+            'parent_id', dt.parent_id,
+            'sort_order', dt.sort_order,
+            'is_active', dt.is_active,
+            'level', dt.level,
+            'path', array_to_string(dt.path_names, ' > ')
+        ) ORDER BY dt.path_ids
+    ), '[]'::json) INTO v_result
+    FROM dept_tree dt;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_dept_tree(uuid) IS '获取部门树形结构（递归 CTE），按路径排序';
+GRANT EXECUTE ON FUNCTION api_v1.get_dept_tree(uuid) TO authenticated;
+
+-- 2.2 get_menu_tree_admin：递归菜单树（管理用，含完整信息）
+CREATE OR REPLACE FUNCTION api_v1.get_menu_tree_admin()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    WITH RECURSIVE menu_tree AS (
+        SELECT 
+            m.id, m.parent_id, m.type, m.name, m.path, m.component,
+            m.title, m.icon, m.permission_code, m.sort_order, m.is_active,
+            1 AS level
+        FROM public.sys_menu m
+        WHERE m.parent_id IS NULL AND m.deleted_at IS NULL
+        
+        UNION ALL
+        
+        SELECT 
+            m.id, m.parent_id, m.type, m.name, m.path, m.component,
+            m.title, m.icon, m.permission_code, m.sort_order, m.is_active,
+            mt.level + 1
+        FROM public.sys_menu m
+        JOIN menu_tree mt ON m.parent_id = mt.id
+        WHERE m.deleted_at IS NULL AND mt.level < 10
+    )
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'id', mt.id,
+            'parent_id', mt.parent_id,
+            'type', mt.type,
+            'name', mt.name,
+            'path', mt.path,
+            'component', mt.component,
+            'title', mt.title,
+            'icon', mt.icon,
+            'permission_code', mt.permission_code,
+            'sort_order', mt.sort_order,
+            'is_active', mt.is_active,
+            'level', mt.level
+        ) ORDER BY mt.level, mt.sort_order, mt.id
+    ), '[]'::json) INTO v_result
+    FROM menu_tree mt;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_menu_tree_admin() IS '获取完整菜单树形结构（管理用），按层级和排序';
+GRANT EXECUTE ON FUNCTION api_v1.get_menu_tree_admin() TO authenticated;
+
+-- 2.3 search_users：分页搜索用户（支持按关键词、状态、部门筛选）
+CREATE OR REPLACE FUNCTION api_v1.search_users(
+    p_query text DEFAULT NULL,
+    p_status text DEFAULT NULL,
+    p_dept_id uuid DEFAULT NULL,
+    p_limit int DEFAULT 20,
+    p_offset int DEFAULT 0
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'total', (SELECT COUNT(*) FROM api_v1.v_user_list u2
+                  WHERE (p_query IS NULL OR u2.username ILIKE '%' || p_query || '%' OR u2.email ILIKE '%' || p_query || '%')
+                    AND (p_status IS NULL OR (p_status = 'active' AND u2.is_active = TRUE) OR (p_status = 'inactive' AND u2.is_active = FALSE))
+                    AND (p_dept_id IS NULL OR u2.dept_id = p_dept_id)),
+        'limit', p_limit,
+        'offset', p_offset,
+        'items', COALESCE(
+            (SELECT json_agg(row_to_json(u.*) ORDER BY u.created_at DESC)
+             FROM (
+                 SELECT * FROM api_v1.v_user_list u2
+                 WHERE (p_query IS NULL OR u2.username ILIKE '%' || p_query || '%' OR u2.email ILIKE '%' || p_query || '%')
+                   AND (p_status IS NULL OR (p_status = 'active' AND u2.is_active = TRUE) OR (p_status = 'inactive' AND u2.is_active = FALSE))
+                   AND (p_dept_id IS NULL OR u2.dept_id = p_dept_id)
+                 ORDER BY u2.created_at DESC
+                 LIMIT p_limit OFFSET p_offset
+             ) u),
+            '[]'::json
+        )
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.search_users(text, text, uuid, int, int) IS '分页搜索用户（支持关键词、状态、部门筛选）';
+GRANT EXECUTE ON FUNCTION api_v1.search_users(text, text, uuid, int, int) TO authenticated;
+
+-- 2.4 update_user_status：更新用户状态（禁用/激活，软删除/恢复）
+CREATE OR REPLACE FUNCTION api_v1.update_user_status(
+    p_user_id uuid,
+    p_action text  -- 'activate', 'deactivate', 'soft_delete', 'restore'
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_current_user_id uuid;
+BEGIN
+    v_current_user_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    
+    -- 禁止操作自己
+    IF p_user_id = v_current_user_id AND p_action IN ('deactivate', 'soft_delete') THEN
+        RAISE EXCEPTION 'Cannot deactivate or delete yourself' USING ERRCODE = 'P0005';
+    END IF;
+    
+    CASE p_action
+        WHEN 'activate' THEN
+            UPDATE public.sys_user SET is_active = TRUE, updated_at = now() WHERE id = p_user_id;
+        WHEN 'deactivate' THEN
+            UPDATE public.sys_user SET is_active = FALSE, updated_at = now() WHERE id = p_user_id;
+        WHEN 'soft_delete' THEN
+            UPDATE public.sys_user SET deleted_at = now(), updated_at = now() WHERE id = p_user_id;
+        WHEN 'restore' THEN
+            UPDATE public.sys_user SET deleted_at = NULL, updated_at = now() WHERE id = p_user_id;
+        ELSE
+            RAISE EXCEPTION 'Invalid action: %. Valid: activate, deactivate, soft_delete, restore' USING ERRCODE = 'P0006';
+    END CASE;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'User not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    RETURN TRUE;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.update_user_status(uuid, text) IS '更新用户状态：activate/deactivate/soft_delete/restore';
+GRANT EXECUTE ON FUNCTION api_v1.update_user_status(uuid, text) TO authenticated;
+
+-- 2.5 assign_role_to_user：分配角色（带租户校验）
+CREATE OR REPLACE FUNCTION api_v1.assign_role_to_user(
+    p_user_id uuid,
+    p_role_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_user_tenant_id uuid;
+    v_role_tenant_id uuid;
+    v_role_rec RECORD;
+BEGIN
+    -- 获取用户租户
+    SELECT tenant_id INTO v_user_tenant_id
+    FROM public.sys_user WHERE id = p_user_id AND deleted_at IS NULL;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'User not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 获取角色信息
+    SELECT id, role_code, tenant_id INTO v_role_rec
+    FROM public.sys_role WHERE id = p_role_id AND deleted_at IS NULL;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 校验：租户角色必须同租户，全局角色（tenant_id=NULL）可分配给任何用户
+    IF v_role_rec.tenant_id IS NOT NULL AND v_role_rec.tenant_id != v_user_tenant_id THEN
+        RAISE EXCEPTION 'Role belongs to different tenant' USING ERRCODE = 'P0005';
+    END IF;
+    
+    INSERT INTO public.sys_user_role (user_id, role_id, tenant_id)
+    VALUES (p_user_id, p_role_id, v_user_tenant_id)
+    ON CONFLICT DO NOTHING;
+    
+    RETURN TRUE;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.assign_role_to_user(uuid, uuid) IS '分配角色给用户（带租户隔离校验）';
+GRANT EXECUTE ON FUNCTION api_v1.assign_role_to_user(uuid, uuid) TO authenticated;
+
+-- 2.6 remove_role_from_user：移除角色
+CREATE OR REPLACE FUNCTION api_v1.remove_role_from_user(
+    p_user_id uuid,
+    p_role_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    DELETE FROM public.sys_user_role 
+    WHERE user_id = p_user_id AND role_id = p_role_id;
+    
+    SELECT TRUE;
+$$;
+COMMENT ON FUNCTION api_v1.remove_role_from_user(uuid, uuid) IS '移除用户角色';
+GRANT EXECUTE ON FUNCTION api_v1.remove_role_from_user(uuid, uuid) TO authenticated;
+
+-- 2.7 update_role_permissions：批量更新角色权限（API + 菜单）
+CREATE OR REPLACE FUNCTION api_v1.update_role_permissions(
+    p_role_id uuid,
+    p_api_ids uuid[] DEFAULT ARRAY[]::uuid[],
+    p_menu_ids uuid[] DEFAULT ARRAY[]::uuid[]
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+    -- 验证角色存在
+    IF NOT EXISTS (SELECT 1 FROM public.sys_role WHERE id = p_role_id AND deleted_at IS NULL) THEN
+        RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 删除旧的 API 关联，插入新的
+    IF array_length(p_api_ids, 1) > 0 THEN
+        DELETE FROM public.sys_role_api WHERE role_id = p_role_id;
+        INSERT INTO public.sys_role_api (role_id, api_id)
+        SELECT p_role_id, unnest(p_api_ids)
+        ON CONFLICT DO NOTHING;
+    END IF;
+    
+    -- 删除旧的菜单关联，插入新的
+    IF array_length(p_menu_ids, 1) > 0 THEN
+        DELETE FROM public.sys_role_menu WHERE role_id = p_role_id;
+        INSERT INTO public.sys_role_menu (role_id, menu_id)
+        SELECT p_role_id, unnest(p_menu_ids)
+        ON CONFLICT DO NOTHING;
+    END IF;
+    
+    RETURN TRUE;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.update_role_permissions(uuid, uuid[], uuid[]) IS '批量更新角色权限（API 和菜单）';
+GRANT EXECUTE ON FUNCTION api_v1.update_role_permissions(uuid, uuid[], uuid[]) TO authenticated;
+
+-- 2.8 get_role_permissions：获取角色权限详情
+CREATE OR REPLACE FUNCTION api_v1.get_role_permissions(p_role_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_role RECORD;
+    v_apis json;
+    v_menus json;
+BEGIN
+    SELECT * INTO v_role FROM public.sys_role WHERE id = p_role_id AND deleted_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 获取 API 权限
+    SELECT COALESCE(json_agg(
+        json_build_object('id', a.id, 'path', a.path, 'method', a.method, 'api_name', a.api_name) ORDER BY a.path
+    ), '[]'::json) INTO v_apis
+    FROM public.sys_role_api ra
+    JOIN public.sys_api a ON ra.api_id = a.id
+    WHERE ra.role_id = p_role_id AND a.deleted_at IS NULL;
+    
+    -- 获取菜单权限
+    SELECT COALESCE(json_agg(
+        json_build_object('id', m.id, 'name', m.name, 'type', m.type, 'title', m.title) ORDER BY m.sort_order
+    ), '[]'::json) INTO v_menus
+    FROM public.sys_role_menu rm
+    JOIN public.sys_menu m ON rm.menu_id = m.id
+    WHERE rm.role_id = p_role_id AND m.deleted_at IS NULL;
+    
+    RETURN json_build_object(
+        'role_id', v_role.id,
+        'role_code', v_role.role_code,
+        'role_name', v_role.role_name,
+        'description', v_role.description,
+        'is_active', v_role.is_active,
+        'apis', v_apis,
+        'menus', v_menus,
+        'api_count', json_array_length(v_apis),
+        'menu_count', json_array_length(v_menus)
+    );
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_role_permissions(uuid) IS '获取角色权限详情（API + 菜单列表）';
+GRANT EXECUTE ON FUNCTION api_v1.get_role_permissions(uuid) TO authenticated;
+
+-- ==============================================================================
+-- 3. 权限授予
+-- ==============================================================================
+
+-- 视图查询权限
+GRANT SELECT ON api_v1.v_user_list TO authenticated;
+GRANT SELECT ON api_v1.v_role_list TO authenticated;
+GRANT SELECT ON api_v1.v_dept_list TO authenticated;
+GRANT SELECT ON api_v1.v_audit_log_detail TO authenticated;
+GRANT SELECT ON api_v1.v_system_stats TO authenticated;
+
+-- RPC 执行权限（已在创建时 GRANT）
+-- 补充 role_admin/super_admin 的视图写权限
+GRANT INSERT, UPDATE ON api_v1.v_user_list TO role_admin;
+GRANT INSERT, UPDATE ON api_v1.v_role_list TO role_admin;
+GRANT INSERT, UPDATE ON api_v1.v_dept_list TO role_admin;
+
+-- migrate:down
+DROP FUNCTION IF EXISTS api_v1.get_role_permissions(uuid);
+DROP FUNCTION IF EXISTS api_v1.update_role_permissions(uuid, uuid[], uuid[]);
+DROP FUNCTION IF EXISTS api_v1.remove_role_from_user(uuid, uuid);
+DROP FUNCTION IF EXISTS api_v1.assign_role_to_user(uuid, uuid);
+DROP FUNCTION IF EXISTS api_v1.update_user_status(uuid, text);
+DROP FUNCTION IF EXISTS api_v1.search_users(text, text, uuid, int, int);
+DROP FUNCTION IF EXISTS api_v1.get_menu_tree_admin();
+DROP FUNCTION IF EXISTS api_v1.get_dept_tree(uuid);
+DROP VIEW IF EXISTS api_v1.v_system_stats;
+DROP VIEW IF EXISTS api_v1.v_audit_log_detail;
+DROP VIEW IF EXISTS api_v1.v_dept_list;
+DROP VIEW IF EXISTS api_v1.v_role_list;
+DROP VIEW IF EXISTS api_v1.v_user_list;

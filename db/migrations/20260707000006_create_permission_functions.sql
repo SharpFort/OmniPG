@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Migration 006: 权限管理函数（菜单树/角色审批）
+-- Migration 006: 权限管理函数
 -- ==============================================================================
 
 -- migrate:up
@@ -20,9 +20,8 @@ BEGIN
         RAISE EXCEPTION 'Unauthorized' USING ERRCODE = 'P0001';
     END IF;
 
-    SELECT id INTO v_user_id FROM sys_user WHERE username = v_username;
+    SELECT id INTO v_user_id FROM sys_user WHERE username = v_username AND deleted_at IS NULL;
 
-    -- 递归查询菜单树（仅 DIR 和 MENU 类型）
     WITH RECURSIVE menu_cte AS (
         SELECT 
             m.id, m.parent_id, m.name, m.path, m.component, m.title, m.icon, m.sort_order, m.type
@@ -30,6 +29,7 @@ BEGIN
         JOIN sys_role_menu rm ON m.id = rm.menu_id
         JOIN sys_user_role ur ON rm.role_id = ur.role_id
         WHERE ur.user_id = v_user_id AND m.parent_id IS NULL AND m.type IN ('DIR', 'MENU')
+          AND m.deleted_at IS NULL
         
         UNION ALL
         
@@ -40,6 +40,7 @@ BEGIN
         JOIN sys_user_role ur ON rm.role_id = ur.role_id
         JOIN menu_cte c ON m.parent_id = c.id
         WHERE ur.user_id = v_user_id AND m.type IN ('DIR', 'MENU')
+          AND m.deleted_at IS NULL
     )
     SELECT json_agg(row_to_json(t)) INTO v_menu_tree
     FROM (
@@ -59,6 +60,7 @@ BEGIN
                 WHERE btn.parent_id = c.id 
                   AND btn.type = 'BUTTON' 
                   AND urb.user_id = v_user_id
+                  AND btn.deleted_at IS NULL
             ) AS buttons
         FROM menu_cte c
         ORDER BY c.sort_order
@@ -67,28 +69,10 @@ BEGIN
     RETURN v_menu_tree;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-COMMENT ON FUNCTION get_user_menu() IS '获取当前用户有权访问的菜单树（含按钮权限标识）';
+COMMENT ON FUNCTION get_user_menu() IS '获取当前用户有权访问的菜单树（含按钮权限标识），仅返回未软删除的菜单';
 
 -- ==============================================================================
--- 2. sys_user_role_request：角色分配审批流表
--- ==============================================================================
-CREATE TABLE sys_user_role_request (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES sys_user(id),
-    role_id UUID NOT NULL REFERENCES sys_role(id),
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-    applicant_id UUID NOT NULL,
-    approver_id UUID,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    approved_at TIMESTAMP WITH TIME ZONE,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-COMMENT ON TABLE sys_user_role_request IS '角色分配审批流表';
-CREATE INDEX idx_request_user ON sys_user_role_request(user_id, status);
-CREATE INDEX idx_request_status ON sys_user_role_request(status);
-
--- ==============================================================================
--- 3. approve_role_request：审批角色申请
+-- 2. approve_role_request：审批角色申请
 -- ==============================================================================
 CREATE OR REPLACE FUNCTION approve_role_request(p_request_id uuid)
 RETURNS boolean AS $$
@@ -109,8 +93,8 @@ BEGIN
     SET status = 'approved', approver_id = v_approver_id, approved_at = now(), updated_at = now()
     WHERE id = p_request_id;
 
-    INSERT INTO sys_user_role (user_id, role_id) 
-    VALUES (v_req.user_id, v_req.role_id)
+    INSERT INTO sys_user_role (user_id, role_id, tenant_id) 
+    VALUES (v_req.user_id, v_req.role_id, v_req.tenant_id)
     ON CONFLICT DO NOTHING;
 
     RETURN TRUE;
@@ -119,7 +103,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 COMMENT ON FUNCTION approve_role_request(uuid) IS '审批通过角色申请：在同一事务中更新状态并写入 sys_user_role';
 
 -- migrate:down
-
 DROP FUNCTION IF EXISTS approve_role_request(uuid);
-DROP TABLE IF EXISTS sys_user_role_request CASCADE;
 DROP FUNCTION IF EXISTS get_user_menu();

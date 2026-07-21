@@ -1,0 +1,386 @@
+-- ==============================================================================
+-- Migration 016: Phase 4 — 关联关系管理 API
+-- ==============================================================================
+
+-- migrate:up
+
+-- ==============================================================================
+-- 1. 增强视图（4 个）
+-- ==============================================================================
+
+-- 1.1 v_user_role_detail：用户-角色关联详情
+CREATE OR REPLACE VIEW api_v1.v_user_role_detail AS
+SELECT 
+    ur.user_id,
+    ur.role_id,
+    ur.tenant_id,
+    ur.created_at,
+    u.username,
+    u.email,
+    r.role_code,
+    r.role_name,
+    r.description AS role_description,
+    t.tenant_name
+FROM public.sys_user_role ur
+JOIN public.sys_user u ON ur.user_id = u.id
+JOIN public.sys_role r ON ur.role_id = r.id
+LEFT JOIN public.sys_tenant t ON ur.tenant_id = t.id
+WHERE u.deleted_at IS NULL AND r.deleted_at IS NULL;
+COMMENT ON VIEW api_v1.v_user_role_detail IS '用户-角色关联详情视图';
+
+-- 1.2 v_role_api_detail：角色-API 关联详情（Casbin p 规则数据源）
+CREATE OR REPLACE VIEW api_v1.v_role_api_detail AS
+SELECT 
+    ra.role_id,
+    ra.api_id,
+    ra.created_at,
+    r.role_code,
+    r.role_name,
+    a.path,
+    a.method,
+    a.api_name,
+    a.is_active AS api_is_active
+FROM public.sys_role_api ra
+JOIN public.sys_role r ON ra.role_id = r.id
+JOIN public.sys_api a ON ra.api_id = a.id
+WHERE r.deleted_at IS NULL AND a.deleted_at IS NULL;
+COMMENT ON VIEW api_v1.v_role_api_detail IS '角色-API 关联详情视图（Casbin p 规则数据源）';
+
+-- 1.3 v_role_menu_detail：角色-菜单关联详情
+CREATE OR REPLACE VIEW api_v1.v_role_menu_detail AS
+SELECT 
+    rm.role_id,
+    rm.menu_id,
+    rm.created_at,
+    r.role_code,
+    r.role_name,
+    m.name AS menu_name,
+    m.type AS menu_type,
+    m.title AS menu_title,
+    m.permission_code,
+    m.parent_id AS menu_parent_id
+FROM public.sys_role_menu rm
+JOIN public.sys_role r ON rm.role_id = r.id
+JOIN public.sys_menu m ON rm.menu_id = m.id
+WHERE r.deleted_at IS NULL AND m.deleted_at IS NULL;
+COMMENT ON VIEW api_v1.v_role_menu_detail IS '角色-菜单关联详情视图';
+
+-- 1.4 v_role_request_detail：角色申请审批详情
+CREATE OR REPLACE VIEW api_v1.v_role_request_detail AS
+SELECT 
+    rq.id,
+    rq.user_id,
+    u.username,
+    u.email,
+    rq.role_id,
+    r.role_code,
+    r.role_name,
+    rq.tenant_id,
+    t.tenant_name,
+    rq.status,
+    rq.applicant_id,
+    ua.username AS applicant_name,
+    rq.approver_id,
+    uapp.username AS approver_name,
+    rq.created_at,
+    rq.approved_at,
+    rq.updated_at
+FROM public.sys_user_role_request rq
+JOIN public.sys_user u ON rq.user_id = u.id
+JOIN public.sys_role r ON rq.role_id = r.id
+LEFT JOIN public.sys_tenant t ON rq.tenant_id = t.id
+LEFT JOIN public.sys_user ua ON rq.applicant_id = ua.id
+LEFT JOIN public.sys_user uapp ON rq.approver_id = uapp.id;
+COMMENT ON VIEW api_v1.v_role_request_detail IS '角色申请审批详情视图';
+
+-- ==============================================================================
+-- 2. 关联关系管理 RPC 函数（7 个）
+-- ==============================================================================
+
+-- 2.1 batch_assign_roles：批量分配角色给用户
+CREATE OR REPLACE FUNCTION api_v1.batch_assign_roles(
+    p_user_id uuid,
+    p_role_ids uuid[]
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_user_tenant_id uuid;
+    v_role_rec RECORD;
+    v_assigned int := 0;
+    v_skipped int := 0;
+BEGIN
+    -- 获取用户租户
+    SELECT tenant_id INTO v_user_tenant_id
+    FROM public.sys_user WHERE id = p_user_id AND deleted_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'User not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 逐个校验并分配
+    FOR v_role_rec IN SELECT id, tenant_id, role_code FROM public.sys_role 
+                      WHERE id = ANY(p_role_ids) AND deleted_at IS NULL
+    LOOP
+        -- 校验租户隔离
+        IF v_role_rec.tenant_id IS NOT NULL AND v_role_rec.tenant_id != v_user_tenant_id THEN
+            v_skipped := v_skipped + 1;
+            CONTINUE;
+        END IF;
+        
+        INSERT INTO public.sys_user_role (user_id, role_id, tenant_id)
+        VALUES (p_user_id, v_role_rec.id, v_user_tenant_id)
+        ON CONFLICT DO NOTHING;
+        
+        IF FOUND THEN
+            v_assigned := v_assigned + 1;
+        ELSE
+            v_skipped := v_skipped + 1;
+        END IF;
+    END LOOP;
+    
+    RETURN json_build_object(
+        'assigned', v_assigned,
+        'skipped', v_skipped,
+        'total', array_length(p_role_ids, 1)
+    );
+END;
+$$;
+COMMENT ON FUNCTION api_v1.batch_assign_roles(uuid, uuid[]) IS '批量分配角色给用户（带租户校验，跳过冲突）';
+GRANT EXECUTE ON FUNCTION api_v1.batch_assign_roles(uuid, uuid[]) TO authenticated;
+
+-- 2.2 batch_remove_roles：批量移除用户角色
+CREATE OR REPLACE FUNCTION api_v1.batch_remove_roles(
+    p_user_id uuid,
+    p_role_ids uuid[]
+)
+RETURNS json
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    WITH deleted AS (
+        DELETE FROM public.sys_user_role 
+        WHERE user_id = p_user_id AND role_id = ANY(p_role_ids)
+        RETURNING role_id
+    )
+    SELECT json_build_object('removed', COUNT(*)::int) FROM deleted;
+$$;
+COMMENT ON FUNCTION api_v1.batch_remove_roles(uuid, uuid[]) IS '批量移除用户角色';
+GRANT EXECUTE ON FUNCTION api_v1.batch_remove_roles(uuid, uuid[]) TO authenticated;
+
+-- 2.3 get_user_roles：获取用户的全部角色
+CREATE OR REPLACE FUNCTION api_v1.get_user_roles(p_user_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'role_id', r.id,
+            'role_code', r.role_code,
+            'role_name', r.role_name,
+            'description', r.description,
+            'is_active', r.is_active,
+            'tenant_id', r.tenant_id
+        ) ORDER BY r.role_code
+    ), '[]'::json) INTO v_result
+    FROM public.sys_user_role ur
+    JOIN public.sys_role r ON ur.role_id = r.id
+    WHERE ur.user_id = p_user_id AND r.deleted_at IS NULL;
+    
+    RETURN json_build_object('user_id', p_user_id, 'roles', v_result, 'count',
+        COALESCE(json_array_length(v_result), 0));
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_user_roles(uuid) IS '获取用户的全部角色';
+GRANT EXECUTE ON FUNCTION api_v1.get_user_roles(uuid) TO authenticated;
+
+-- 2.4 get_role_users：获取角色的全部用户
+CREATE OR REPLACE FUNCTION api_v1.get_role_users(p_role_id uuid)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'user_id', u.id,
+            'username', u.username,
+            'email', u.email,
+            'is_active', u.is_active,
+            'dept_id', u.dept_id
+        ) ORDER BY u.username
+    ), '[]'::json) INTO v_result
+    FROM public.sys_user_role ur
+    JOIN public.sys_user u ON ur.user_id = u.id
+    WHERE ur.role_id = p_role_id AND u.deleted_at IS NULL;
+    
+    RETURN json_build_object('role_id', p_role_id, 'users', v_result, 'count',
+        COALESCE(json_array_length(v_result), 0));
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_role_users(uuid) IS '获取角色的全部用户';
+GRANT EXECUTE ON FUNCTION api_v1.get_role_users(uuid) TO authenticated;
+
+-- 2.5 submit_role_request：提交角色申请
+CREATE OR REPLACE FUNCTION api_v1.submit_role_request(
+    p_role_id uuid,
+    p_user_id uuid DEFAULT NULL  -- 管理员可代提交
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_applicant_id uuid;
+    v_target_user_id uuid;
+    v_role_tenant_id uuid;
+    v_request_id uuid;
+BEGIN
+    v_applicant_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_target_user_id := COALESCE(p_user_id, v_applicant_id);
+    
+    -- 获取角色租户
+    SELECT tenant_id INTO v_role_tenant_id
+    FROM public.sys_role WHERE id = p_role_id AND deleted_at IS NULL;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 检查是否已有 pending 申请
+    IF EXISTS (
+        SELECT 1 FROM public.sys_user_role_request
+        WHERE user_id = v_target_user_id AND role_id = p_role_id AND status = 'pending'
+    ) THEN
+        RAISE EXCEPTION 'Pending request already exists' USING ERRCODE = 'P0005';
+    END IF;
+    
+    -- 检查是否已有该角色
+    IF EXISTS (
+        SELECT 1 FROM public.sys_user_role
+        WHERE user_id = v_target_user_id AND role_id = p_role_id
+    ) THEN
+        RAISE EXCEPTION 'User already has this role' USING ERRCODE = 'P0005';
+    END IF;
+    
+    INSERT INTO public.sys_user_role_request (user_id, role_id, tenant_id, applicant_id)
+    VALUES (v_target_user_id, p_role_id, v_role_tenant_id, v_applicant_id)
+    RETURNING id INTO v_request_id;
+    
+    RETURN v_request_id;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.submit_role_request(uuid, uuid) IS '提交角色申请（检查重复申请和已有角色）';
+GRANT EXECUTE ON FUNCTION api_v1.submit_role_request(uuid, uuid) TO authenticated;
+
+-- 2.6 reject_role_request：拒绝角色申请
+CREATE OR REPLACE FUNCTION api_v1.reject_role_request(p_request_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_approver_id uuid;
+    v_req RECORD;
+BEGIN
+    v_approver_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    
+    SELECT * INTO v_req FROM public.sys_user_role_request
+    WHERE id = p_request_id AND status = 'pending' FOR UPDATE;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Request not found or already processed' USING ERRCODE = 'P0001';
+    END IF;
+    
+    -- 不能审批自己的申请
+    IF v_req.applicant_id = v_approver_id THEN
+        RAISE EXCEPTION 'Cannot approve your own request' USING ERRCODE = 'P0005';
+    END IF;
+    
+    UPDATE public.sys_user_role_request
+    SET status = 'rejected', approver_id = v_approver_id, approved_at = now(), updated_at = now()
+    WHERE id = p_request_id;
+    
+    RETURN TRUE;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.reject_role_request(uuid) IS '拒绝角色申请（不能审批自己的申请）';
+GRANT EXECUTE ON FUNCTION api_v1.reject_role_request(uuid) TO authenticated;
+
+-- 2.7 get_user_role_requests：查询角色申请列表
+CREATE OR REPLACE FUNCTION api_v1.get_user_role_requests(
+    p_status text DEFAULT NULL,
+    p_limit int DEFAULT 20,
+    p_offset int DEFAULT 0
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    SELECT json_build_object(
+        'total', (SELECT COUNT(*) FROM api_v1.v_role_request_detail 
+                  WHERE (p_status IS NULL OR status = p_status)),
+        'limit', p_limit,
+        'offset', p_offset,
+        'items', COALESCE(
+            (SELECT json_agg(row_to_json(r.*) ORDER BY r.created_at DESC)
+             FROM (
+                 SELECT * FROM api_v1.v_role_request_detail
+                 WHERE (p_status IS NULL OR status = p_status)
+                 ORDER BY created_at DESC
+                 LIMIT p_limit OFFSET p_offset
+             ) r),
+            '[]'::json
+        )
+    ) INTO v_result;
+    
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1.get_user_role_requests(text, int, int) IS '分页查询角色申请列表（支持状态筛选）';
+GRANT EXECUTE ON FUNCTION api_v1.get_user_role_requests(text, int, int) TO authenticated;
+
+-- ==============================================================================
+-- 3. 权限授予
+-- ==============================================================================
+
+-- 视图查询权限
+GRANT SELECT ON api_v1.v_user_role_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_api_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_menu_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_request_detail TO authenticated;
+
+-- 关联表直接操作权限（role_admin/super_admin）
+GRANT INSERT, DELETE ON api_v1.sys_user_role TO role_admin;
+GRANT INSERT, DELETE ON api_v1.sys_role_api TO role_admin;
+GRANT INSERT, DELETE ON api_v1.sys_role_menu TO role_admin;
+GRANT UPDATE ON api_v1.sys_user_role_request TO role_admin;
+
+-- migrate:down
+DROP FUNCTION IF EXISTS api_v1.get_user_role_requests(text, int, int);
+DROP FUNCTION IF EXISTS api_v1.reject_role_request(uuid);
+DROP FUNCTION IF EXISTS api_v1.submit_role_request(uuid, uuid);
+DROP FUNCTION IF EXISTS api_v1.get_role_users(uuid);
+DROP FUNCTION IF EXISTS api_v1.get_user_roles(uuid);
+DROP FUNCTION IF EXISTS api_v1.batch_remove_roles(uuid, uuid[]);
+DROP FUNCTION IF EXISTS api_v1.batch_assign_roles(uuid, uuid[]);
+DROP VIEW IF EXISTS api_v1.v_role_request_detail;
+DROP VIEW IF EXISTS api_v1.v_role_menu_detail;
+DROP VIEW IF EXISTS api_v1.v_role_api_detail;
+DROP VIEW IF EXISTS api_v1.v_user_role_detail;

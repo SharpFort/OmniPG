@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Migration 007: 安全触发器（角色变更即时生效）
+-- Migration 007: 安全触发器（角色变更即时生效）+ 清理函数
 -- ==============================================================================
 
 -- migrate:up
@@ -50,8 +50,8 @@ BEGIN
         FROM sys_user_session 
         WHERE user_id = v_user_id AND is_used = FALSE AND active_jti IS NOT NULL
     LOOP
-        INSERT INTO sys_token_blacklist (jti, expired_at, reason)
-        VALUES (v_session.active_jti, v_session.expired_at, 'role_change')
+        INSERT INTO sys_token_blacklist (jti, expired_at, reason, user_id)
+        VALUES (v_session.active_jti, v_session.expired_at, 'role_changed', v_user_id)
         ON CONFLICT (jti) DO NOTHING;
     END LOOP;
 
@@ -75,9 +75,9 @@ BEGIN
     DELETE FROM sys_user_session WHERE expired_at < now() - interval '1 day';
 END;
 $$ LANGUAGE plpgsql;
+COMMENT ON FUNCTION cleanup_expired_tokens() IS '清理过期的 Token 黑名单和会话（由 pg_cron 定时调用）';
 
 -- migrate:down
-
 DROP FUNCTION IF EXISTS cleanup_expired_tokens();
 DROP TRIGGER IF EXISTS trg_blacklist_on_role_change ON sys_user_role;
 DROP FUNCTION IF EXISTS blacklist_at_on_role_change();

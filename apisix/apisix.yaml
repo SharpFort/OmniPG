@@ -1,5 +1,129 @@
-routes: []
-upstreams: []
-global_rules: []
+routes:
+  # ============================================================================
+  # 1. 公开接口（无需认证）
+  # ============================================================================
+  
+  # JWKS 公钥端点（PostgREST 验证 JWT 需要）
+  - uri: /well-known/jwks
+    upstream:
+      type: roundrobin
+      nodes:
+        "casdoor:8000": 1
+    plugins:
+      proxy-rewrite:
+        uri: /.well-known/jwks.json
+    priority: 100
+
+  # ============================================================================
+  # 2. 认证接口（匿名可访问）
+  # ============================================================================
+  
+  - uri: /rpc/user_login_sso
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      request-validation:
+        body_schema:
+          type: object
+          required: [username, password]
+          properties:
+            username:
+              type: string
+              minLength: 3
+            password:
+              type: string
+              minLength: 6
+    priority: 90
+
+  - uri: /rpc/refresh_token_rtr
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      request-validation:
+        body_schema:
+          type: object
+          required: [old_refresh_token]
+          properties:
+            old_refresh_token:
+              type: string
+              minLength: 64
+    priority: 90
+
+  # ============================================================================
+  # 3. 需要认证的接口（JWT + Casbin 授权）
+  # ============================================================================
+  
+  # RPC 函数
+  - uri: /rpc/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      jwt-auth:
+        secret: "${JWKS_JSON}"
+        cookie: ""
+        header: "Authorization"
+        query: ""
+      authz-casbin:
+        model_path: "/usr/local/apisix/conf/casbin_model.conf"
+        policy_path: "/usr/local/apisix/conf/casbin_rule"
+        target_type: "var"
+        target_value: "request_uri"
+        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
+    priority: 50
+
+  # 业务表 CRUD
+  - uri: /*
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      jwt-auth:
+        secret: "${JWKS_JSON}"
+      authz-casbin:
+        model_path: "/usr/local/apisix/conf/casbin_model.conf"
+        policy_path: "/usr/local/apisix/conf/casbin_rule"
+        target_type: "var"
+        target_value: "request_uri"
+        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
+    priority: 10
+
+upstreams:
+  - id: postgrest
+    type: roundrobin
+    nodes:
+      "postgrest:3000": 1
+
+global_rules:
+  # CORS 全局规则
+  - id: 1
+    plugins:
+      cors:
+        allow_origins: "*"
+        allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+        allow_headers: "Authorization,Content-Type,X-Requested-With"
+        expose_headers: "X-Total-Count,Content-Range"
+        max_age: 3600
+        allow_credentials: true
+  
+  # 限流策略
+  - id: 2
+    plugins:
+      limit-req:
+        rate: 100
+        burst: 50
+        rejected_code: 429
+        key: "consumer_name || ':' || remote_addr"
+        policy: redis
+        redis_host: app-redis
+        redis_port: 6379
+        redis_timeout: 1000
+
 consumers: []
 plugin_configs: []
