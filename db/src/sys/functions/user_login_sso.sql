@@ -1,5 +1,7 @@
 -- db/src/sys/functions/user_login_sso.sql
 -- SSO 登录函数：Argon2id 验证密码，Casdoor RS256 签发 JWT
+-- 使用 pg_pwhash (Argon2id) 验证密码
+-- JWT 签发委托 Casdoor（已有完整 Casdoor 集成）
 -- 来源: 20260707000005_create_auth_functions.sql
 
 CREATE OR REPLACE FUNCTION user_login_sso(p_username text, p_password text)

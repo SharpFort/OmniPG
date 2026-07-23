@@ -10,7 +10,7 @@
 CREATE TABLE sys_audit_log (
     id BIGSERIAL PRIMARY KEY,
     table_name VARCHAR(100) NOT NULL,
-    operation VARCHAR(10) NOT NULL CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE')),
+    operation audit_operation NOT NULL,
     old_data JSONB,
     new_data JSONB,
     user_id UUID,

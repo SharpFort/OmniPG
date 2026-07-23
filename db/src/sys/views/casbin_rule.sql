@@ -1,14 +1,7 @@
 -- db/src/sys/views/casbin_rule.sql
--- ==============================================================================
--- Migration 003: 创建 casbin_rule 视图（Role-in-JWT 优化版，仅 p 规则）
--- ==============================================================================
+-- Casbin 策略运行视图（Role-in-JWT 简化版，仅 p 规则）
+-- 来源: 20260707000003_create_casbin_view.sql
 
--- migrate:up
-
--- ==============================================================================
--- casbin_rule 视图（Role-in-JWT 策略后，仅保留 p 规则）
--- 自动过滤软删除数据（deleted_at IS NULL）
--- ==============================================================================
 CREATE OR REPLACE VIEW casbin_rule AS
 SELECT 
     NULL::integer AS id,
@@ -29,6 +22,3 @@ COMMENT ON VIEW casbin_rule IS 'Casbin 策略运行视图（Role-in-JWT 简化�
 COMMENT ON COLUMN casbin_rule.v0 IS '策略主体：角色代码（role_code）';
 COMMENT ON COLUMN casbin_rule.v1 IS '策略对象：API 路径模式';
 COMMENT ON COLUMN casbin_rule.v2 IS '策略动作：HTTP 方法';
-
--- migrate:down
-DROP VIEW IF EXISTS casbin_rule CASCADE;

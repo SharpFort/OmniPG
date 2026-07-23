@@ -40,7 +40,7 @@ CREATE TABLE sys_tenant (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     tenant_code VARCHAR(50) NOT NULL UNIQUE,
     tenant_name VARCHAR(100) NOT NULL,
-    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'disabled')),
+    status tenant_status NOT NULL DEFAULT 'active',
     contact_email VARCHAR(255),
     max_users INT DEFAULT 100,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -183,7 +183,7 @@ CREATE INDEX idx_api_path_method ON sys_api(path, method);
 CREATE TABLE sys_menu (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     parent_id UUID REFERENCES sys_menu(id) ON DELETE CASCADE,
-    type VARCHAR(10) NOT NULL CHECK (type IN ('DIR', 'MENU', 'BUTTON')),
+    type menu_type NOT NULL,
     name VARCHAR(100) NOT NULL,
     path VARCHAR(255),
     component VARCHAR(255),

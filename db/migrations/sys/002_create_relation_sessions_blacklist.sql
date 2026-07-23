@@ -97,7 +97,7 @@ CREATE TABLE sys_user_role_request (
     user_id UUID NOT NULL REFERENCES sys_user(id),
     role_id UUID NOT NULL REFERENCES sys_role(id),
     tenant_id UUID REFERENCES sys_tenant(id) ON DELETE RESTRICT,
-    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    status request_status DEFAULT 'pending',
     applicant_id UUID NOT NULL REFERENCES sys_user(id),
     approver_id UUID REFERENCES sys_user(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
