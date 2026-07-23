@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   app-net:
     driver: bridge
@@ -8,96 +6,13 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
-  pg_data:
-    driver: local
-  etcd_data:
-    driver: local
   casdoor_data:
-    driver: local
-  redis_data:
     driver: local
 
 services:
-  postgres:
-    image: pgcharles/pgtap:18
-    container_name: app-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: app_db
-      POSTGRES_USER: app_owner
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
-    ports:
-      - "${PG_PORT:-5432}:5432"
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./db/init/01-extensions.sql:/docker-entrypoint-initdb.d/01-extensions.sql:ro
-      - ./db/init/02-schemas.sql:/docker-entrypoint-initdb.d/02-schemas.sql:ro
-      - ./db/init/03-casdoor-db.sql:/docker-entrypoint-initdb.d/03-casdoor-db.sql:ro
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_owner -d app_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    command: >
-      -c shared_preload_libraries='pgaudit,pg_net'
-      -c shared_buffers=256MB
-      -c max_connections=100
-      -c work_mem=4MB
-      -c maintenance_work_mem=64MB
-      -c effective_cache_size=768MB
-      -c random_page_cost=1.1
-      -c effective_io_concurrency=200
-      -c wal_buffers=16MB
-      -c min_wal_size=80MB
-      -c max_wal_size=1GB
-      -c checkpoint_completion_target=0.9
-      -c default_statistics_target=100
-      -c log_min_duration_statement=200
-      -c log_checkpoints=on
-      -c log_connections=on
-      -c log_disconnections=on
-      -c log_lock_waits=on
-
-  pgbouncer:
-    image: pgbouncer/pgbouncer:1.24
-    container_name: app-pgbouncer
-    restart: unless-stopped
-    ports:
-      - "${PG_BOUNCER_PORT:-5433}:6432"
-    volumes:
-      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
-      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
-    networks:
-      - app-net
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  etcd:
-    image: bitnami/etcd:3.6
-    container_name: app-etcd
-    restart: unless-stopped
-    environment:
-      ETCD_NAME: etcd-dev-node
-      ALLOW_NONE_AUTHENTICATION: "yes"
-      ETCD_ADVERTISE_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_DATA_DIR: /bitnami/etcd/data
-      ETCD_QUOTA_BACKEND_BYTES: "8589934592"
-    ports:
-      - "${ETCD_PORT:-2379}:2379"
-    volumes:
-      - etcd_data:/bitnami/etcd/data
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
+  # ============================================================================
+  # APISIX API 网关
+  # ============================================================================
   apisix:
     image: apache/apisix:3.17.0-debian
     container_name: app-apisix
@@ -106,33 +21,35 @@ services:
       APISIX_STAND_ALONE: "false"
       APISIX_WORKER_PROCESSES: "auto"
     ports:
-      - "${APISIX_HTTP_PORT:-9080}:9080"
-      - "${APISIX_HTTPS_PORT:-9443}:9443"
-      - "${APISIX_ADMIN_PORT:-9180}:9180"
+      - "9080:9080"
+      - "9443:9443"
+      - "9180:9180"
     volumes:
       - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - ./apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app-net
-    depends_on:
-      etcd:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ============================================================================
+  # PostgREST API 自动生成引擎
+  # ============================================================================
   postgrest:
-    image: postgrest/postgrest:v14.14
+    image: postgrest/postgrest:v14.15
     container_name: app-postgrest
     restart: unless-stopped
     environment:
-      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@pgbouncer:6432/app_db?sslmode=disable
+      PGRST_DB_URI: postgres://authenticator:authenticator_dev_pass@host.docker.internal:6432/app_db?sslmode=disable
       PGRST_DB_SCHEMAS: "api_v1"
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_EXTRA_SEARCH_PATH: "public"
-      PGRST_JWT_SECRET: ${JWKS_JSON:-eyJrZXlzIjpbeyJrdHkiOiJvY3QiLCJraWQiOiJkZXYtaHMyNTYiLCJhbGciOiJIUzI1NiIsImsiOiJjMlZqY21WZmRHVjJaV3h2Y0dWeVgyUmxZWFJ5YVdOMFpuSnZiU0JFZFdKc2FXNGsifV19}
+      PGRST_JWT_SECRET: ${JWKS_JSON:-{"keys":[{"kty":"RSA","kid":"casdoor-dev","use":"sig","alg":"RS256","n":"REPLACE_WITH_CASDOOR_JWKS_N","e":"AQAB"}]}}
       PGRST_DB_PRE_REQUEST: "api_v1.check_token_blacklist"
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3000"
       PGRST_SERVER_HOST: "0.0.0.0"
@@ -142,79 +59,63 @@ services:
       PGRST_PRE_ERROR_EXTENDED: "true"
       PGRST_DB_TX_END: "commit"
     ports:
-      - "${PGRST_PORT:-3000}:3000"
+      - "3000:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app-net
-    depends_on:
-      pgbouncer:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "-s", "http://localhost:3000/"]
       interval: 15s
       timeout: 10s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: app-redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - app-net
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
+  # ============================================================================
+  # Casdoor IAM/OAuth 认证服务
+  # ============================================================================
   casdoor:
     image: casbin/casdoor:latest
     container_name: app-casdoor
     restart: unless-stopped
     ports:
-      - "${CASDOOR_PORT:-8000}:8000"
+      - "8000:8000"
     environment:
       driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=pgbouncer port=6432 sslmode=disable dbname=casdoor"
+      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
       runMode: dev
       httpPort: 8000
-      logConfig: '{"enable":true,"console":true,"release":true,"save":true,"logFormat":"${dd}/${MM}/${yyyy} ${hh}:${mm}:${ss} ${level}: ${message}"}'
     volumes:
       - casdoor_data:/app/conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app-net
-    depends_on:
-      pgbouncer:
-        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "-s", "http://localhost:8000/api/health"]
       interval: 15s
       timeout: 10s
       retries: 10
 
+  # ============================================================================
+  # Swagger UI API 文档
+  # ============================================================================
   swagger-ui:
-    image: swaggerapi/swagger-ui:v5.18.2
+    image: swaggerapi/swagger-ui:v5.2.0
     container_name: app-swagger
     restart: unless-stopped
     environment:
-      SWAGGER_JSON: "/openapi.json"
-      API_URL: "http://localhost:3000/"
-      BASE_URL: "/"
+      API_URL: "http://postgrest:3000/"
     ports:
-      - "${SWAGGER_PORT:-8080}:8080"
+      - "8082:8080"
     networks:
       - app-net
     depends_on:
-      - postgrest
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://localhost:8080/"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
+      postgrest:
+        condition: service_healthy
 
+  # ============================================================================
+  # Policy Syncer (策略同步器)
+  # ============================================================================
   syncer:
     build:
       context: ./syncer
@@ -222,27 +123,22 @@ services:
     container_name: policy-syncer
     restart: unless-stopped
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
+      DB_HOST: host.docker.internal
+      DB_PORT: "6432"
       DB_USER: app_owner
       DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
       SSL_MODE: disable
       APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
       APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - app-net
     depends_on:
-      postgres:
-        condition: service_healthy
       apisix:
         condition: service_healthy
-    volumes:
-      - /etc/localtime:/etc/localtime:ro
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       interval: 30s
