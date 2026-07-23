@@ -1,7 +1,0 @@
-"app_owner" "dev_password_change_me"
-"authenticator" "authenticator_dev_pass"
-"casdoor" "casdoor_dev_pass"
-"pgadmin" "pgadmin_dev_pass"
-"stats" "stats_dev_pass"
-"web_anon" "web_anon_pass"
-"authenticated" "authenticated_pass"
