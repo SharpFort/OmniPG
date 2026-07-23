@@ -2,7 +2,7 @@
 -- 获取角色权限详情 RPC（API + 菜单列表）
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_role_permissions(p_role_id uuid)
+CREATE OR REPLACE FUNCTION api_v1_sys.get_role_permissions(p_role_id uuid)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -45,5 +45,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_role_permissions(uuid) IS '获取角色权限详情（API + 菜单列表）';
-GRANT EXECUTE ON FUNCTION api_v1.get_role_permissions(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_role_permissions(uuid) IS '获取角色权限详情（API + 菜单列表）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_role_permissions(uuid) TO authenticated;

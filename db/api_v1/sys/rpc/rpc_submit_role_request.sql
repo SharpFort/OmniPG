@@ -2,7 +2,7 @@
 -- 提交角色申请 RPC（检查重复申请和已有角色）
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE FUNCTION api_v1.submit_role_request(
+CREATE OR REPLACE FUNCTION api_v1_sys.submit_role_request(
     p_role_id uuid,
     p_user_id uuid DEFAULT NULL
 )
@@ -47,5 +47,5 @@ BEGIN
     RETURN v_request_id;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.submit_role_request(uuid, uuid) IS '提交角色申请（检查重复申请和已有角色）';
-GRANT EXECUTE ON FUNCTION api_v1.submit_role_request(uuid, uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.submit_role_request(uuid, uuid) IS '提交角色申请（检查重复申请和已有角色）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.submit_role_request(uuid, uuid) TO authenticated;

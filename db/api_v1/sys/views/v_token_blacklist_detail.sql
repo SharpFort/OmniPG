@@ -2,7 +2,7 @@
 -- Token 黑名单详情视图
 -- 来源: 20260707000017_audit_session_monitoring.sql
 
-CREATE OR REPLACE VIEW api_v1.v_token_blacklist_detail AS
+CREATE OR REPLACE VIEW api_v1_sys.v_token_blacklist_detail AS
 SELECT 
     b.jti,
     b.blacklisted_at,
@@ -17,4 +17,4 @@ SELECT
 FROM public.sys_token_blacklist b
 LEFT JOIN public.sys_user u ON b.user_id = u.id
 ORDER BY b.blacklisted_at DESC;
-COMMENT ON VIEW api_v1.v_token_blacklist_detail IS 'Token 黑名单详情视图';
+COMMENT ON VIEW api_v1_sys.v_token_blacklist_detail IS 'Token 黑名单详情视图';

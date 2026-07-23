@@ -2,7 +2,7 @@
 -- 重置用户密码 RPC：管理员直接设置新密码
 -- 来源: 20260707000013_postgrest_api_v1.sql
 
-CREATE OR REPLACE FUNCTION api_v1.reset_user_password(
+CREATE OR REPLACE FUNCTION api_v1_sys.reset_user_password(
     p_user_id uuid,
     p_new_password text
 )
@@ -23,4 +23,4 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.reset_user_password(uuid, text) IS '重置用户密码：管理员直接设置新密码';
+COMMENT ON FUNCTION api_v1_sys.reset_user_password(uuid, text) IS '重置用户密码：管理员直接设置新密码';

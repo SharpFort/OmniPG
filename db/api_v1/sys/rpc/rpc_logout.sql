@@ -2,7 +2,7 @@
 -- 用户登出 RPC：将当前 JWT 的 jti 加入黑名单
 -- 来源: 20260707000014_auth_rpc_functions.sql
 
-CREATE OR REPLACE FUNCTION api_v1.logout()
+CREATE OR REPLACE FUNCTION api_v1_sys.logout()
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -29,5 +29,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.logout() IS '用户登出：将当前 JWT 的 jti 加入黑名单';
-GRANT EXECUTE ON FUNCTION api_v1.logout() TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.logout() IS '用户登出：将当前 JWT 的 jti 加入黑名单';
+GRANT EXECUTE ON FUNCTION api_v1_sys.logout() TO authenticated;

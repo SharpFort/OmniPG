@@ -2,7 +2,7 @@
 -- 批量分配角色给用户 RPC（带租户校验，跳过冲突）
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE FUNCTION api_v1.batch_assign_roles(
+CREATE OR REPLACE FUNCTION api_v1_sys.batch_assign_roles(
     p_user_id uuid,
     p_role_ids uuid[]
 )
@@ -49,5 +49,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.batch_assign_roles(uuid, uuid[]) IS '批量分配角色给用户（带租户校验，跳过冲突）';
-GRANT EXECUTE ON FUNCTION api_v1.batch_assign_roles(uuid, uuid[]) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.batch_assign_roles(uuid, uuid[]) IS '批量分配角色给用户（带租户校验，跳过冲突）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.batch_assign_roles(uuid, uuid[]) TO authenticated;

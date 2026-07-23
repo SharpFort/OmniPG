@@ -2,7 +2,7 @@
 -- 批量更新角色权限 RPC（API 和菜单）
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.update_role_permissions(
+CREATE OR REPLACE FUNCTION api_v1_sys.update_role_permissions(
     p_role_id uuid,
     p_api_ids uuid[] DEFAULT ARRAY[]::uuid[],
     p_menu_ids uuid[] DEFAULT ARRAY[]::uuid[]
@@ -34,5 +34,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.update_role_permissions(uuid, uuid[], uuid[]) IS '批量更新角色权限（API 和菜单）';
-GRANT EXECUTE ON FUNCTION api_v1.update_role_permissions(uuid, uuid[], uuid[]) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.update_role_permissions(uuid, uuid[], uuid[]) IS '批量更新角色权限（API 和菜单）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.update_role_permissions(uuid, uuid[], uuid[]) TO authenticated;

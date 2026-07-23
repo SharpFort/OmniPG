@@ -2,7 +2,7 @@
 -- 获取当前用户的 API 权限列表 RPC
 -- 来源: 20260707000014_auth_rpc_functions.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_user_permissions()
+CREATE OR REPLACE FUNCTION api_v1_sys.get_user_permissions()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -34,5 +34,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_user_permissions() IS '获取当前用户的 API 权限列表（基于 Casbin 策略）';
-GRANT EXECUTE ON FUNCTION api_v1.get_user_permissions() TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_user_permissions() IS '获取当前用户的 API 权限列表（基于 Casbin 策略）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_user_permissions() TO authenticated;

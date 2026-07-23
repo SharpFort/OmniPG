@@ -8,7 +8,7 @@ routes:
     upstream:
       type: roundrobin
       nodes:
-        "casdoor:8000": 1
+        "postgrest:3000": 1
     plugins:
       proxy-rewrite:
         uri: /.well-known/jwks.json
@@ -58,15 +58,17 @@ routes:
   # ============================================================================
   
   # ----------------------------------------------------------------------------
-  # 3.1 sys 模块 — 系统管理接口（用户/角色/权限/菜单/审计）
+  # 3.1 sys 模块 — 系统管理接口
   # ----------------------------------------------------------------------------
-  # RPC 函数
-  - uri: /rpc/*
+  # 路径重写规则：/api/v1/sys/* → /api_v1_sys/*
+  - uri: /api/v1/sys/*
     upstream:
       type: roundrobin
       nodes:
         "postgrest:3000": 1
     plugins:
+      proxy-rewrite:
+        regex_uri: ["^/api/v1/sys/(.*)", "/api_v1_sys/$1"]
       jwt-auth:
         secret: "${JWKS_JSON}"
         cookie: ""
@@ -80,7 +82,24 @@ routes:
         denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 50
 
-  # 业务表 CRUD
+  # sys 模块通用 RPC 函数（高优先级）
+  - uri: /rpc/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      jwt-auth:
+        secret: "${JWKS_JSON}"
+      authz-casbin:
+        model_path: "/usr/local/apisix/conf/casbin_model.conf"
+        policy_path: "/usr/local/apisix/conf/casbin_rule"
+        target_type: "var"
+        target_value: "request_uri"
+        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
+    priority: 40
+
+  # sys 模块业务表 CRUD
   - uri: /*
     upstream:
       type: roundrobin
@@ -98,10 +117,9 @@ routes:
     priority: 10
 
   # ----------------------------------------------------------------------------
-  # 3.2 sales 模块 — 销售域接口（订单/客户/账单）
+  # 3.2 sales 模块 — 销售域接口
   # ----------------------------------------------------------------------------
-  # 路径重写规则：/api/v1/sales/* → /api_v1/sales/*
-  # 说明：APISIX 将业务语义路径重写为 PostgREST Schema 路径
+  # 路径重写规则：/api/v1/sales/* → /api_v1_sales/*
   - uri: /api/v1/sales/*
     upstream:
       type: roundrobin
@@ -109,7 +127,7 @@ routes:
         "postgrest:3000": 1
     plugins:
       proxy-rewrite:
-        regex_uri: ["^/api/v1/sales/(.*)", "/api_v1/sales/$1"]
+        regex_uri: ["^/api/v1/sales/(.*)", "/api_v1_sales/$1"]
       jwt-auth:
         secret: "${JWKS_JSON}"
         cookie: ""
@@ -124,9 +142,9 @@ routes:
     priority: 20
 
   # ----------------------------------------------------------------------------
-  # 3.3 inventory 模块 — 库存域接口（库存/仓储/物流）
+  # 3.3 inventory 模块 — 库存域接口
   # ----------------------------------------------------------------------------
-  # 路径重写规则：/api/v1/inventory/* → /api_v1/inventory/*
+  # 路径重写规则：/api/v1/inventory/* → /api_v1_inventory/*
   - uri: /api/v1/inventory/*
     upstream:
       type: roundrobin
@@ -134,7 +152,7 @@ routes:
         "postgrest:3000": 1
     plugins:
       proxy-rewrite:
-        regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1/inventory/$1"]
+        regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1_inventory/$1"]
       jwt-auth:
         secret: "${JWKS_JSON}"
         cookie: ""

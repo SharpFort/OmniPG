@@ -2,7 +2,7 @@
 -- 分配角色给用户 RPC（带租户隔离校验）
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.assign_role_to_user(
+CREATE OR REPLACE FUNCTION api_v1_sys.assign_role_to_user(
     p_user_id uuid,
     p_role_id uuid
 )
@@ -41,5 +41,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.assign_role_to_user(uuid, uuid) IS '分配角色给用户（带租户隔离校验）';
-GRANT EXECUTE ON FUNCTION api_v1.assign_role_to_user(uuid, uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.assign_role_to_user(uuid, uuid) IS '分配角色给用户（带租户隔离校验）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.assign_role_to_user(uuid, uuid) TO authenticated;

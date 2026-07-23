@@ -2,7 +2,7 @@
 -- 强制用户下线 RPC（加入黑名单并标记会话）
 -- 来源: 20260707000017_audit_session_monitoring.sql
 
-CREATE OR REPLACE FUNCTION api_v1.force_logout_user(p_user_id uuid)
+CREATE OR REPLACE FUNCTION api_v1_sys.force_logout_user(p_user_id uuid)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -33,5 +33,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.force_logout_user(uuid) IS '强制用户下线（加入黑名单并标记会话）';
-GRANT EXECUTE ON FUNCTION api_v1.force_logout_user(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.force_logout_user(uuid) IS '强制用户下线（加入黑名单并标记会话）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.force_logout_user(uuid) TO authenticated;

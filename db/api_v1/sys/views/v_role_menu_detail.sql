@@ -2,7 +2,7 @@
 -- 角色-菜单关联详情视图
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE VIEW api_v1.v_role_menu_detail AS
+CREATE OR REPLACE VIEW api_v1_sys.v_role_menu_detail AS
 SELECT 
     rm.role_id,
     rm.menu_id,
@@ -18,4 +18,4 @@ FROM public.sys_role_menu rm
 JOIN public.sys_role r ON rm.role_id = r.id
 JOIN public.sys_menu m ON rm.menu_id = m.id
 WHERE r.deleted_at IS NULL AND m.deleted_at IS NULL;
-COMMENT ON VIEW api_v1.v_role_menu_detail IS '角色-菜单关联详情视图';
+COMMENT ON VIEW api_v1_sys.v_role_menu_detail IS '角色-菜单关联详情视图';

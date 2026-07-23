@@ -2,7 +2,7 @@
 -- 获取部门树形结构 RPC（递归 CTE），按路径排序
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_dept_tree(p_tenant_id uuid DEFAULT NULL)
+CREATE OR REPLACE FUNCTION api_v1_sys.get_dept_tree(p_tenant_id uuid DEFAULT NULL)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -48,5 +48,5 @@ BEGIN
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_dept_tree(uuid) IS '获取部门树形结构（递归 CTE），按路径排序';
-GRANT EXECUTE ON FUNCTION api_v1.get_dept_tree(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_dept_tree(uuid) IS '获取部门树形结构（递归 CTE），按路径排序';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_dept_tree(uuid) TO authenticated;

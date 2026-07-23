@@ -2,7 +2,7 @@
 -- 创建用户 RPC：自动生成 Argon2id 密码哈希
 -- 来源: 20260707000013_postgrest_api_v1.sql
 
-CREATE OR REPLACE FUNCTION api_v1.create_user(
+CREATE OR REPLACE FUNCTION api_v1_sys.create_user(
     p_username text,
     p_password text,
     p_tenant_id uuid,
@@ -24,4 +24,4 @@ BEGIN
     RETURN v_user_id;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.create_user(text, text, uuid, uuid, text, text) IS '创建用户：自动生成 Argon2id 密码哈希';
+COMMENT ON FUNCTION api_v1_sys.create_user(text, text, uuid, uuid, text, text) IS '创建用户：自动生成 Argon2id 密码哈希';

@@ -2,7 +2,7 @@
 -- 修改用户密码 RPC：验证旧密码后更新
 -- 来源: 20260707000013_postgrest_api_v1.sql
 
-CREATE OR REPLACE FUNCTION api_v1.change_user_password(
+CREATE OR REPLACE FUNCTION api_v1_sys.change_user_password(
     p_user_id uuid,
     p_old_password text,
     p_new_password text
@@ -34,4 +34,4 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.change_user_password(uuid, text, text) IS '修改用户密码：验证旧密码后更新';
+COMMENT ON FUNCTION api_v1_sys.change_user_password(uuid, text, text) IS '修改用户密码：验证旧密码后更新';

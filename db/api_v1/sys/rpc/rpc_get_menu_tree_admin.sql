@@ -2,7 +2,7 @@
 -- 获取完整菜单树形结构 RPC（管理用），按层级和排序
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_menu_tree_admin()
+CREATE OR REPLACE FUNCTION api_v1_sys.get_menu_tree_admin()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -50,5 +50,5 @@ BEGIN
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_menu_tree_admin() IS '获取完整菜单树形结构（管理用），按层级和排序';
-GRANT EXECUTE ON FUNCTION api_v1.get_menu_tree_admin() TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_menu_tree_admin() IS '获取完整菜单树形结构（管理用），按层级和排序';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_menu_tree_admin() TO authenticated;

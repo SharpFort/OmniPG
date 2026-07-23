@@ -2,7 +2,7 @@
 -- 角色申请审批详情视图
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE VIEW api_v1.v_role_request_detail AS
+CREATE OR REPLACE VIEW api_v1_sys.v_role_request_detail AS
 SELECT 
     rq.id,
     rq.user_id,
@@ -27,4 +27,4 @@ JOIN public.sys_role r ON rq.role_id = r.id
 LEFT JOIN public.sys_tenant t ON rq.tenant_id = t.id
 LEFT JOIN public.sys_user ua ON rq.applicant_id = ua.id
 LEFT JOIN public.sys_user uapp ON rq.approver_id = uapp.id;
-COMMENT ON VIEW api_v1.v_role_request_detail IS '角色申请审批详情视图';
+COMMENT ON VIEW api_v1_sys.v_role_request_detail IS '角色申请审批详情视图';

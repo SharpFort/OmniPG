@@ -2,7 +2,7 @@
 -- 批量移除用户角色 RPC
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE FUNCTION api_v1.batch_remove_roles(
+CREATE OR REPLACE FUNCTION api_v1_sys.batch_remove_roles(
     p_user_id uuid,
     p_role_ids uuid[]
 )
@@ -18,5 +18,5 @@ AS $$
     )
     SELECT json_build_object('removed', COUNT(*)::int) FROM deleted;
 $$;
-COMMENT ON FUNCTION api_v1.batch_remove_roles(uuid, uuid[]) IS '批量移除用户角色';
-GRANT EXECUTE ON FUNCTION api_v1.batch_remove_roles(uuid, uuid[]) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.batch_remove_roles(uuid, uuid[]) IS '批量移除用户角色';
+GRANT EXECUTE ON FUNCTION api_v1_sys.batch_remove_roles(uuid, uuid[]) TO authenticated;

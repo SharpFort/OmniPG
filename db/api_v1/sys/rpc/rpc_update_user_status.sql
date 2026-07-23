@@ -2,7 +2,7 @@
 -- 更新用户状态 RPC：activate/deactivate/soft_delete/restore
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE FUNCTION api_v1.update_user_status(
+CREATE OR REPLACE FUNCTION api_v1_sys.update_user_status(
     p_user_id uuid,
     p_action text  -- 'activate', 'deactivate', 'soft_delete', 'restore'
 )
@@ -40,5 +40,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.update_user_status(uuid, text) IS '更新用户状态：activate/deactivate/soft_delete/restore';
-GRANT EXECUTE ON FUNCTION api_v1.update_user_status(uuid, text) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.update_user_status(uuid, text) IS '更新用户状态：activate/deactivate/soft_delete/restore';
+GRANT EXECUTE ON FUNCTION api_v1_sys.update_user_status(uuid, text) TO authenticated;

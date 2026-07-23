@@ -2,7 +2,7 @@
 -- 获取角色的全部用户 RPC
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_role_users(p_role_id uuid)
+CREATE OR REPLACE FUNCTION api_v1_sys.get_role_users(p_role_id uuid)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -28,5 +28,5 @@ BEGIN
         COALESCE(json_array_length(v_result), 0));
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_role_users(uuid) IS '获取角色的全部用户';
-GRANT EXECUTE ON FUNCTION api_v1.get_role_users(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_role_users(uuid) IS '获取角色的全部用户';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_role_users(uuid) TO authenticated;

@@ -2,7 +2,7 @@
 -- 手动清理过期会话和 Token 黑名单 RPC
 -- 来源: 20260707000017_audit_session_monitoring.sql
 
-CREATE OR REPLACE FUNCTION api_v1.cleanup_expired_sessions()
+CREATE OR REPLACE FUNCTION api_v1_sys.cleanup_expired_sessions()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -30,5 +30,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.cleanup_expired_sessions() IS '手动清理过期会话和 Token 黑名单（仅 super_admin）';
-GRANT EXECUTE ON FUNCTION api_v1.cleanup_expired_sessions() TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.cleanup_expired_sessions() IS '手动清理过期会话和 Token 黑名单（仅 super_admin）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.cleanup_expired_sessions() TO authenticated;

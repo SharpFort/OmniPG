@@ -2,7 +2,7 @@
 -- 获取用户会话列表 RPC（只能查看自己的，除非 super_admin）
 -- 来源: 20260707000017_audit_session_monitoring.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_user_sessions(p_user_id uuid)
+CREATE OR REPLACE FUNCTION api_v1_sys.get_user_sessions(p_user_id uuid)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -33,5 +33,5 @@ BEGIN
     RETURN json_build_object('user_id', p_user_id, 'sessions', v_result);
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_user_sessions(uuid) IS '获取用户会话列表（只能查看自己的，除非 super_admin）';
-GRANT EXECUTE ON FUNCTION api_v1.get_user_sessions(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_user_sessions(uuid) IS '获取用户会话列表（只能查看自己的，除非 super_admin）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_user_sessions(uuid) TO authenticated;

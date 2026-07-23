@@ -2,7 +2,7 @@
 -- 拒绝角色申请 RPC（不能审批自己的申请）
 -- 来源: 20260707000016_relationship_management.sql
 
-CREATE OR REPLACE FUNCTION api_v1.reject_role_request(p_request_id uuid)
+CREATE OR REPLACE FUNCTION api_v1_sys.reject_role_request(p_request_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -32,5 +32,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1.reject_role_request(uuid) IS '拒绝角色申请（不能审批自己的申请）';
-GRANT EXECUTE ON FUNCTION api_v1.reject_role_request(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.reject_role_request(uuid) IS '拒绝角色申请（不能审批自己的申请）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.reject_role_request(uuid) TO authenticated;

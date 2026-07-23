@@ -369,62 +369,76 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {module} TO authenticated;
 | `sales` | `sales` | 🔄 进行中 | 初始化脚本已创建 |
 | `inventory` | `inventory` | 🔄 进行中 | 初始化脚本已创建 |
 
-### 6.2 PostgREST 搜索路径配置
+### 6.2 PostgREST 多 Schema 配置
 
 **文件：** `postgrest/postgrest.conf`
 
 ```ini
-# 额外搜索路径（Schema 隔离关键配置）
-db-extra-search-path = "api_v1, public, sales, inventory, pg_temp"
+# 暴露的 Schema（Swagger 按 Schema 名称分组 Tag）
+db-schemas = "api_v1_sys, api_v1_sales, api_v1_inventory"
+
+# 额外搜索路径（确保 API 包装函数能找到内部 Schema 的对象）
+db-extra-search-path = "api_v1_sys, api_v1_sales, api_v1_inventory, public, sales, inventory, pg_temp"
 ```
 
-**配置说明：**
+**Swagger UI 分组效果：**
 
-| Schema | 作用 | 优先级 |
+| Schema | Tag 名称 | 包含接口 |
 |:---|:---|:---|
-| `api_v1` | API 暴露层（视图/RPC 包装函数） | 最高 |
-| `public` | 系统管理模块（sys 模块的表和函数） | 次高 |
-| `sales` | 销售域（sales.orders 等） | 中 |
-| `inventory` | 库存域（inventory.stock 等） | 中 |
-| `pg_temp` | 临时对象（PostgREST 内部使用） | 最低 |
+| `api_v1_sys` | api_v1_sys | sys_user, sys_role, rpc_user_login, v_user_list, ... |
+| `api_v1_sales` | api_v1_sales | v_my_orders, rpc_checkout |
+| `api_v1_inventory` | api_v1_inventory | v_stock_summary |
 
-**为什么需要配置搜索路径？**
+**搜索路径说明：**
+
+| 顺序 | Schema | 作用 |
+|:---|:---|:---|
+| 1 | `api_v1_sys` | 系统管理 API 函数（优先级最高） |
+| 2 | `api_v1_sales` | 销售域 API 函数 |
+| 3 | `api_v1_inventory` | 库存域 API 函数 |
+| 4 | `public` | 系统管理模块（sys 模块的表和函数） |
+| 5 | `sales` | 销售域内部对象 |
+| 6 | `inventory` | 库存域内部对象 |
+| 7 | `pg_temp` | 临时对象（PostgREST 内部使用） |
+
+**执行链路示例：**
 
 ```
-场景：api_v1.checkout() 函数需要调用 sales.create_order()
-
-执行链路：
-1. PostgREST 调用 api_v1.checkout(p_items)
-2. checkout() 内部执行 SELECT sales.create_order(p_items)
-3. PostgreSQL 按 search_path 搜索：
-   - 在 api_v1 中查找 create_order → 未找到
-   - 在 public 中查找 create_order → 未找到
-   - 在 sales 中查找 create_order → ✅ 找到！
-4. 执行 sales.create_order(p_items)
-
-如果 sales 不在 search_path 中：
-   → 报错：function sales.create_order(jsonb) does not exist
-```
-
-**添加新模块时必须更新此配置：**
-
-```ini
-# 添加 hr 模块后
-db-extra-search-path = "api_v1, public, sales, inventory, hr, pg_temp"
+浏览器请求：GET /api/v1/sales/v_my_orders
+                ↓
+APISIX 路径重写：/api_v1_sales/v_my_orders
+                ↓
+PostgREST 映射：api_v1_sales schema → v_my_orders 视图
+                ↓
+执行 SQL：SELECT * FROM api_v1_sales.v_my_orders
+                ↓
+视图内部：SELECT * FROM sales.orders WHERE user_id = current_user_id()
 ```
 
 ---
 
-### 6.3 APISIX 路由配置
+### 6.3 APISIX 多模块路由配置
 
 **文件：** `apisix/apisix.yaml`
 
 ```yaml
-# sales 模块路由
+# sys 模块路由（优先级 50）
+- uri: /api/v1/sys/*
+  plugins:
+    proxy-rewrite:
+      regex_uri: ["^/api/v1/sys/(.*)", "/api_v1_sys/$1"]
+    jwt-auth:
+      secret: "${JWKS_JSON}"
+    authz-casbin:
+      model_path: "/usr/local/apisix/conf/casbin_model.conf"
+      policy_path: "/usr/local/apisix/conf/casbin_rule"
+  priority: 50
+
+# sales 模块路由（优先级 20）
 - uri: /api/v1/sales/*
   plugins:
     proxy-rewrite:
-      regex_uri: ["^/api/v1/sales/(.*)", "/api_v1/sales/$1"]
+      regex_uri: ["^/api/v1/sales/(.*)", "/api_v1_sales/$1"]
     jwt-auth:
       secret: "${JWKS_JSON}"
     authz-casbin:
@@ -432,11 +446,11 @@ db-extra-search-path = "api_v1, public, sales, inventory, hr, pg_temp"
       policy_path: "/usr/local/apisix/conf/casbin_rule"
   priority: 20
 
-# inventory 模块路由
+# inventory 模块路由（优先级 20）
 - uri: /api/v1/inventory/*
   plugins:
     proxy-rewrite:
-      regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1/inventory/$1"]
+      regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1_inventory/$1"]
     jwt-auth:
       secret: "${JWKS_JSON}"
     authz-casbin:
@@ -449,39 +463,22 @@ db-extra-search-path = "api_v1, public, sales, inventory, hr, pg_temp"
 
 | 浏览器请求 URL | APISIX 重写后 | 数据库对象 |
 |:---|:---|:---|
-| `/api/v1/sales/v_my_orders` | `/api_v1/sales/v_my_orders` | `api_v1.v_my_orders` |
-| `/api/v1/sales/rpc/checkout` | `/api_v1/sales/rpc_checkout` | `api_v1.checkout()` |
-| `/api/v1/inventory/v_stock_summary` | `/api_v1/inventory/v_stock_summary` | `api_v1.v_stock_summary` |
+| `/api/v1/sys/v_user_list` | `/api_v1_sys/v_user_list` | `api_v1_sys.v_user_list` |
+| `/api/v1/sys/rpc/user_login` | `/api_v1_sys/rpc_user_login` | `api_v1_sys.user_login_sso()` |
+| `/api/v1/sales/v_my_orders` | `/api_v1_sales/v_my_orders` | `api_v1_sales.v_my_orders` |
+| `/api/v1/sales/rpc/checkout` | `/api_v1_sales/rpc_checkout` | `api_v1_sales.checkout()` |
+| `/api/v1/inventory/v_stock_summary` | `/api_v1_inventory/v_stock_summary` | `api_v1_inventory.v_stock_summary` |
 
-**为什么需要路径重写？**
+**优先级说明：**
 
-```
-浏览器请求：GET /api/v1/sales/v_my_orders
-                ↓
-APISIX 路径重写：/api_v1/sales/v_my_orders
-                ↓
-PostgREST 映射：api_v1 schema → v_my_orders 视图
-                ↓
-执行 SQL：SELECT * FROM api_v1.v_my_orders
-                ↓
-视图内部：SELECT * FROM sales.orders WHERE user_id = current_user_id()
-```
-
-**添加新模块时必须添加路由规则：**
-
-```yaml
-# 添加 hr 模块后
-- uri: /api/v1/hr/*
-  plugins:
-    proxy-rewrite:
-      regex_uri: ["^/api/v1/hr/(.*)", "/api_v1/hr/$1"]
-    jwt-auth:
-      secret: "${JWKS_JSON}"
-    authz-casbin:
-      model_path: "/usr/local/apisix/conf/casbin_model.conf"
-      policy_path: "/usr/local/apisix/conf/casbin_rule"
-  priority: 20
-```
+| 优先级 | 路由 | 说明 |
+|:---|:---|:---|
+| 100 | `/well-known/jwks` | 公开端点 |
+| 90 | `/rpc/user_login_sso`, `/rpc/refresh_token_rtr` | 认证端点 |
+| 50 | `/api/v1/sys/*` | sys 模块（最高业务优先级） |
+| 40 | `/rpc/*` | 通用 RPC 函数 |
+| 20 | `/api/v1/sales/*`, `/api/v1/inventory/*` | 新模块 |
+| 10 | `/*` | 通用 CRUD（最低优先级） |
 
 ---
 

@@ -2,7 +2,7 @@
 -- 用户列表视图：含租户名、部门名、角色列表
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE VIEW api_v1.v_user_list AS
+CREATE OR REPLACE VIEW api_v1_sys.v_user_list AS
 SELECT 
     u.id,
     u.username,
@@ -27,4 +27,4 @@ SELECT
 FROM public.sys_user u
 LEFT JOIN public.sys_tenant t ON u.tenant_id = t.id
 LEFT JOIN public.sys_department d ON u.dept_id = d.id;
-COMMENT ON VIEW api_v1.v_user_list IS '用户列表视图：含租户名、部门名、角色列表';
+COMMENT ON VIEW api_v1_sys.v_user_list IS '用户列表视图：含租户名、部门名、角色列表';

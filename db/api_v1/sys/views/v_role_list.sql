@@ -2,7 +2,7 @@
 -- 角色列表视图：含权限数量统计
 -- 来源: 20260707000015_system_management_api.sql
 
-CREATE OR REPLACE VIEW api_v1.v_role_list AS
+CREATE OR REPLACE VIEW api_v1_sys.v_role_list AS
 SELECT 
     r.id,
     r.role_code,
@@ -19,4 +19,4 @@ SELECT
     (SELECT COUNT(*) FROM public.sys_user_role ur WHERE ur.role_id = r.id) AS users_count
 FROM public.sys_role r
 LEFT JOIN public.sys_tenant t ON r.tenant_id = t.id;
-COMMENT ON VIEW api_v1.v_role_list IS '角色列表视图：含权限数量统计';
+COMMENT ON VIEW api_v1_sys.v_role_list IS '角色列表视图：含权限数量统计';

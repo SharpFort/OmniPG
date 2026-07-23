@@ -2,7 +2,7 @@
 -- 获取当前登录用户信息 RPC
 -- 来源: 20260707000014_auth_rpc_functions.sql
 
-CREATE OR REPLACE FUNCTION api_v1.get_current_user()
+CREATE OR REPLACE FUNCTION api_v1_sys.get_current_user()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -50,5 +50,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1.get_current_user() IS '获取当前登录用户信息（从 JWT claims 提取）';
-GRANT EXECUTE ON FUNCTION api_v1.get_current_user() TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.get_current_user() IS '获取当前登录用户信息（从 JWT claims 提取）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_current_user() TO authenticated;
