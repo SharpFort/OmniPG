@@ -80,12 +80,34 @@ db/
 
 **文件：** `db/src/{module}/_init_schema.sql`
 
+**重要：sys 模块不需要 CREATE SCHEMA**
+
+| 模块 | 是否需要 CREATE SCHEMA | 说明 |
+|:---|:---|:---|
+| `sys` | ❌ 不需要 | 保持在 `public` Schema，仅设置权限 |
+| `sales` | ✅ 需要 | `CREATE SCHEMA IF NOT EXISTS sales` |
+| `inventory` | ✅ 需要 | `CREATE SCHEMA IF NOT EXISTS inventory` |
+| 新模块 | ✅ 需要 | `CREATE SCHEMA IF NOT EXISTS {module}` |
+
+**sys 模块示例（仅权限设置）：**
+
+```sql
+-- db/src/sys/_init_schema.sql
+-- 注意：sys 模块保持在 public Schema，不创建新 Schema
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO app_owner;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO app_owner;
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
+```
+
+**新模块示例（创建 Schema + 权限）：**
+
 ```sql
 -- db/src/{module}/_init_schema.sql
 CREATE SCHEMA IF NOT EXISTS {module};
-COMMENT ON SCHEMA {module IS '{模块说明}';
-
--- 权限设置
+COMMENT ON SCHEMA {module} IS '{模块说明}';
 GRANT USAGE ON SCHEMA {module} TO app_owner;
 GRANT ALL ON ALL TABLES IN SCHEMA {module} TO app_owner;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA {module} TO app_owner;
@@ -138,6 +160,20 @@ SECURITY DEFINER
 SET search_path = {module}, public, pg_temp
 AS $$ SELECT {module}.create_order(p_items) $$;
 ```
+
+**重要：API 层 Schema 前缀规则**
+
+| 模块 | 源表所在 Schema | API 层 SQL 中文件路径 | API 层 SQL 中表名前缀 |
+|:---|:---|:---|:---|
+| sys | `public` | `db/api_v1/sys/views/` | `public.sys_user`（不需要 `sys.`） |
+| sales | `sales` | `db/api_v1/sales/views/` | `sales.orders`（需要 `sales.`） |
+| inventory | `inventory` | `db/api_v1/inventory/views/` | `inventory.stock`（需要 `inventory.`） |
+
+**规则：**
+- 文件路径已经包含模块信息（如 `db/api_v1/sys/views/`）
+- SQL 代码中只需要写源表所在 Schema 的前缀
+- sys 模块源表在 `public`，所以用 `public.sys_user`
+- sales 模块源表在 `sales`，所以用 `sales.orders`
 
 ---
 
