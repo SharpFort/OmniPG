@@ -1,0 +1,3 @@
+"app_owner" "dev_password_change_me"
+"authenticator" "authenticator_dev_pass"
+"casdoor" "casdoor_dev_pass"
