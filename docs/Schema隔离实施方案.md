@@ -74,7 +74,112 @@ db/
     └── xxx/                          # 测试数据
 ```
 
-### 2.2 实施步骤
+### 2.2 PostgreSQL Schema 核心机制（必读）
+
+> ⚠️ **关键事实：PostgreSQL 不会根据文件路径自动路由对象到 Schema。**
+
+#### 2.2.1 Schema 前缀决定对象位置
+
+```sql
+-- ❌ 错误认知：文件放在 db/src/sales/ 就自动创建到 sales Schema
+-- 无论文件放在哪个目录，以下代码都创建在 public Schema：
+CREATE FUNCTION create_order() ...   -- → public.create_order
+CREATE TABLE orders (...)            -- → public.orders
+CREATE VIEW v_orders AS ...          -- → public.v_orders
+
+-- ✅ 正确做法：必须显式指定 Schema 前缀
+CREATE FUNCTION sales.create_order() ...  → sales.create_order
+CREATE TABLE sales.orders (...)           → sales.orders
+CREATE VIEW sales.v_orders AS ...         → sales.v_orders
+```
+
+**结论：文件路径是给人看的，Schema 前缀是给 PostgreSQL 看的。两者没有自动关联。**
+
+#### 2.2.2 _init_schema.sql 的作用
+
+| 问题 | 答案 |
+|:---|:---|
+| `_init_schema.sql` 创建 Schema | ✅ `CREATE SCHEMA IF NOT EXISTS sales` |
+| `_init_schema.sql` 设置权限 | ✅ `GRANT USAGE ON SCHEMA sales TO ...` |
+| `_init_schema.sql` 自动路由后续对象 | ❌ **不会**！后续 SQL 仍需写 Schema 前缀 |
+
+#### 2.2.3 各路径下 Schema 前缀要求
+
+| 文件路径 | SQL 中是否需要写 Schema 前缀 | 示例 |
+|:---|:---|:---|
+| `db/src/sales/functions/create_order.sql` | ✅ 需要 | `CREATE FUNCTION sales.create_order()` |
+| `db/src/sales/views/v_summary.sql` | ✅ 需要 | `CREATE VIEW sales.v_summary AS ...` |
+| `db/src/sales/triggers/trg_orders.sql` | ✅ 需要 | `CREATE TRIGGER ... ON sales.orders` |
+| `db/src/sales/types/order_status.sql` | ✅ 需要 | `CREATE TYPE sales.order_status AS ENUM` |
+| `db/migrations/sales/001_init.sql` | ✅ 需要 | `CREATE TABLE sales.orders (...)` |
+| `db/api_v1/sales/views/v_orders.sql` | ❌ 不需要（在 api_v1 中） | `CREATE VIEW api_v1.v_orders AS ...` |
+| `db/api_v1/sales/rpc/rpc_checkout.sql` | ❌ 不需要（在 api_v1 中） | `CREATE FUNCTION api_v1.checkout()` |
+
+#### 2.2.4 执行顺序（严格）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   新模块 Schema 创建流程                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Step 1: 执行 _init_schema.sql                                  │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ CREATE SCHEMA IF NOT EXISTS sales;                      │   │
+│  │ GRANT USAGE ON SCHEMA sales TO app_owner;               │   │
+│  │ GRANT USAGE ON SCHEMA sales TO authenticated;           │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Step 2: 执行迁移文件（db/migrations/sales/001_init.sql）       │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ CREATE TABLE sales.orders (...);  ← 必须写 sales. 前缀  │   │
+│  │ CREATE TABLE sales.order_items (...);                   │   │
+│  │ CREATE INDEX idx_orders_user ON sales.orders(user_id);  │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Step 3: 执行业务源码（db/src/sales/）                          │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ CREATE FUNCTION sales.create_order(...)  ← 必须写前缀   │   │
+│  │ CREATE VIEW sales.v_order_summary    ← 必须写前缀       │   │
+│  │ CREATE TRIGGER trg_xxx ON sales.orders  ← 必须写前缀    │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  Step 4: 执行 API 层（db/api_v1/sales/）                        │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │ CREATE VIEW api_v1.v_my_orders                          │   │
+│  │ AS SELECT * FROM sales.orders;  ← 引用源表 Schema       │   │
+│  │                                                         │   │
+│  │ CREATE FUNCTION api_v1.checkout(p_items JSONB)          │   │
+│  │ AS $$ SELECT sales.create_order(p_items) $$;            │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.2.5 常见错误示例
+
+| 错误写法 | 实际创建位置 | 正确写法 |
+|:---|:---|:---|
+| `CREATE FUNCTION create_order()` | `public.create_order` | `CREATE FUNCTION sales.create_order()` |
+| `CREATE TABLE orders (...)` | `public.orders` | `CREATE TABLE sales.orders (...)` |
+| `CREATE VIEW v_orders AS ...` | `public.v_orders` | `CREATE VIEW sales.v_orders AS ...` |
+| `CREATE TYPE order_status AS ENUM` | `public.order_status` | `CREATE TYPE sales.order_status AS ENUM` |
+
+#### 2.2.6 search_path 的影响
+
+```sql
+-- 设置 search_path
+SET search_path = sales, public, pg_temp;
+
+-- 此时可以省略前缀（不推荐，建议始终显式写前缀）
+CREATE FUNCTION create_order() ...  → sales.create_order（因为 sales 在 search_path 第一位）
+
+-- 但强烈建议：无论 search_path 如何，始终写 Schema 前缀
+CREATE FUNCTION sales.create_order() ...  → 明确、可读、无歧义
+```
+
+---
+
+### 2.3 实施步骤
 
 #### Step 1: 创建 Schema 初始化脚本
 
