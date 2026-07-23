@@ -57,6 +57,9 @@ routes:
   # 3. 需要认证的接口（JWT + Casbin 授权）
   # ============================================================================
   
+  # ----------------------------------------------------------------------------
+  # 3.1 sys 模块 — 系统管理接口（用户/角色/权限/菜单/审计）
+  # ----------------------------------------------------------------------------
   # RPC 函数
   - uri: /rpc/*
     upstream:
@@ -93,6 +96,67 @@ routes:
         target_value: "request_uri"
         denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 10
+
+  # ----------------------------------------------------------------------------
+  # 3.2 sales 模块 — 销售域接口（订单/客户/账单）
+  # ----------------------------------------------------------------------------
+  # 路径重写规则：/api/v1/sales/* → /api_v1/sales/*
+  # 说明：APISIX 将业务语义路径重写为 PostgREST Schema 路径
+  - uri: /api/v1/sales/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      proxy-rewrite:
+        regex_uri: ["^/api/v1/sales/(.*)", "/api_v1/sales/$1"]
+      jwt-auth:
+        secret: "${JWKS_JSON}"
+        cookie: ""
+        header: "Authorization"
+        query: ""
+      authz-casbin:
+        model_path: "/usr/local/apisix/conf/casbin_model.conf"
+        policy_path: "/usr/local/apisix/conf/casbin_rule"
+        target_type: "var"
+        target_value: "request_uri"
+        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
+    priority: 20
+
+  # ----------------------------------------------------------------------------
+  # 3.3 inventory 模块 — 库存域接口（库存/仓储/物流）
+  # ----------------------------------------------------------------------------
+  # 路径重写规则：/api/v1/inventory/* → /api_v1/inventory/*
+  - uri: /api/v1/inventory/*
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    plugins:
+      proxy-rewrite:
+        regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1/inventory/$1"]
+      jwt-auth:
+        secret: "${JWKS_JSON}"
+        cookie: ""
+        header: "Authorization"
+        query: ""
+      authz-casbin:
+        model_path: "/usr/local/apisix/conf/casbin_model.conf"
+        policy_path: "/usr/local/apisix/conf/casbin_rule"
+        target_type: "var"
+        target_value: "request_uri"
+        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
+    priority: 20
+
+  # ============================================================================
+  # 4. 健康检查接口（无需认证）
+  # ============================================================================
+  - uri: /healthz
+    upstream:
+      type: roundrobin
+      nodes:
+        "postgrest:3000": 1
+    priority: 200
 
 upstreams:
   - id: postgrest

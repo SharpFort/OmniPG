@@ -369,15 +369,133 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {module} TO authenticated;
 | `sales` | `sales` | 🔄 进行中 | 初始化脚本已创建 |
 | `inventory` | `inventory` | 🔄 进行中 | 初始化脚本已创建 |
 
-### 6.2 待完成
+### 6.2 PostgREST 搜索路径配置
 
-| 任务 | 模块 | 说明 |
+**文件：** `postgrest/postgrest.conf`
+
+```ini
+# 额外搜索路径（Schema 隔离关键配置）
+db-extra-search-path = "api_v1, public, sales, inventory, pg_temp"
+```
+
+**配置说明：**
+
+| Schema | 作用 | 优先级 |
 |:---|:---|:---|
-| 创建迁移文件 | sales, inventory | 创建基础表 |
-| 创建业务函数 | sales, inventory | create_order, deduct_stock 等 |
-| 创建 API 视图 | sales, inventory | 补充更多 API 暴露层 |
-| 更新 PostgREST 配置 | - | 添加新 Schema 到搜索路径 |
-| 更新 APISIX 路由 | - | 添加新模块路由 |
+| `api_v1` | API 暴露层（视图/RPC 包装函数） | 最高 |
+| `public` | 系统管理模块（sys 模块的表和函数） | 次高 |
+| `sales` | 销售域（sales.orders 等） | 中 |
+| `inventory` | 库存域（inventory.stock 等） | 中 |
+| `pg_temp` | 临时对象（PostgREST 内部使用） | 最低 |
+
+**为什么需要配置搜索路径？**
+
+```
+场景：api_v1.checkout() 函数需要调用 sales.create_order()
+
+执行链路：
+1. PostgREST 调用 api_v1.checkout(p_items)
+2. checkout() 内部执行 SELECT sales.create_order(p_items)
+3. PostgreSQL 按 search_path 搜索：
+   - 在 api_v1 中查找 create_order → 未找到
+   - 在 public 中查找 create_order → 未找到
+   - 在 sales 中查找 create_order → ✅ 找到！
+4. 执行 sales.create_order(p_items)
+
+如果 sales 不在 search_path 中：
+   → 报错：function sales.create_order(jsonb) does not exist
+```
+
+**添加新模块时必须更新此配置：**
+
+```ini
+# 添加 hr 模块后
+db-extra-search-path = "api_v1, public, sales, inventory, hr, pg_temp"
+```
+
+---
+
+### 6.3 APISIX 路由配置
+
+**文件：** `apisix/apisix.yaml`
+
+```yaml
+# sales 模块路由
+- uri: /api/v1/sales/*
+  plugins:
+    proxy-rewrite:
+      regex_uri: ["^/api/v1/sales/(.*)", "/api_v1/sales/$1"]
+    jwt-auth:
+      secret: "${JWKS_JSON}"
+    authz-casbin:
+      model_path: "/usr/local/apisix/conf/casbin_model.conf"
+      policy_path: "/usr/local/apisix/conf/casbin_rule"
+  priority: 20
+
+# inventory 模块路由
+- uri: /api/v1/inventory/*
+  plugins:
+    proxy-rewrite:
+      regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1/inventory/$1"]
+    jwt-auth:
+      secret: "${JWKS_JSON}"
+    authz-casbin:
+      model_path: "/usr/local/apisix/conf/casbin_model.conf"
+      policy_path: "/usr/local/apisix/conf/casbin_rule"
+  priority: 20
+```
+
+**路径重写规则说明：**
+
+| 浏览器请求 URL | APISIX 重写后 | 数据库对象 |
+|:---|:---|:---|
+| `/api/v1/sales/v_my_orders` | `/api_v1/sales/v_my_orders` | `api_v1.v_my_orders` |
+| `/api/v1/sales/rpc/checkout` | `/api_v1/sales/rpc_checkout` | `api_v1.checkout()` |
+| `/api/v1/inventory/v_stock_summary` | `/api_v1/inventory/v_stock_summary` | `api_v1.v_stock_summary` |
+
+**为什么需要路径重写？**
+
+```
+浏览器请求：GET /api/v1/sales/v_my_orders
+                ↓
+APISIX 路径重写：/api_v1/sales/v_my_orders
+                ↓
+PostgREST 映射：api_v1 schema → v_my_orders 视图
+                ↓
+执行 SQL：SELECT * FROM api_v1.v_my_orders
+                ↓
+视图内部：SELECT * FROM sales.orders WHERE user_id = current_user_id()
+```
+
+**添加新模块时必须添加路由规则：**
+
+```yaml
+# 添加 hr 模块后
+- uri: /api/v1/hr/*
+  plugins:
+    proxy-rewrite:
+      regex_uri: ["^/api/v1/hr/(.*)", "/api_v1/hr/$1"]
+    jwt-auth:
+      secret: "${JWKS_JSON}"
+    authz-casbin:
+      model_path: "/usr/local/apisix/conf/casbin_model.conf"
+      policy_path: "/usr/local/apisix/conf/casbin_rule"
+  priority: 20
+```
+
+---
+
+### 6.4 新模块添加检查清单
+
+添加新模块时，**必须同步更新以下 3 个地方**：
+
+| # | 更新位置 | 文件 | 说明 |
+|:---|:---|:---|:---|
+| 1 | PostgREST 搜索路径 | `postgrest/postgrest.conf` | `db-extra-search-path` 添加新 Schema |
+| 2 | APISIX 路由规则 | `apisix/apisix.yaml` | 添加新模块的路径重写规则 |
+| 3 | Schema 初始化脚本 | `db/src/{module}/_init_schema.sql` | 创建 Schema + 权限设置 |
+
+**遗漏任何一项都会导致模块无法正常工作！**
 
 ---
 
