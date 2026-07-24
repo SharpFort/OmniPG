@@ -8,6 +8,8 @@ networks:
 volumes:
   casdoor_data:
     driver: local
+  redis_data:
+    driver: local
 
 services:
   # ============================================================================
@@ -18,7 +20,7 @@ services:
     container_name: app-apisix
     restart: unless-stopped
     environment:
-      APISIX_STAND_ALONE: "false"
+      APISIX_STAND_ALONE: "true"
       APISIX_WORKER_PROCESSES: "auto"
     ports:
       - "9080:9080"
@@ -31,6 +33,9 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - app-net
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
       interval: 10s
@@ -45,13 +50,13 @@ services:
     container_name: app-postgrest
     restart: unless-stopped
     environment:
-      PGRST_DB_URI: postgres://authenticator:authenticator_dev_pass@host.docker.internal:6432/app_db?sslmode=disable
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@host.docker.internal:6432/app_db?sslmode=disable
       PGRST_DB_SCHEMAS: "api_v1"
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_EXTRA_SEARCH_PATH: "public"
-      PGRST_JWT_SECRET: ${JWKS_JSON:-{"keys":[{"kty":"RSA","kid":"casdoor-dev","use":"sig","alg":"RS256","n":"REPLACE_WITH_CASDOOR_JWKS_N","e":"AQAB"}]}}
+      PGRST_JWT_SECRET: ${JWKS_JSON:-{"keys":[{"kty":"oct","kid":"dev-hs256","alg":"HS256","k":"c2VjcmV0X2RldmVsb3BtZW50X2tleV9hdF9sZWFzdF9zZXZlbl9jaGFyYWN0ZXJzIQ=="}]}}
       PGRST_DB_PRE_REQUEST: "api_v1.check_token_blacklist"
-      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3000"
+      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3001"
       PGRST_SERVER_HOST: "0.0.0.0"
       PGRST_SERVER_PORT: "3000"
       PGRST_DB_AGGREGATES_ENABLED: "true"
@@ -59,7 +64,7 @@ services:
       PGRST_PRE_ERROR_EXTENDED: "true"
       PGRST_DB_TX_END: "commit"
     ports:
-      - "3000:3000"
+      - "3001:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -74,7 +79,7 @@ services:
   # Casdoor IAM/OAuth 认证服务
   # ============================================================================
   casdoor:
-    image: casbin/casdoor:latest
+    image: casbin/casdoor:v1.680.0
     container_name: app-casdoor
     restart: unless-stopped
     ports:
@@ -104,7 +109,7 @@ services:
     container_name: app-swagger
     restart: unless-stopped
     environment:
-      API_URL: "http://postgrest:3000/"
+      API_URL: "http://localhost:3001/"
     ports:
       - "8082:8080"
     networks:
@@ -129,7 +134,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
       SSL_MODE: disable
       APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
-      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6}
     ports:
       - "8080:8080"
     extra_hosts:
@@ -144,3 +149,23 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # ============================================================================
+  # Redis (APISIX 限流 / Casdoor 缓存)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: app-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru

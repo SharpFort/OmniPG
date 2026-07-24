@@ -2,7 +2,7 @@
 set -e
 
 APISIX_ADMIN_URL="${APISIX_ADMIN_URL:-http://localhost:9180}"
-APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+APISIX_ADMIN_KEY="${APISIX_ADMIN_KEY:-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6}"
 CASDOOR_URL="${CASDOOR_URL:-http://localhost:8000}"
 
 echo "=== APISIX 初始化配置脚本 ==="

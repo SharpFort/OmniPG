@@ -37,7 +37,7 @@ echo ""
 echo "📋 Phase 0: 环境就绪检查"
 
 run_test "ENV" "PostgREST Running" "PostgREST 容器健康" \
-    "curl -sf http://localhost:3000/ | head -c 100"
+    "curl -sf http://localhost:3001/ | head -c 100"
 
 run_test "ENV" "APISIX Running" "APISIX 容器健康" \
     "curl -sf http://localhost:9080/apisix/status"
@@ -46,7 +46,7 @@ run_test "ENV" "Casdoor Running" "Casdoor 容器健康" \
     "curl -sf http://localhost:8000/api/health"
 
 run_test "ENV" "Backend Health" "Swagger UI 可用" \
-    "curl -sf http://localhost:8080/"
+    "curl -sf http://localhost:8082/"
 
 run_test "ENV" "Casdoor JWKS" "Casdoor JWKS 端点可用" \
     "curl -sf http://localhost:8000/.well-known/jwks"

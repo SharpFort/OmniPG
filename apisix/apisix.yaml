@@ -69,11 +69,7 @@ routes:
     plugins:
       proxy-rewrite:
         regex_uri: ["^/api/v1/sys/(.*)", "/api_v1_sys/$1"]
-      jwt-auth:
-        secret: "${JWKS_JSON}"
-        cookie: ""
-        header: "Authorization"
-        query: ""
+      jwt-auth: {}
       authz-casbin:
         model_path: "/usr/local/apisix/conf/casbin_model.conf"
         policy_path: "/usr/local/apisix/conf/casbin_rule"
@@ -89,8 +85,7 @@ routes:
       nodes:
         "postgrest:3000": 1
     plugins:
-      jwt-auth:
-        secret: "${JWKS_JSON}"
+      jwt-auth: {}
       authz-casbin:
         model_path: "/usr/local/apisix/conf/casbin_model.conf"
         policy_path: "/usr/local/apisix/conf/casbin_rule"
@@ -106,8 +101,7 @@ routes:
       nodes:
         "postgrest:3000": 1
     plugins:
-      jwt-auth:
-        secret: "${JWKS_JSON}"
+      jwt-auth: {}
       authz-casbin:
         model_path: "/usr/local/apisix/conf/casbin_model.conf"
         policy_path: "/usr/local/apisix/conf/casbin_rule"
@@ -128,11 +122,7 @@ routes:
     plugins:
       proxy-rewrite:
         regex_uri: ["^/api/v1/sales/(.*)", "/api_v1_sales/$1"]
-      jwt-auth:
-        secret: "${JWKS_JSON}"
-        cookie: ""
-        header: "Authorization"
-        query: ""
+      jwt-auth: {}
       authz-casbin:
         model_path: "/usr/local/apisix/conf/casbin_model.conf"
         policy_path: "/usr/local/apisix/conf/casbin_rule"
@@ -153,11 +143,7 @@ routes:
     plugins:
       proxy-rewrite:
         regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1_inventory/$1"]
-      jwt-auth:
-        secret: "${JWKS_JSON}"
-        cookie: ""
-        header: "Authorization"
-        query: ""
+      jwt-auth: {}
       authz-casbin:
         model_path: "/usr/local/apisix/conf/casbin_model.conf"
         policy_path: "/usr/local/apisix/conf/casbin_rule"
@@ -187,7 +173,7 @@ global_rules:
   - id: 1
     plugins:
       cors:
-        allow_origins: "*"
+        allow_origins: "http://localhost:5173,http://localhost:3000"
         allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
         allow_headers: "Authorization,Content-Type,X-Requested-With"
         expose_headers: "X-Total-Count,Content-Range"

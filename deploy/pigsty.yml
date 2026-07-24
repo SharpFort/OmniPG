@@ -104,6 +104,17 @@ all:
       hosts:
         192.168.0.128: { docker_seq: 1 }
 
+    vibe:
+      hosts:
+        192.168.0.128: { vibe_seq: 1 }
+      vars:
+        vibe_enabled: true
+        vibe_packages:
+          - claude
+          - nodejs
+        vibe_features:
+          claude_code: true
+
   vars:
 
     version: v4.4.0
@@ -113,15 +124,19 @@ all:
       no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"
 
     infra_portal:
-      home : { domain: i.pigsty }
-      pgadmin : { domain: adm.pigsty ,endpoint: "${admin_ip}:8885" }
+      home         : { domain: i.pigsty }
+      grafana      : { domain: g.pigsty, endpoint: "${admin_ip}:3000", websocket: true }
+      vmetrics     : { domain: p.pigsty, endpoint: "${admin_ip}:8428" }
+      pgadmin      : { domain: adm.pigsty, endpoint: "${admin_ip}:8885" }
+      code         : { domain: code.pigsty, endpoint: "${admin_ip}:8080" }
+      jupyter      : { domain: jupyter.pigsty, endpoint: "${admin_ip}:8889" }
 
     nodename_overwrite: false
     node_tune: oltp
     node_etc_hosts: ['${admin_ip} i.pigsty sss.pigsty']
     node_repo_modules: 'node,infra,pgsql'
     node_repo_remove: true
-    node_firewall_public_port: [22, 80, 443, 5432]
+    node_firewall_public_port: [22, 80, 443, 5432, 3000, 9080, 9443, 9180, 8000, 8082, 6379]
 
     pg_version: 18
     pg_locale: C.UTF-8
