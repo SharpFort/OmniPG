@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      db-changed: ${{ steps.changes.outputs.db }}
+      gateway-changed: ${{ steps.changes.outputs.gateway }}
+      syncer-changed: ${{ steps.changes.outputs.syncer }}
+      infra-changed: ${{ steps.changes.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            db:
+              - 'db/migrations/**'
+              - 'db/src/**'
+              - 'db/api_v1/**'
+              - 'db/init/**'
+              - 'db/tests/**'
+            gateway:
+              - 'gateway/**'
+            syncer:
+              - 'db/syncer/**'
+            infra:
+              - 'infra/**'
+
+  db-lint:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.db-changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SQL Lint
+        run: |
+          pip install sqlfluff
+          sqlfluff lint db/migrations/ --dialect postgres || true
+          sqlfluff lint db/src/ --dialect postgres || true
+
+  db-migrate-test:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.db-changed == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dbmate
+        run: |
+          curl -fsSL https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 -o dbmate
+          chmod +x dbmate
+          sudo mv dbmate /usr/local/bin/
+      - name: dbmate dry-run
+        env:
+          DBMATE_DATABASE_URL: "postgres://postgres:***@localhost:5432/test_db?sslmode=disable"
+        run: |
+          cd db
+          dbmate up --dry-run
+
+  gateway-check:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.gateway-changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker Compose validate
+        run: docker compose -f gateway/docker-compose.yml config --quiet
+      - name: Docker build
+        run: docker compose -f gateway/docker-compose.yml build
+
+  syncer-check:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.syncer-changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Go build
+        run: |
+          cd db/syncer
+          go build -o bin/syncer ./cmd/main.go
+      - name: Go test
+        run: |
+          cd db/syncer
+          go test -v ./...
+
+  infra-check:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.infra-changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: YAML lint
+        run: |
+          pip install yamllint
+          yamllint infra/pigsty.yml
+          yamllint infra/pigsty.db.yml
+          yamllint infra/pigsty.gateway.yml

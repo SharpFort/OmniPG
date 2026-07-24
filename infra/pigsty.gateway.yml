@@ -1,0 +1,39 @@
+all:
+  children:
+    docker:
+      hosts:
+        192.168.0.129: { docker_seq: 1 }
+
+    vibe:
+      hosts:
+        192.168.0.129: { vibe_seq: 1 }
+      vars:
+        vibe_enabled: true
+        vibe_packages:
+          - claude
+          - nodejs
+        vibe_features:
+          claude_code: true
+
+  vars:
+    version: v4.4.0
+    admin_ip: 192.168.0.129
+    region: china
+    proxy_env:
+      no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"
+
+    infra_portal:
+      home         : { domain: i.pgwy }
+      code         : { domain: code.pgwy, endpoint: "${admin_ip}:8080" }
+      jupyter      : { domain: jupyter.pgwy, endpoint: "${admin_ip}:8889" }
+
+    nodename_overwrite: false
+    node_tune: oltp
+    node_etc_hosts: ['${admin_ip} i.pgwy']
+    node_repo_modules: 'node,infra'
+    node_repo_remove: true
+    node_firewall_public_port: [22, 80, 443, 9080, 9443, 8000, 8082, 6379]
+
+    grafana_admin_password: pigsty
+    haproxy_admin_password: pigsty
+    etcd_root_password: Etcd.Root

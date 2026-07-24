@@ -1,0 +1,87 @@
+name: Deploy Database
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      migration_only:
+        description: '仅执行迁移'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Deploy Database
+        env:
+          SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DBMATE_URL: ${{ secrets.DBMATE_DATABASE_URL }}
+          DB_URI: ${{ secrets.DB_URI }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            
+            # 拉取最新代码
+            cd ~/OmniPG
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            
+            # 安装 dbmate (如果未安装)
+            if ! command -v dbmate &> /dev/null; then
+              curl -fsSL https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 -o /usr/local/bin/dbmate
+              chmod +x /usr/local/bin/dbmate
+            fi
+            
+            # 应用 dbmate 迁移
+            echo "=== 应用数据库迁移 ==="
+            cd db
+            export DBMATE_DATABASE_URL="${{ env.DBMATE_URL }}"
+            dbmate up
+            
+            # 应用幂等源码
+            if [ "${{ inputs.migration_only }}" != "true" ]; then
+              echo "=== 刷入幂等源码 ==="
+              bash ../scripts/apply-src.sh "${{ env.DB_URI }}"
+            fi
+            
+            echo "=== 数据库部署完成 ==="
+          EOF
+      
+      - name: Verify Deployment
+        env:
+          SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          DB_URI: ${{ secrets.DB_URI }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            cd ~/OmniPG/db
+            
+            # 检查迁移状态
+            export DBMATE_DATABASE_URL="${{ env.DBMATE_URL }}"
+            dbmate status
+            
+            # 验证关键函数存在
+            psql "${{ env.DB_URI }}" -c "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'api_v1_sys';"
+            
+            echo "=== 验证完成 ==="
+          EOF

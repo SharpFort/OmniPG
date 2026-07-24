@@ -1,0 +1,100 @@
+name: Deploy Gateway
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: '跳过 E2E 测试'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Deploy Gateway Services
+        env:
+          SERVER_HOST: ${{ secrets.GATEWAY_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          APISIX_ADMIN_KEY: ${{ secrets.APISIX_ADMIN_KEY }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            
+            # 拉取最新代码
+            cd ~/OmniPG
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            
+            # 复制环境配置
+            cp .env.${{ inputs.environment }} gateway/.env
+            
+            # 重启 Docker Compose 服务
+            cd gateway
+            
+            # 拉取最新镜像
+            docker compose pull
+            
+            # 停止并重启
+            docker compose down
+            docker compose up -d
+            
+            # 等待服务启动
+            echo "等待服务启动..."
+            sleep 15
+            
+            # 健康检查
+            echo "=== 健康检查 ==="
+            curl -sf http://localhost:9080/apisix/status && echo "APISIX: OK" || (echo "APISIX: FAIL" && exit 1)
+            curl -sf http://localhost:3001/ && echo "PostgREST: OK" || (echo "PostgREST: FAIL" && exit 1)
+            curl -sf http://localhost:8000/api/health && echo "Casdoor: OK" || (echo "Casdoor: FAIL" && exit 1)
+            curl -sf http://localhost:8080/healthz && echo "Syncer: OK" || (echo "Syncer: FAIL" && exit 1)
+            
+            echo "=== 网关部署完成 ==="
+          EOF
+      
+      - name: Initialize APISIX Routes
+        if: ${{ inputs.skip_tests != true }}
+        env:
+          SERVER_HOST: ${{ secrets.GATEWAY_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            cd ~/OmniPG
+            
+            # 初始化 APISIX 路由和插件
+            bash scripts/setup_apisix.sh
+          EOF
+      
+      - name: Run E2E Tests
+        if: ${{ inputs.skip_tests != true }}
+        env:
+          SERVER_HOST: ${{ secrets.GATEWAY_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            cd ~/OmniPG
+            
+            # 运行 E2E 测试
+            bash scripts/e2e-test.sh
+          EOF

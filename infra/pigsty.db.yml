@@ -1,0 +1,134 @@
+all:
+  children:
+    pg_omnipg:
+      hosts:
+        192.168.0.128: { pg_seq: 1, pg_role: primary }
+      vars:
+        pg_cluster: pg_omnipg
+        pg_extensions:
+          - pgcrypto
+          - pgsodium
+          - pg_net
+          - pgaudit
+          - pgtap
+          - pg_graphql
+          - pg_cron
+        pg_users:
+          - name: app_owner
+            password: dev_password_change_me
+            pgbouncer: true
+            privileges: CREATEDB
+            comment: 'app owner'
+          - name: authenticator
+            password: authenticator_dev_pass
+            pgbouncer: true
+            comment: 'PostgREST auth role'
+          - name: casdoor
+            password: casdoor_dev_pass
+            pgbouncer: true
+            comment: 'Casdoor DB user'
+          - name: web_anon
+            comment: 'PostgREST anonymous role (NOLOGIN)'
+        pg_databases:
+          - name: app_db
+            owner: app_owner
+            comment: 'OmniPG main database'
+            extensions:
+              - { name: pgcrypto }
+              - { name: pgsodium }
+              - { name: pg_net }
+              - { name: pgaudit }
+              - { name: pgtap }
+              - { name: pg_graphql }
+              - { name: pg_cron }
+          - name: casdoor
+            owner: casdoor
+            comment: 'Casdoor IAM database'
+        pg_hba_rules:
+          - type: host
+            database: all
+            user: all
+            address: 127.0.0.1/32
+            method: scram-sha-256
+            comment: 'local IPv4'
+          - type: host
+            database: all
+            user: all
+            address: ::1/128
+            method: scram-sha-256
+            comment: 'local IPv6'
+          - type: host
+            database: all
+            user: all
+            address: 172.17.0.0/16
+            method: scram-sha-256
+            comment: 'Docker bridge'
+          - type: host
+            database: all
+            user: all
+            address: 172.20.0.0/16
+            method: scram-sha-256
+            comment: 'Docker app-net'
+          - type: host
+            database: all
+            user: all
+            address: 10.0.0.0/8
+            method: scram-sha-256
+            comment: '内网 (Phase 2)'
+
+    infra:
+      hosts:
+        192.168.0.128: { infra_seq: 1 }
+      vars:
+        repo_enabled: false
+        nginx_enabled: true
+        grafana_enabled: true
+        victoriametrics_enabled: true
+        victorialogs_enabled: true
+        victoriatraces_enabled: true
+        dnsmasq_enabled: true
+        chrony_enabled: true
+
+    etcd:
+      hosts:
+        192.168.0.128: { etcd_seq: 1 }
+      vars:
+        etcd_cluster: etcd
+        etcd_safeguard: false
+
+  vars:
+    version: v4.4.0
+    admin_ip: 192.168.0.128
+    region: china
+    proxy_env:
+      no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"
+
+    infra_portal:
+      home         : { domain: i.pigsty }
+      grafana      : { domain: g.pigsty, endpoint: "${admin_ip}:3000", websocket: true }
+      vmetrics     : { domain: p.pigsty, endpoint: "${admin_ip}:8428" }
+      pgadmin      : { domain: adm.pigsty, endpoint: "${admin_ip}:8885" }
+
+    nodename_overwrite: false
+    node_tune: oltp
+    node_etc_hosts: ['${admin_ip} i.pigsty sss.pigsty']
+    node_repo_modules: 'node,infra,pgsql'
+    node_repo_remove: true
+    node_firewall_public_port: [22, 80, 443, 5432, 6432, 3000, 8428, 2379]
+
+    pg_version: 18
+    pg_locale: C.UTF-8
+    pg_lc_collate: C.UTF-8
+    pg_lc_ctype: C.UTF-8
+    pg_conf: oltp.yml
+    pg_safeguard: false
+    pg_packages: [ pgsql-main, pgsql-common ]
+
+    grafana_admin_password: pigsty
+    grafana_view_password: DBUser.Viewer
+    pg_admin_password: DBUser.DBA
+    pg_monitor_password: DBUser.Monitor
+    pg_replication_password: DBUser.Replicator
+    patroni_password: Patroni.API
+    haproxy_admin_password: pigsty
+    etcd_root_password: Etcd.Root
