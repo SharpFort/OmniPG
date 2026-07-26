@@ -36,10 +36,21 @@ echo "  ✅ 完成"
 
 # 4. 创建 JWKS 端点路由
 echo "[4/6] 创建 JWKS 公钥端点路由..."
+# 确定 jwks_route.yaml 的路径（兼容从 gateway/ 或项目根目录调用）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+if [ -f "apisix/jwks_route.yaml" ]; then
+  JWKS_ROUTE_FILE="apisix/jwks_route.yaml"
+elif [ -f "$PROJECT_DIR/gateway/apisix/jwks_route.yaml" ]; then
+  JWKS_ROUTE_FILE="$PROJECT_DIR/gateway/apisix/jwks_route.yaml"
+else
+  echo "  ❌ 找不到 jwks_route.yaml"
+  exit 1
+fi
 curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/routes/jwks" \
   -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
   -H "Content-Type: application/json" \
-  -d @apisix/jwks_route.yaml
+  -d @"$JWKS_ROUTE_FILE"
 echo "  ✅ 完成"
 
 # 5. 创建业务路由

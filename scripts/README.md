@@ -234,17 +234,20 @@ E:\Projects\OmniPG\
 │   ├── start.sh          # 一键启动
 │   ├── stop.sh           # 一键停止
 │   └── README.md         # 本文档
-├── deploy\
-│   ├── pigsty.yml        # Pigsty 完整配置
-│   ├── pgbouncer.ini     # pgBouncer 配置
-│   ├── userlist.txt      # pgBouncer 用户列表
-│   ├── redis.conf        # Redis 配置
-│   ├── pg_hba.conf       # PostgreSQL HBA 配置
-│   └── postgresql.conf   # PostgreSQL 配置
 ├── docs\                 # 文档
 ├── db\                   # 数据库脚本
-├── apisix\               # APISIX 配置
-├── syncer\               # Policy Syncer
-├── docker-compose.yml    # Docker Compose 配置
+├── gateway\              # 网关代码 (Docker + APISIX + PostgREST)
+│   ├── docker-compose.yml
+│   ├── apisix\
+│   └── postgrest\
+├── infra\                # Pigsty 基础设施配置
+│   ├── pigsty.yml
+│   ├── pigsty.db.yml
+│   ├── pigsty.gateway.yml
+│   ├── pg_hba.conf
+│   ├── pgbouncer.ini
+│   ├── redis.conf
+│   ├── postgresql.conf
+│   └── userlist.txt
 └── .env                  # 环境变量
 ```

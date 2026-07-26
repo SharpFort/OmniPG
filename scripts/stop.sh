@@ -21,7 +21,7 @@ echo "=========================================="
 
 # Step 1: 停止 Docker Compose
 log_step "停止 Docker Compose..."
-cd /mnt/e/Projects/OmniPG 2>/dev/null || cd ~/OmniPG 2>/dev/null || true
+cd /mnt/e/Projects/OmniPG/gateway 2>/dev/null || cd ~/OmniPG/gateway 2>/dev/null || true
 docker compose down 2>/dev/null || true
 log_info "Docker Compose 已停止"
 

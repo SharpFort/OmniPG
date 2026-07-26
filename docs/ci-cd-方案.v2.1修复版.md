@@ -17,10 +17,10 @@
 | 3 | 数据库迁移 | dbmate + 幂等源码 (apply-src.sh) |
 | 4 | Redis 部署 | **Pigsty 统一管理**（Phase 1 WSL2 / Phase 2 Docker 模块），Docker Compose 不单独部署 Redis |
 | 5 | 目录重组 | 完全重组 (db/gateway/infra) |
-| 6 | Syncer 部署 | 与后端同目录 (`db/syncer/`)，支持 Docker 和 Systemd 二进制运行 |
-| 7 | VIBE 模块 | 配置预留，暂不部署 |
+| 6 | Syncer 部署 | 与后端同目录 (`db/syncer/`)，**部署在 DB 服务器**，支持 Docker 和 Systemd 二进制运行 |
+| 7 | VIBE 模块 | 配置预留，**部署在 DB 服务器**，暂不部署 |
 | 8 | CI/CD 触发 | 路径过滤 + 手动部署 |
-| 9 | 密钥管理 | GitHub Secrets |
+| 9 | 密钥管理 | **三层架构：本地 `.env` → CI GitHub Secrets → 服务器环境变量** |
 | 10 | 基础组件 | Pigsty 统一管理 PostgreSQL/pgBouncer/Redis/etcd/Docker，DB 和网关服务器均需安装 Pigsty |
 
 ---
@@ -33,7 +33,7 @@
 |:---|:---|:---|:---|
 | `pigsty.yml` | ✅ 必须 | Phase 1 单机完整配置（PostgreSQL、pgBocker、Redis、etcd、Grafana、VictoriaMetrics、Docker、VIBE） | 仅在基础设施变更时 |
 | `pigsty.db.yml` | ✅ 必须 | Phase 2 DB 服务器配置（含全量 INFRA 模块用于监控） | 仅在基础设施变更时 |
-| `pigsty.gateway.yml` | ✅ 必须 | Phase 2 网关服务器配置（Docker + VIBE + Redis） | 仅在基础设施变更时 |
+| `pigsty.gateway.yml` | ✅ 必须 | Phase 2 网关服务器配置（Docker + Redis），VIBE 部署在 DB 服务器 | 仅在基础设施变更时 |
 | `pg_hba.conf` | ✅ 必须 | PostgreSQL 客户端认证规则（scram-sha-256 + Docker 网桥 + 内网） | 新增网络段时 |
 | `pgbouncer.ini` | ✅ 必须 | pgBouncer 连接池配置（认证方式、池化模式、数据库路由） | 新增数据库时 |
 | `redis.conf` | ✅ 必须 | Redis 服务端配置（绑定地址、持久化、内存策略） | 调整性能参数时 |
@@ -303,7 +303,10 @@ OmniPG/
 **关键设计决策**：
 - **幂等性**：可以重复执行。如果 Pigsty 已安装且版本正确，则跳过安装
 - **配置覆盖**：每次执行都会同步最新配置，确保基础设施状态一致
-- **Phase 2 支持**：通过参数指定 db/gateway，使用不同的 pigsty.yml
+- **Phase 2 支持**：通过参数指定部署模式
+  - `deploy-infra.sh db` → 使用 `infra/pigsty.db.yml`，复制 `pg_hba.conf`、`pgbouncer.ini`、`userlist.txt`、`redis.conf`
+  - `deploy-infra.sh gateway` → 使用 `infra/pigsty.gateway.yml`，仅 Docker 模块，**不复制** pg_hba/pgbouncer/userlist
+  - `deploy-infra.sh`（无参数）→ 默认单机模式，使用 `infra/pigsty.yml`
 
 #### deploy-db.sh
 
@@ -313,6 +316,7 @@ OmniPG/
 # 数据库部署脚本
 # 用法: ./scripts/deploy-db.sh <environment>
 # 依赖: deploy-infra.sh 必须先执行（确保 PostgreSQL 已就绪）
+# 前提: 目标服务器已安装 dbmate（安装方式见下文）
 # =============================================================================
 
 # 执行流程:
@@ -327,6 +331,17 @@ OmniPG/
 # - 不负责 Pigsty 安装（由 deploy-infra.sh 负责）
 # - 仅处理数据库层面的变更
 # - 可被 CI/CD 独立调用（当仅 db/ 变更时）
+```
+
+**dbmate 安装说明：**
+
+```
+dbmate 需要在目标服务器上安装。
+安装方式（二选一）：
+  1. 通过 Pigsty DOCKER 模块部署（推荐 Phase 2）
+  2. 直接下载二进制：
+     curl -fsSL https://github.com/amacneil/dbmate/releases/latest/download/dbmate-linux-amd64 -o /usr/local/bin/dbmate
+     chmod +x /usr/local/bin/dbmate
 ```
 
 #### deploy-gateway.sh
@@ -395,9 +410,11 @@ OmniPG/
 # - 每个子脚本都支持幂等，可安全重复执行
 # - 如果某步骤已完成，会自动跳过或快速通过
 # 适用场景:
+# - ⚠️ 仅适用于 Phase 1 单机环境（DB + 网关在同一服务器）
 # - WSL2 开发环境初始化
 # - 测试服务器重建
 # - 灾难恢复
+# Phase 2 分离环境请分别执行 deploy-infra.sh db / gateway + deploy-db.sh + deploy-gateway.sh
 ```
 
 ### 4.3 完整部署文件调用图
@@ -544,7 +561,49 @@ jobs:
 | **幂等源码** | `db/src/` | 函数/触发器/视图 | apply-src.sh | 无需回滚 (CREATE OR REPLACE) |
 | **初始化** | `db/init/` | 扩展/Schema | 手动执行 | 一次性 |
 
-### 6.2 迁移工作流
+### 6.2 dbmate 与 apply-src.sh 的关系（重要澄清）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    数据库部署的两个层面                          │
+│                                                                 │
+│  1. dbmate 迁移（db/migrations/）                               │
+│     - 用途：表结构变更（CREATE TABLE、ALTER TABLE、DROP COLUMN） │
+│     - 特点：只执行一次，不可逆（需手动编写 down 回滚）           │
+│     - 时机：每次部署前执行 `dbmate up`                          │
+│                                                                 │
+│  2. apply-src.sh 幂等源码（db/src/）                            │
+│     - 用途：函数、视图、触发器、权限、索引                       │
+│     - 特点：可重复执行（CREATE OR REPLACE）                      │
+│     - 时机：每次部署后执行，确保代码最新                         │
+│                                                                 │
+│  结论：deploy-db.sh = dbmate up + apply-src.sh，缺一不可        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 6.3 db/init 目录与 Pigsty 的职责边界
+
+| 文件 | 职责 | Pigsty 是否管理？ | 建议 |
+|:---|:---|:---|:---|
+| `01-extensions.sql` | 安装 PG 扩展 | ⚠️ 部分 | Pigsty 负责基础扩展安装；init 处理需要额外配置的扩展（如 pg_net、pg_cron 需要 shared_preload_libraries） |
+| `02-schemas.sql` | 创建业务 Schema | ❌ 不管理 | init 一次性创建基础 Schema；src 中幂等维护（CREATE IF NOT EXISTS） |
+| `03-casdoor-db.sql` | 创建 Casdoor 数据库及初始配置 | ⚠️ 部分 | Pigsty 的 `pg_databases` 负责数据库创建；init 处理自定义初始数据 |
+
+**init 目录执行时机：**
+- 首次部署时手动执行一次
+- 后续变更通过 dbmate 迁移或 apply-src.sh 处理
+- 不应包含幂等逻辑（与 src/ 不同），表示一次性操作
+
+### 6.4 schema.sql 说明
+
+`db/schema.sql` 是**开发时生成的全量 DDL 导出**，用途：
+- 参考：查看当前数据库完整结构
+- 文档：作为数据库设计的文档
+- 对比：与迁移文件对比，验证迁移完整性
+
+⚠️ **此文件不用于部署！仅作参考。**
+
+### 6.5 迁移工作流
 
 ```bash
 # 创建迁移
@@ -669,11 +728,27 @@ WantedBy=multi-user.target
 | APISIX | 网关服务器 (Docker) | 0.0.0.0:9080 | 公网入口 |
 | PostgREST | 网关服务器 (Docker) | 内网:3001 | 仅 APISIX 可访问 |
 | Casdoor | 网关服务器 (Docker) | 0.0.0.0:8000 | 公网入口 |
-| Syncer | 网关服务器 (Systemd 二进制) | 内网:8080 | 系统级进程，高可靠 |
+| Syncer | DB 服务器 (Systemd 二进制) | 内网:8080 | 系统级进程，高可靠 |
 
 ---
 
-## 九、GitHub Secrets 清单
+### 9.1 密钥管理三层架构
+
+| 层级 | 环境 | 管理方式 | 说明 |
+|:---|:---|:---|:---|
+| 本地开发 | 开发者机器 | `.env` 文件 | 不提交到 Git，通过 `source .env` 或工具加载 |
+| CI/CD | GitHub Actions | GitHub Secrets | 存储在仓库 Settings → Secrets，workflow 中通过 `${{ secrets.XXX }}` 引用 |
+| 服务器运行 | 生产/Staging 服务器 | 环境变量或配置文件 | CI/CD 部署时注入，或通过 Systemd `EnvironmentFile` 加载 |
+
+**配置预留：**
+- `.env.example` 文件中列出所有需要的变量（不含真实值）
+- 本地复制为 `.env` 并填写实际值
+- GitHub Secrets 中添加同名变量
+- 部署脚本中通过环境变量读取（不硬编码到代码）
+
+> 本地测试环境**不使用** GitHub Secrets，仅 CI/CD 和生产环境使用。
+
+### 9.2 Secrets 清单
 
 | Secret | 说明 | 环境 |
 |:---|:---|:---|

@@ -92,7 +92,7 @@ fi
 # -----------------------------------
 log_step "3/5 启动 Docker Compose 服务..."
 if command -v docker &>/dev/null; then
-    cd /mnt/e/Projects/OmniPG
+    cd /mnt/e/Projects/OmniPG/gateway
     docker compose up -d 2>/dev/null && log_info "Docker Compose 服务已启动" || log_warn "Docker Compose 启动失败 (可能配置文件未更新)"
 else
     log_warn "跳过 Docker Compose (Docker 不可用)"

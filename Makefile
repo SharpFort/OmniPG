@@ -35,7 +35,7 @@ dev:
 	cd gateway && docker compose up -d
 	@echo "等待服务启动..."
 	@sleep 10
-	bash scripts/setup_apisix.sh
+	cd gateway && bash ../scripts/setup_apisix.sh
 
 dev-down:
 	cd gateway && docker compose down
