@@ -47,6 +47,6 @@ plugin_attr:
     rejected_code: 429
     rejected_msg: '{"error":"rate_limit","message":"Too many requests"}'
     policy: redis
-    redis_host: app-redis
+    redis_host: host.docker.internal
     redis_port: 6379
     redis_timeout: 1000

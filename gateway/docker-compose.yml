@@ -3,12 +3,10 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
+        - subnet: 172.0.0.0/16
 
 volumes:
   casdoor_data:
-    driver: local
-  redis_data:
     driver: local
 
 services:
@@ -33,9 +31,6 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - app-net
-    depends_on:
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
       interval: 10s
@@ -152,20 +147,5 @@ services:
 
   # ============================================================================
   # Redis (APISIX 限流 / Casdoor 缓存)
+  # 注意：Redis 由 Pigsty 管理（WSL2 :6379），Docker 中不单独部署
   # ============================================================================
-  redis:
-    image: redis:7-alpine
-    container_name: app-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru

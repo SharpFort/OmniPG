@@ -189,7 +189,7 @@ global_rules:
         rejected_code: 429
         key: "consumer_name || ':' || remote_addr"
         policy: redis
-        redis_host: app-redis
+        redis_host: host.docker.internal
         redis_port: 6379
         redis_timeout: 1000
 

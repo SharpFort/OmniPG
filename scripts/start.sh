@@ -164,7 +164,7 @@ echo "    APISIX:        http://localhost:9080"
 echo "    PostgREST:     http://localhost:3001"
 echo "    Casdoor:       http://localhost:8000"
 echo "    Swagger UI:    http://localhost:8082"
-echo "    Redis(Docker): localhost:6379"
+echo "    Syncer:        http://localhost:8080"
 echo ""
 echo "=========================================="
 
