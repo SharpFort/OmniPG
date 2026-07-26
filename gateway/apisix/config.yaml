@@ -1,7 +1,7 @@
 deployment:
   role: traditional
   role_traditional:
-    config_provider: etcd
+    config_provider: yaml
   admin:
     allow_admin:
       - 0.0.0.0/0
