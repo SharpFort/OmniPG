@@ -25,8 +25,8 @@ services:
       - "9443:9443"
       - "9180:9180"
     volumes:
-      - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
-      - ./apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - /root/OmniPG/gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - /root/OmniPG/gateway/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
