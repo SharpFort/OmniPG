@@ -118,7 +118,7 @@ services:
   # ============================================================================
   syncer:
     build:
-      context: ./syncer
+      context: ../db/syncer
       dockerfile: Dockerfile
     container_name: policy-syncer
     restart: unless-stopped
