@@ -81,9 +81,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Docker Compose validate
-        run: docker compose -f gateway/docker-compose.yml config --quiet
+        run: cd gateway && docker compose config --quiet
       - name: Docker build
-        run: docker compose -f gateway/docker-compose.yml build
+        run: cd gateway && docker compose build
 
   syncer-check:
     needs: detect-changes

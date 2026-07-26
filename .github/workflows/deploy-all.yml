@@ -1,4 +1,4 @@
-name: Deploy Database
+name: Deploy All (One-Click)
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ on:
         options:
           - staging
           - production
-      migration_only:
-        description: '仅执行迁移'
+      skip_tests:
+        description: '跳过 E2E 测试'
         required: false
         type: boolean
         default: false
@@ -29,12 +29,10 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
       
-      - name: Deploy Database
+      - name: Deploy All Components
         env:
           SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          DBMATE_URL: ${{ secrets.DBMATE_DATABASE_URL }}
-          DB_URI: ${{ secrets.DB_URI }}
         run: |
           ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
             set -euo pipefail
@@ -45,26 +43,20 @@ jobs:
             git checkout ${{ github.ref_name }}
             git pull origin ${{ github.ref_name }}
             
-            # 使用部署脚本
-            bash scripts/deploy-db.sh ${{ inputs.environment }}
+            # 使用一键部署脚本
+            bash scripts/deploy-all.sh ${{ inputs.environment }}
           EOF
       
-      - name: Verify Deployment
+      - name: Run E2E Tests
+        if: ${{ inputs.skip_tests != true }}
         env:
           SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-          DB_URI: ${{ secrets.DB_URI }}
         run: |
           ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
             set -euo pipefail
             cd ~/OmniPG
             
-            # 检查迁移状态
-            export DBMATE_DATABASE_URL="${{ env.DBMATE_URL }}"
-            dbmate status
-            
-            # 验证关键函数存在
-            psql "${{ env.DB_URI }}" -c "SELECT count(*) FROM information_schema.routines WHERE routine_schema = 'api_v1_sys';"
-            
-            echo "=== 验证完成 ==="
+            # 运行端到端测试
+            bash scripts/e2e-test.sh
           EOF

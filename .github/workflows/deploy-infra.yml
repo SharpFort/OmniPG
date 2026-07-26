@@ -1,0 +1,52 @@
+name: Deploy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: '部署环境'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      mode:
+        description: '部署模式'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - db
+          - gateway
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+      
+      - name: Deploy Infrastructure
+        env:
+          SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
+            set -euo pipefail
+            
+            # 拉取最新代码
+            cd ~/OmniPG
+            git fetch origin
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            
+            # 使用部署脚本
+            bash scripts/deploy-infra.sh ${{ inputs.mode }} ${{ inputs.environment }}
+          EOF
