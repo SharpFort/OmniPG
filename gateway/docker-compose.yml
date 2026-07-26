@@ -111,7 +111,7 @@ services:
       - app-net
     depends_on:
       postgrest:
-        condition: service_healthy
+        condition: service_started
 
   # ============================================================================
   # Policy Syncer (策略同步器)
