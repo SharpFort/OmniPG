@@ -869,21 +869,21 @@ cd /mnt/e/Projects/OmniPG
 
 ### Phase 1: 目录重组（仅本地，不改变运行逻辑）
 
-- [ ] 创建 `gateway/` 目录，移动 `docker-compose.yml`、`apisix/`、`postgrest/`
-- [ ] 创建 `gateway/.env.example`（从根目录 `.env.example` 复制并适配）
-- [ ] 将 `pigsty.yml`、`pg_hba.conf`、`pgbouncer.ini`、`redis.conf`、`userlist.txt` 从 `deploy/` 移动到 `infra/`
-- [ ] 将 `syncer/` 移动到 `db/syncer/`
-- [ ] 更新 `Makefile` 中的路径引用
-- [ ] 更新 `.gitignore`
-- [ ] 更新 `docker-compose.yml`（移除 Redis 服务，改用主机 Redis）
+- [x] 创建 `gateway/` 目录，移动 `docker-compose.yml`、`apisix/`、`postgrest/`
+- [x] 创建 `gateway/.env.example`（从根目录 `.env.example` 复制并适配）
+- [x] 将 `pigsty.yml`、`pg_hba.conf`、`pgbouncer.ini`、`redis.conf`、`userlist.txt` 从 `deploy/` 移动到 `infra/`
+- [x] 将 `syncer/` 移动到 `db/syncer/`
+- [x] 更新 `Makefile` 中的路径引用
+- [x] 更新 `.gitignore`
+- [x] 更新 `docker-compose.yml`（移除 Redis 服务，改用主机 Redis）
 
 ### Phase 2: 脚本补充
 
-- [ ] 创建 `scripts/deploy-infra.sh`（Pigsty 安装 + 配置同步）
-- [ ] 创建 `scripts/deploy-all.sh`（一键编排）
-- [ ] 创建 `scripts/migrate.sh`（dbmate 快捷入口）
-- [ ] 修复 `scripts/deploy-gateway.sh` 中的路径（`gateway/` 目录）
-- [ ] 更新 `scripts/start.sh` 适配新目录结构
+- [x] 创建 `scripts/deploy-infra.sh`（Pigsty 安装 + 配置同步）
+- [x] 创建 `scripts/deploy-all.sh`（一键编排）
+- [x] 创建 `scripts/migrate.sh`（dbmate 快捷入口）
+- [x] 修复 `scripts/deploy-gateway.sh` 中的路径（`gateway/` 目录）
+- [x] 更新 `scripts/start.sh` 适配新目录结构
 
 ### Phase 3: CI/CD 配置
 
