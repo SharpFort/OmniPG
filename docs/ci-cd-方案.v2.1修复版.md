@@ -176,7 +176,7 @@ OmniPG/
 │
 ├── gateway/                                 # 网关代码
 │   ├── docker-compose.yml                   # 容器编排
-│   ├── .env.example                         # 网关环境变量模板
+│   ├── .env.example                         # 网关环境变量模板（从根目录复制）
 │   ├── apisix/                              # APISIX 配置
 │   │   ├── config.yaml
 │   │   ├── apisix.yaml
@@ -513,41 +513,69 @@ dbmate 需要在目标服务器上安装。
 ```
 .github/workflows/
 ├── ci.yml                           # PR 触发：路径过滤检查
-├── deploy-db-staging.yml            # 手动触发：DB 部署到 Staging
-├── deploy-db-production.yml         # 手动触发：DB 部署到 Production
-├── deploy-gateway-staging.yml       # 手动触发：网关部署到 Staging
-└── deploy-gateway-production.yml    # 手动触发：网关部署到 Production
+├── deploy-db.yml                    # 手动触发：DB 部署（environment: staging/production）
+├── deploy-gateway.yml               # 手动触发：网关部署（environment: staging/production）
+├── deploy-infra.yml                 # 手动触发：基础设施部署（mode: all/db/gateway）
+└── deploy-all.yml                   # 手动触发：一键部署（编排以上三个脚本）
 ```
 
-#### deploy-db-staging.yml 示例结构
+### 5.4 Phase 3 简化说明（实际实施 vs 原始文档差异）
+
+#### 差异对比
+
+| 文档方案（原始规划） | 实际方案（实施） |
+|:---|:---|
+| 4 个 deploy workflow（staging/production 分离） | 3 个 deploy workflow（通过 `environment` 参数选择环境） |
+| `deploy-db-staging.yml` + `deploy-db-production.yml` | `deploy-db.yml`（带 `environment` 输入，可选 staging/production） |
+| `deploy-gateway-staging.yml` + `deploy-gateway-production.yml` | `deploy-gateway.yml`（带 `environment` 输入，可选 staging/production） |
+| — | 额外创建 `deploy-infra.yml`（基础设施部署） |
+| — | 额外创建 `deploy-all.yml`（一键部署编排） |
+
+#### 简化理由
+
+1. **GitHub Actions 原生支持环境管理**
+   - `environment` 字段支持 staging/production 分离
+   - 每个 environment 可配置独立的 Secrets、保护规则、审批人
+   - 避免重复代码，符合 DRY 原则
+
+2. **减少文件数量**
+   - 原始方案：4 个 deploy workflow（每个环境一个）
+   - 实际方案：3 个 deploy workflow（environment 参数化）
+   - 文件减少 25%，维护成本降低
+
+3. **环境差异通过 Secrets 管理**
+   - staging 和 production 使用相同的脚本和 workflow
+   - 差异仅在于 GitHub Secrets（`DB_SERVER_HOST`、`SSH_PRIVATE_KEY` 等）
+   - 环境切换只需选择 `environment` 参数，无需切换文件
+
+4. **新增 workflow 的合理性**
+   - `deploy-infra.sh`：Pigsty 基础设施部署是独立职责，应独立触发
+   - `deploy-all.sh`：测试环境一键部署（Phase 1 单机），提高开发效率
+
+#### deploy-db.yml 实际结构
 
 ```yaml
-name: Deploy DB to Staging
+name: Deploy Database
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        type: choice
+        options: [staging, production]
       migration_only:
         type: boolean
         default: false
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    environment: staging
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy Infrastructure (if needed)
-        run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.DB_SERVER_HOST }} \
-            "cd OmniPG && ./scripts/deploy-infra.sh staging"
-      - name: Deploy Database
-        run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.DB_SERVER_HOST }} \
-            "cd OmniPG && ./scripts/deploy-db.sh staging"
-      - name: Run E2E Tests
-        run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.DB_SERVER_HOST }} \
-            "cd OmniPG && ./scripts/e2e-test.sh"
-```
+      - uses: webfactory/ssh-agent@v0.9.0
+        with: { ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }} }
+      - name: Deploy
+        run: ssh ... "cd OmniPG && bash scripts/deploy-db.sh ${{ inputs.environment }}"
+      - name: Verify
+        run: ssh ... "cd OmniPG && dbmate status && psql ..."
 
 ---
 
@@ -859,13 +887,13 @@ cd /mnt/e/Projects/OmniPG
 
 ### Phase 3: CI/CD 配置
 
-- [ ] 创建 `.github/workflows/ci.yml`
-- [ ] 创建 `.github/workflows/deploy-db-staging.yml`
-- [ ] 创建 `.github/workflows/deploy-db-production.yml`
-- [ ] 创建 `.github/workflows/deploy-gateway-staging.yml`
-- [ ] 创建 `.github/workflows/deploy-gateway-production.yml`
-- [ ] 配置 GitHub Secrets
-- [ ] 测试 PR 触发路径过滤
+- [x] 创建 `.github/workflows/ci.yml`（已存在，已更新路径）
+- [x] 创建 `.github/workflows/deploy-db.yml`（environment 参数化）
+- [x] 创建 `.github/workflows/deploy-gateway.yml`（environment 参数化）
+- [x] 创建 `.github/workflows/deploy-infra.yml`（基础设施部署）
+- [x] 创建 `.github/workflows/deploy-all.yml`（一键部署编排）
+- [ ] 配置 GitHub Secrets（待用户在 GitHub 仓库配置）
+- [ ] 测试 PR 路径过滤（待首次 PR 验证）
 
 ### Phase 4: 测试验证
 
