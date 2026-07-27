@@ -10,8 +10,8 @@ echo "APISIX Admin: ${APISIX_ADMIN_URL}"
 echo "Casdoor URL:  ${CASDOOR_URL}"
 echo ""
 
-# 1. 写入 Casbin model.conf 到 etcd
-echo "[1/6] 写入 Casbin model 配置..."
+# 1. 写入 Casbin model.conf 到 APISIX
+echo "[1/3] 写入 Casbin model 配置..."
 curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/plugin_metadata/authz-casbin" \
   -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
   -H "Content-Type: application/json" \
@@ -22,105 +22,22 @@ curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/plugin_metadata/authz-casbin" \
 echo "  ✅ 完成"
 
 # 2. 获取 Casdoor JWKS
-echo "[2/6] 获取 Casdoor JWKS 公钥..."
+echo "[2/3] 获取 Casdoor JWKS 公钥..."
 JWKS=$(curl -s "${CASDOOR_URL}/.well-known/jwks")
 echo "  JWKS: ${JWKS:0:100}..."
 
 # 3. 配置 jwt-auth
-echo "[3/6] 配置 jwt-auth 插件..."
+echo "[3/3] 配置 jwt-auth 插件..."
 curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/plugin_metadata/jwt-auth" \
   -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
   -H "Content-Type: application/json" \
   -d "{\"algorithm\": \"RS256\", \"key\": \"${JWKS}\"}"
 echo "  ✅ 完成"
 
-# 4. 创建 JWKS 端点路由
-echo "[4/6] 创建 JWKS 公钥端点路由..."
-# 确定 jwks_route.yaml 的路径（兼容从 gateway/ 或项目根目录调用）
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-if [ -f "apisix/jwks_route.yaml" ]; then
-  JWKS_ROUTE_FILE="apisix/jwks_route.yaml"
-elif [ -f "$PROJECT_DIR/gateway/apisix/jwks_route.yaml" ]; then
-  JWKS_ROUTE_FILE="$PROJECT_DIR/gateway/apisix/jwks_route.yaml"
-else
-  echo "  ❌ 找不到 jwks_route.yaml"
-  exit 1
-fi
-curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/routes/jwks" \
-  -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
-  -H "Content-Type: application/json" \
-  -d @"$JWKS_ROUTE_FILE"
-echo "  ✅ 完成"
-
-# 5. 创建业务路由
-echo "[5/6] 创建业务路由 (api-v1)..."
-curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/routes/api-v1" \
-  -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "uri": "/api/v1/*",
-    "plugins": {
-      "serverless-pre-function": {
-        "phase": "rewrite",
-        "functions": [
-          "return function(conf, ctx)\n    local cjson = require(\"cjson\")\n    local base64 = require(\"ngx.base64\")\n    local auth_header = ngx.req.get_headers()[\"Authorization\"]\n    if auth_header and string.sub(auth_header, 1, 7) == \"Bearer \" then\n        local token = string.sub(auth_header, 8)\n        local parts = {}\n        for part in string.gmatch(token, \"[^.]+\") do\n            table.insert(parts, part)\n        end\n        if #parts >= 2 then\n            local payload_b64 = parts[2]\n            payload_b64 = string.gsub(payload_b64, \"-\", \"+\")\n            payload_b64 = string.gsub(payload_b64, \"_\", \"/\")\n            local rem = #payload_b64 % 4\n            if rem > 0 then\n                payload_b64 = payload_b64 .. string.rep(\"=\", 4 - rem)\n            end\n            local decoded = base64.decode_base64(payload_b64)\n            if decoded then\n                local status, jwt_json = pcall(cjson.decode, decoded)\n                if status and jwt_json and jwt_json.roles then\n                    local roles_str = table.concat(jwt_json.roles, \",\")\n                    ngx.req.set_header(\"X-User-Role\", roles_str)\n                    if jwt_json.user_id or jwt_json.sub then\n                        ngx.req.set_header(\"X-User-Id\", jwt_json.user_id or jwt_json.sub)\n                    end\n                    if jwt_json.tenant_id then\n                        ngx.req.set_header(\"X-Tenant-Id\", jwt_json.tenant_id)\n                    end\n                end\n            end\n        end\n    end\nend"
-        ]
-      },
-      "jwt-auth": {},
-      "authz-casbin": {
-        "username": "X-User-Role"
-      },
-      "cors": {
-        "allow_origins": "http://localhost:5173",
-        "allow_methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS",
-        "allow_headers": "Authorization,Content-Type,Accept-Profile,Prefer",
-        "expose_headers": "Content-Range,Location",
-        "allow_credential": true,
-        "max_age": 1728000
-      },
-      "limit-req": {
-        "rate": 100,
-        "burst": 50,
-        "key_type": "var",
-        "key": "remote_addr",
-        "rejected_code": 429,
-        "rejected_msg": "{\"error\":\"rate_limit\",\"message\":\"Too many requests\"}"
-      }
-    },
-    "upstream": {
-      "type": "roundrobin",
-      "nodes": {
-        "postgrest:3000": 1
-      }
-    }
-  }'
-echo "  ✅ 完成"
-
-# 6. 创建 Casdoor Callback 路由
-echo "[6/6] 创建 Casdoor Callback 路由..."
-curl -s -X PUT "${APISIX_ADMIN_URL}/apisix/admin/routes/callback" \
-  -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "uri": "/cb",
-    "plugins": {
-      "proxy-rewrite": {
-        "uri": "/"
-      }
-    },
-    "upstream": {
-      "type": "roundrobin",
-      "nodes": {
-        "casdoor:8000": 1
-      }
-    }
-  }'
-echo "  ✅ 完成"
-
 echo ""
-echo "=== APISIX 配置完成 ==="
+echo "=== APISIX 插件配置完成 ==="
+echo "路由已由 apisix.yaml 静态加载，无需通过 Admin API 创建。"
 echo "后续步骤："
-echo " 1. 启动 Policy Syncer 容器"
-echo " 2. 通过 Casdoor 控制台创建组织架构和应用"
-echo " 3. 在 casbin_rule 中插入访问策略"
+echo "  1. 启动 Policy Syncer 容器"
+echo "  2. 通过 Casdoor 控制台创建组织架构和应用"
+echo "  3. 在 casbin_rule 中插入访问策略"
