@@ -70,11 +70,7 @@ echo "  ✅ pigsty.yml 已复制"
 
 # 根据模式复制额外配置文件
 if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
-    # 复制 PG 相关配置
-    if [ -f "$PROJECT_DIR/infra/pg_hba.conf" ]; then
-        cp "$PROJECT_DIR/infra/pg_hba.conf" "$HOME/pigsty/pg_hba.conf"
-        echo "  ✅ pg_hba.conf 已复制"
-    fi
+    # 复制 PG 相关配置（pg_hba.conf 由 pigsty.yml 中的 pg_hba_rules 生成，无需单独复制）
     if [ -f "$PROJECT_DIR/infra/pgbouncer.ini" ]; then
         sudo mkdir -p /etc/pgbouncer
         sudo cp "$PROJECT_DIR/infra/pgbouncer.ini" /etc/pgbouncer/pgbouncer.ini
