@@ -60,6 +60,8 @@ services:
       PGRST_DB_TX_END: "commit"
     ports:
       - "3001:3000"
+    volumes:
+      - /root/OmniPG/gateway/postgrest/postgrest.conf:/etc/postgrest/postgrest.conf:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
