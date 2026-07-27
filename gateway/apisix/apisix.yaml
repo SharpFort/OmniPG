@@ -1,9 +1,4 @@
 routes:
-  # ============================================================================
-  # 1. 公开接口（无需认证）
-  # ============================================================================
-  
-  # JWKS 公钥端点（PostgREST 验证 JWT 需要）
   - uri: /well-known/jwks
     upstream:
       type: roundrobin
@@ -14,10 +9,6 @@ routes:
         uri: /.well-known/jwks.json
     priority: 100
 
-  # ============================================================================
-  # 2. 认证接口（匿名可访问）
-  # ============================================================================
-  
   - uri: /rpc/user_login_sso
     upstream:
       type: roundrobin
@@ -53,14 +44,6 @@ routes:
               minLength: 64
     priority: 90
 
-  # ============================================================================
-  # 3. 需要认证的接口（JWT + Casbin 授权）
-  # ============================================================================
-  
-  # ----------------------------------------------------------------------------
-  # 3.1 sys 模块 — 系统管理接口
-  # ----------------------------------------------------------------------------
-  # 路径重写规则：/api/v1/sys/* → /api_v1_sys/*
   - uri: /api/v1/sys/*
     upstream:
       type: roundrobin
@@ -70,15 +53,8 @@ routes:
       proxy-rewrite:
         regex_uri: ["^/api/v1/sys/(.*)", "/api_v1_sys/$1"]
       jwt-auth: {}
-      authz-casbin:
-        model_path: "/usr/local/apisix/conf/casbin_model.conf"
-        policy_path: "/usr/local/apisix/conf/casbin_rule"
-        target_type: "var"
-        target_value: "request_uri"
-        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 50
 
-  # sys 模块通用 RPC 函数（高优先级）
   - uri: /rpc/*
     upstream:
       type: roundrobin
@@ -86,15 +62,8 @@ routes:
         "postgrest:3000": 1
     plugins:
       jwt-auth: {}
-      authz-casbin:
-        model_path: "/usr/local/apisix/conf/casbin_model.conf"
-        policy_path: "/usr/local/apisix/conf/casbin_rule"
-        target_type: "var"
-        target_value: "request_uri"
-        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 40
 
-  # sys 模块业务表 CRUD
   - uri: /*
     upstream:
       type: roundrobin
@@ -102,18 +71,8 @@ routes:
         "postgrest:3000": 1
     plugins:
       jwt-auth: {}
-      authz-casbin:
-        model_path: "/usr/local/apisix/conf/casbin_model.conf"
-        policy_path: "/usr/local/apisix/conf/casbin_rule"
-        target_type: "var"
-        target_value: "request_uri"
-        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 10
 
-  # ----------------------------------------------------------------------------
-  # 3.2 sales 模块 — 销售域接口
-  # ----------------------------------------------------------------------------
-  # 路径重写规则：/api/v1/sales/* → /api_v1_sales/*
   - uri: /api/v1/sales/*
     upstream:
       type: roundrobin
@@ -123,18 +82,8 @@ routes:
       proxy-rewrite:
         regex_uri: ["^/api/v1/sales/(.*)", "/api_v1_sales/$1"]
       jwt-auth: {}
-      authz-casbin:
-        model_path: "/usr/local/apisix/conf/casbin_model.conf"
-        policy_path: "/usr/local/apisix/conf/casbin_rule"
-        target_type: "var"
-        target_value: "request_uri"
-        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 20
 
-  # ----------------------------------------------------------------------------
-  # 3.3 inventory 模块 — 库存域接口
-  # ----------------------------------------------------------------------------
-  # 路径重写规则：/api/v1/inventory/* → /api_v1_inventory/*
   - uri: /api/v1/inventory/*
     upstream:
       type: roundrobin
@@ -144,17 +93,8 @@ routes:
       proxy-rewrite:
         regex_uri: ["^/api/v1/inventory/(.*)", "/api_v1_inventory/$1"]
       jwt-auth: {}
-      authz-casbin:
-        model_path: "/usr/local/apisix/conf/casbin_model.conf"
-        policy_path: "/usr/local/apisix/conf/casbin_rule"
-        target_type: "var"
-        target_value: "request_uri"
-        denial_msg: '{"error":"Forbidden","message":"You do not have permission to access this resource"}'
     priority: 20
 
-  # ============================================================================
-  # 4. 健康检查接口（无需认证）
-  # ============================================================================
   - uri: /healthz
     upstream:
       type: roundrobin
@@ -169,18 +109,16 @@ upstreams:
       "postgrest:3000": 1
 
 global_rules:
-  # CORS 全局规则
   - id: 1
     plugins:
       cors:
-        allow_origins: "http://localhost:5173,http://localhost:3000"
+        allow_origins: "http://localhost:5173,http://localhost:3000,http://192.168.0.128:3000"
         allow_methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS"
         allow_headers: "Authorization,Content-Type,X-Requested-With"
         expose_headers: "X-Total-Count,Content-Range"
         max_age: 3600
         allow_credentials: true
   
-  # 限流策略
   - id: 2
     plugins:
       limit-req:
@@ -195,3 +133,4 @@ global_rules:
 
 consumers: []
 plugin_configs: []
+#END
