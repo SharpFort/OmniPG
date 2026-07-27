@@ -27,6 +27,7 @@ services:
     volumes:
       - /root/OmniPG/gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - /root/OmniPG/gateway/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - /root/OmniPG/gateway/apisix/casbin_model.conf:/usr/local/apisix/conf/casbin_model.conf:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
