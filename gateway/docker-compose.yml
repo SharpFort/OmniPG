@@ -106,7 +106,7 @@ services:
     container_name: app-swagger
     restart: unless-stopped
     environment:
-      API_URL: "http://localhost:3001/"
+      API_URL: "http://192.168.0.128:3001/"
     ports:
       - "8082:8080"
     networks:
