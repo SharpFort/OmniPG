@@ -129,7 +129,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
       SSL_MODE: disable
       APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
-      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6}
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
     ports:
       - "8080:8080"
     extra_hosts:
