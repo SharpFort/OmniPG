@@ -35,7 +35,7 @@ jobs:
       
       - name: Deploy Infrastructure
         env:
-          SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
+          SERVER_HOST: ${{ inputs.mode == 'gateway' && secrets.GATEWAY_SERVER_HOST || secrets.DB_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
           ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'

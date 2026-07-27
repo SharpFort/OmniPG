@@ -15,10 +15,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # 复制源码并编译为静态二进制
-COPY main.go ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags='-w -s -extldflags "-static"' \
-    -o policy-syncer main.go
+    -o policy-syncer ./cmd/syncer/
 
 FROM alpine:3.19
 

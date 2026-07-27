@@ -53,10 +53,14 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.GATEWAY_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          APISIX_ADMIN_KEY: ${{ secrets.APISIX_ADMIN_KEY }}
         run: |
           ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
             set -euo pipefail
             cd ~/OmniPG
+            
+            # 加载环境变量
+            [ -f gateway/.env ] && export $(grep -v '^#' gateway/.env | xargs)
             
             # 初始化 APISIX 路由和插件
             bash scripts/setup_apisix.sh

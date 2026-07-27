@@ -46,6 +46,7 @@ all:
           - name: casdoor
             owner: casdoor
             comment: 'Casdoor IAM database'
+        pg_hba_builtin: []  # 禁用内置规则，使用自定义规则
         pg_hba_rules:
           - type: host
             database: all

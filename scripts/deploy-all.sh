@@ -24,7 +24,7 @@ echo ""
 
 # 1. 基础设施部署
 echo "[1/5] 部署基础设施..."
-if ! bash "$SCRIPT_DIR/deploy-infra.sh" "$ENV"; then
+if ! bash "$SCRIPT_DIR/deploy-infra.sh" all "$ENV"; then
     echo "❌ 基础设施部署失败"
     exit 1
 fi
@@ -49,8 +49,16 @@ fi
 echo ""
 echo "[4/5] 初始化 APISIX..."
 cd "$PROJECT_DIR/gateway"
+# 加载 .env 中的环境变量（APISIX_ADMIN_KEY 等）
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
 if ! bash "$SCRIPT_DIR/setup_apisix.sh"; then
-    echo "⚠️ APISIX 初始化失败（可能路由已存在）"
+    echo "❌ APISIX 初始化失败，请检查:"
+    echo "   1. APISIX Admin API 是否可达 (curl http://localhost:9180)"
+    echo "   2. APISIX_ADMIN_KEY 是否与 config.yaml 一致"
+    echo "   3. 运行 'docker logs app-apisix' 查看详细错误"
+    exit 1
 fi
 cd "$PROJECT_DIR"
 

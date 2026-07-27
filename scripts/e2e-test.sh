@@ -18,10 +18,10 @@ run_test() {
     echo -n "  [$category] $name: "
     if eval "$cmd" > /dev/null 2>&1; then
         echo "✅ PASS"
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
         echo "❌ FAIL"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 }
 
@@ -124,7 +124,7 @@ echo ""
 echo "📋 Phase 4: 角色即时生效"
 
 run_test "REALTIME" "Role Change Invalidates Token" "角色变更后旧 Token 失效" \
-    "docker exec app-postgres psql -U app_owner -d app_db -c \"SELECT trigger_name FROM information_schema.triggers WHERE trigger_name = 'trg_blacklist_on_role_change';\" -t -A 2>/dev/null | grep -q 'trg_blacklist_on_role_change'"
+    "docker exec app-postgrest psql -U app_owner -d app_db -c \"SELECT trigger_name FROM information_schema.triggers WHERE trigger_name = 'trg_blacklist_on_role_change';\" -t -A 2>/dev/null | grep -q 'trg_blacklist_on_role_change'"
 
 run_test "REALTIME" "Policy Sync" "策略同步链路正常" \
     "docker logs policy-syncer --tail=5 2>/dev/null | grep -q 'Successfully synchronized\|listening\|leader'"
@@ -151,7 +151,7 @@ run_test "SYNC" "casbin_rule View" "Casbin 视图可查询" \
     "curl -sf '${BASE_URL}/api/v1/casbin_rule?limit=1' -H 'Authorization: Bearer $TOKEN' | jq -e '.[0].ptype'"
 
 run_test "SYNC" "pg_notify Trigger" "通知触发器存在" \
-    "docker exec app-postgres psql -U app_owner -d app_db -c \"SELECT trigger_name FROM information_schema.triggers WHERE trigger_name = 'trg_reload_on_role_api';\" -t -A 2>/dev/null | grep -q 'trg_reload_on_role_api'"
+    "docker exec app-postgrest psql -U app_owner -d app_db -c \"SELECT trigger_name FROM information_schema.triggers WHERE trigger_name = 'trg_reload_on_role_api';\" -t -A 2>/dev/null | grep -q 'trg_reload_on_role_api'"
 
 run_test "SYNC" "Policy Syncer Running" "Syncer 容器运行中" \
     "docker inspect --format='{{.State.Status}}' policy-syncer 2>/dev/null | grep -q 'running'"

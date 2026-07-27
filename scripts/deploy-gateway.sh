@@ -39,7 +39,12 @@ echo "[3/5] 重启服务..."
 docker compose down
 docker compose up -d
 
-# 4. 等待健康检查
+# 4. 加载环境变量（供 setup_apisix.sh 使用）
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
+
+# 5. 等待健康检查
 echo ""
 echo "[4/5] 等待服务启动..."
 sleep 15

@@ -10,8 +10,8 @@
 
 set -euo pipefail
 
-ENV=${1:-development}
-MODE=${2:-all}  # all, db, gateway
+MODE=${1:-all}  # all, db, gateway
+ENV=${2:-development}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
