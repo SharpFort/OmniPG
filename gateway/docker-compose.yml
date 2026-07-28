@@ -133,8 +133,8 @@ services:
       SSL_MODE: disable
       APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
       APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
-    ports:
-      - "8080:8080"
+    # 注意：不暴露 8080 端口，避免与 WSL2 Nginx/Pigsty 冲突
+    # 如需调试，使用 docker exec policy-syncer curl http://localhost:8080/healthz
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
