@@ -25,3 +25,4 @@ BEGIN
 END;
 $$;
 COMMENT ON FUNCTION api_v1_sys.create_user(text, text, uuid, uuid, text, text) IS '创建用户：自动生成 Argon2id 密码哈希';
+GRANT EXECUTE ON FUNCTION api_v1_sys.create_user(text, text, uuid, uuid, text, text) TO authenticated;

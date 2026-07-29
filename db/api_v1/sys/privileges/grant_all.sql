@@ -23,6 +23,36 @@ GRANT SELECT ON api_v1_sys.sys_user_session TO authenticated;
 GRANT SELECT ON api_v1_sys.sys_user_role_request TO authenticated;
 GRANT SELECT ON api_v1_sys.sys_audit_log TO authenticated;
 GRANT SELECT ON api_v1_sys.sys_cron_log TO authenticated;
+GRANT SELECT ON api_v1_sys.sys_config TO authenticated;
+
+-- 视图查询权限
+GRANT SELECT ON api_v1.v_user_list TO authenticated;
+GRANT SELECT ON api_v1.v_role_list TO authenticated;
+GRANT SELECT ON api_v1.v_dept_list TO authenticated;
+GRANT SELECT ON api_v1.v_audit_log_detail TO authenticated;
+GRANT SELECT ON api_v1.v_system_stats TO authenticated;
+GRANT SELECT ON api_v1.v_user_role_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_api_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_menu_detail TO authenticated;
+GRANT SELECT ON api_v1.v_role_request_detail TO authenticated;
+GRANT SELECT ON api_v1.v_online_users TO authenticated;
+GRANT SELECT ON api_v1.v_audit_log_timeline TO authenticated;
+GRANT SELECT ON api_v1.v_token_blacklist_detail TO authenticated;
+GRANT SELECT ON api_v1.v_system_stats_realtime TO authenticated;
+
+-- 补充 P0 新增的批量操作 RPC GRANT
+GRANT EXECUTE ON FUNCTION api_v1_sys.batch_update_user_status(uuid[], text) TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_sys.batch_assign_role_to_users(uuid, uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_sys.batch_remove_role_from_users(uuid, uuid[]) TO authenticated;
+
+-- 补充 P1 新增配置管理 RPC GRANT
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_config(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_all_public_configs() TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_sys.update_config(text, text) TO authenticated;
+
+-- 补充 P1 新增通用导入导出 RPC GRANT
+GRANT EXECUTE ON FUNCTION api_v1_sys.export_csv(text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_sys.import_csv(text, jsonb, boolean) TO authenticated;
 
 -- =============================================================================
 -- 3.3 role_guest: 只读访问（同 authenticated）
@@ -49,6 +79,7 @@ GRANT INSERT, UPDATE ON api_v1_sys.sys_role_menu TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_sys.sys_user_role_request TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_sys.sys_api TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_sys.sys_menu TO role_admin;
+GRANT INSERT, UPDATE ON api_v1_sys.sys_config TO role_admin;
 GRANT USAGE ON SCHEMA api_v1 TO role_admin;
 
 -- role_admin 也使用软删除

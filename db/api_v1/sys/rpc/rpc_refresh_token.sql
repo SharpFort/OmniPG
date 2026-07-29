@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.refresh_token_rtr(p_old_rt) $$;
 COMMENT ON FUNCTION api_v1_sys.refresh_token_rtr(text) IS '刷新 Token：委托 public.refresh_token_rtr';
+GRANT EXECUTE ON FUNCTION api_v1_sys.refresh_token_rtr(text) TO web_anon;

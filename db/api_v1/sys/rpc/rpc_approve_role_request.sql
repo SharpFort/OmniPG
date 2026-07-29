@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.approve_role_request(p_request_id) $$;
 COMMENT ON FUNCTION api_v1_sys.approve_role_request(uuid) IS '审批角色申请：委托 public.approve_role_request';
+GRANT EXECUTE ON FUNCTION api_v1_sys.approve_role_request(uuid) TO authenticated;

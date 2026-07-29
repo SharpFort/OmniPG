@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.get_user_menu() $$;
 COMMENT ON FUNCTION api_v1_sys.get_user_menu() IS '获取用户菜单树：委托 public.get_user_menu';
+GRANT EXECUTE ON FUNCTION api_v1_sys.get_user_menu() TO authenticated;

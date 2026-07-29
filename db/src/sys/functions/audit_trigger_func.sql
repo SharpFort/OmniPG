@@ -1,22 +1,13 @@
 -- db/src/sys/functions/audit_trigger_func.sql
--- 审计触发器函数：记录 INSERT/UPDATE/DELETE 操作到 sys_audit_log
--- 来源: 20260707000012_audit_triggers.sql
+-- 审计触发器函数：使用 write_audit_log() 标准化写入
+-- P0 修复：统一审计日志写入接口
 
 CREATE OR REPLACE FUNCTION audit_trigger_func()
 RETURNS TRIGGER AS $$
 DECLARE
     v_old_data jsonb;
     v_new_data jsonb;
-    v_tenant_id uuid;
 BEGIN
-    IF TG_NARGS > 0 AND TG_ARGV[0] = 'tenant_aware' THEN
-        IF (TG_OP = 'DELETE') THEN
-            v_tenant_id := OLD.tenant_id;
-        ELSE
-            v_tenant_id := NEW.tenant_id;
-        END IF;
-    END IF;
-
     IF (TG_OP = 'DELETE') THEN
         v_old_data := to_jsonb(OLD);
         v_new_data := NULL;
@@ -28,10 +19,13 @@ BEGIN
         v_new_data := to_jsonb(NEW);
     END IF;
 
-    INSERT INTO sys_audit_log (
-        table_name, operation, old_data, new_data, user_id, tenant_id, created_at
-    ) VALUES (
-        TG_TABLE_NAME, TG_OP, v_old_data, v_new_data, current_user_id(), v_tenant_id, now()
+    -- 使用通用审计函数写入
+    PERFORM public.write_audit_log(
+        p_table_name := TG_TABLE_NAME,
+        p_operation := TG_OP,
+        p_old_data := v_old_data,
+        p_new_data := v_new_data,
+        p_source := 'trigger'
     );
 
     IF (TG_OP = 'DELETE') THEN
@@ -41,4 +35,4 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-COMMENT ON FUNCTION audit_trigger_func() IS '审计触发器函数：记录 INSERT/UPDATE/DELETE 操作到 sys_audit_log';
+COMMENT ON FUNCTION audit_trigger_func() IS '审计触发器函数：使用 write_audit_log() 标准化写入';

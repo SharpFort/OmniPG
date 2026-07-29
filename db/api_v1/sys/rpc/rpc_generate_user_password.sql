@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.generate_user_password(p_password) $$;
 COMMENT ON FUNCTION api_v1_sys.generate_user_password(text) IS '生成 Argon2id 密码哈希';
+GRANT EXECUTE ON FUNCTION api_v1_sys.generate_user_password(text) TO authenticated;

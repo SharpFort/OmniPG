@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.cleanup_expired_tokens() $$;
 COMMENT ON FUNCTION api_v1_sys.cleanup_expired_tokens() IS '清理过期 Token：委托 public.cleanup_expired_tokens';
+GRANT EXECUTE ON FUNCTION api_v1_sys.cleanup_expired_tokens() TO authenticated;

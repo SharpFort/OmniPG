@@ -15,6 +15,8 @@ CREATE TABLE sys_audit_log (
     new_data JSONB,
     user_id UUID,
     tenant_id UUID REFERENCES sys_tenant(id) ON DELETE SET NULL,
+    source VARCHAR(20) NOT NULL DEFAULT 'trigger',  -- trigger/manual/rpc/business
+    description TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 COMMENT ON TABLE sys_audit_log IS '数据变更审计日志，记录 INSERT/UPDATE/DELETE 操作';

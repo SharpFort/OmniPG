@@ -9,3 +9,4 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$ SELECT public.kick_user(p_user_id) $$;
 COMMENT ON FUNCTION api_v1_sys.kick_user(uuid) IS '强制踢下线：委托 public.kick_user';
+GRANT EXECUTE ON FUNCTION api_v1_sys.kick_user(uuid) TO authenticated;
