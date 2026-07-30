@@ -84,7 +84,7 @@ services:
       - "8000:8000"
     environment:
       driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
+      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
       runMode: dev
       httpPort: 8000
     volumes:
@@ -107,7 +107,7 @@ services:
     container_name: app-swagger
     restart: unless-stopped
     environment:
-      API_URL: "http://192.168.0.128:3001/"
+      API_URL: "http://172.17.126.161:3001/"
     ports:
       - "8082:8080"
     networks:
