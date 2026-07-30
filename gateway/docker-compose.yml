@@ -1,3 +1,7 @@
+# OmniPG - Docker Compose Stack
+# 包含: APISIX, PostgREST, Casdoor, pgbouncer, PostgreSQL 17 (Casdoor)
+# 所有服务在同一 Docker 网络中，通过容器名发现
+
 networks:
   app-net:
     driver: bridge
@@ -6,51 +10,109 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
+  pgsql_data:
+    driver: local
   casdoor_data:
     driver: local
 
 services:
-  # ============================================================================
-  # APISIX API 网关
-  # ============================================================================
+  # ===========================================================================
+  # pgbouncer (替代 WSL2 pgbouncer，供 PostgREST 连接)
+  # ===========================================================================
+  # PostgreSQL 17 (Docker 内部，替代 WSL2 PG)
+  pgsql:
+    image: postgres:17-alpine
+    container_name: pgsql
+    restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.10
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: app_owner
+      POSTGRES_PASSWORD: dev_password_change_me
+    volumes:
+      - pgsql_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_owner -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer
+    restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.11
+    environment:
+      - DATABASE_URL=postgres://app_owner:***@pgsql:5432/app_db
+      - AUTH_USER=authenticator
+      - AUTH_PASSWORD=authenticator
+      - POOL_MODE=session
+      - MAX_CLIENT_CONN=100
+      - DEFAULT_POOL_SIZE=20
+      - ADMIN_USERS=app_owner
+      - LISTEN_PORT=6432
+    depends_on:
+      pgsql:
+        condition: service_healthy
+
+  # ===========================================================================
+  # Casdoor PostgreSQL 17 (替代 WSL2 PostgreSQL for Casdoor)
+  # ===========================================================================
+  casdoor-db:
+    image: postgres:17-alpine
+    container_name: casdoor-db
+    restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.5
+    environment:
+      POSTGRES_DB: casdoor
+      POSTGRES_USER: casdoor
+      POSTGRES_PASSWORD: casdoor
+    volumes:
+      - casdoor_data:/var/lib/postgresql/data
+
+  # ===========================================================================
+  # APISIX API 网关 (Standalone 模式)
+  # ===========================================================================
   apisix:
     image: apache/apisix:3.17.0-debian
     container_name: app-apisix
     restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.3
     environment:
       APISIX_STAND_ALONE: "true"
       APISIX_WORKER_PROCESSES: "1"
     ports:
       - "9080:9080"
       - "9443:9443"
-      - "9180:9180"
     volumes:
       - /root/OmniPG/gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
       - /root/OmniPG/gateway/apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
-      - /root/OmniPG/gateway/apisix/casbin_model.conf:/usr/local/apisix/conf/casbin_model.conf:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9080/apisix/status"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - /root/OmniPG/gateway/apisix/debug.yaml:/usr/local/apisix/conf/debug.yaml:ro
 
-  # ============================================================================
-  # PostgREST API 自动生成引擎
-  # ============================================================================
+  # ===========================================================================
+  # PostgREST API 引擎
+  # ===========================================================================
   postgrest:
     image: postgrest/postgrest:v14.15
     container_name: app-postgrest
     restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.2
     environment:
-      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@host.docker.internal:6432/app_db?sslmode=disable
+      PGRST_DB_URI: "postgres://authenticator:authenticator@pgbouncer:6432/app_db?sslmode=disable"
       PGRST_DB_SCHEMAS: "api_v1_sys,api_v1_sales,api_v1_inventory"
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_sys,api_v1_sales,api_v1_inventory,public,sales,inventory"
-      PGRST_JWT_SECRET: ${JWKS_JSON:-{"keys":[{"kty":"oct","kid":"dev-hs256","alg":"HS256","k":"c2VjcmV0X2RldmVsb3BtZW50X2tleV9hdF9sZWFzdF9zZXZlbl9jaGFyYWN0ZXJzIQ=="}]}}
+      PGRST_JWT_SECRET: '{"keys":[{"kty":"oct","kid":"dev-hs256","alg":"HS256","k":"c2VjcmV0X2RldmVsb3BtZW50X2tleV9hdF9sZWFzdF9zZXZlbl9jaGFyYWN0ZXJzIQ=="}]}'
       PGRST_DB_PRE_REQUEST: "api_v1_sys.check_token_blacklist"
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3001"
       PGRST_SERVER_HOST: "0.0.0.0"
@@ -61,94 +123,66 @@ services:
       PGRST_DB_TX_END: "commit"
     ports:
       - "3001:3000"
-    volumes:
-      - /root/OmniPG/gateway/postgrest/postgrest.conf:/etc/postgrest/postgrest.conf:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://localhost:3000/"]
-      interval: 15s
-      timeout: 10s
-      retries: 5
+    depends_on:
+      - pgbouncer
 
-  # ============================================================================
-  # Casdoor IAM/OAuth 认证服务
-  # ============================================================================
-  casdoor:
-    image: casbin/casdoor:v1.680.0
-    container_name: app-casdoor
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    environment:
-      driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
-      runMode: dev
-      httpPort: 8000
-    volumes:
-      - casdoor_data:/app/conf
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - app-net
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-s", "http://localhost:8000/api/health"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-
-  # ============================================================================
-  # Swagger UI API 文档
-  # ============================================================================
+  # ===========================================================================
+  # Swagger UI
+  # ===========================================================================
   swagger-ui:
     image: swaggerapi/swagger-ui:v5.2.0
     container_name: app-swagger
     restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.4
     environment:
       API_URL: "http://172.17.126.161:3001/"
     ports:
       - "8082:8080"
-    networks:
-      - app-net
-    depends_on:
-      postgrest:
-        condition: service_started
 
-  # ============================================================================
-  # Policy Syncer (策略同步器)
-  # ============================================================================
+  # ===========================================================================
+  # Casdoor IAM/OAuth 服务
+  # ===========================================================================
+  casdoor:
+    image: casbin/casdoor:v1.680.0
+    container_name: app-casdoor
+    restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.6
+    ports:
+      - "8000:8000"
+    environment:
+      driverName: postgres
+      dataSourceName: "user=casdoor password=casdoor host=casdoor-db port=5432 sslmode=disable dbname=casdoor"
+      runMode: dev
+      httpPort: 8000
+    volumes:
+      - casdoor_data:/app/conf
+    depends_on:
+      - casdoor-db
+
+  # ===========================================================================
+  # Policy Syncer
+  # ===========================================================================
   syncer:
     build:
       context: ../db/syncer
       dockerfile: Dockerfile
     container_name: policy-syncer
     restart: unless-stopped
+    networks:
+      app-net:
+        ipv4_address: 172.20.0.7
     environment:
-      DB_HOST: host.docker.internal
+      DB_HOST: pgbouncer
       DB_PORT: "6432"
       DB_USER: app_owner
-      DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
+      DB_PASSWORD: dev_password_change_me
       SSL_MODE: disable
-      APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
-      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
-    # 注意：不暴露 8080 端口，避免与 WSL2 Nginx/Pigsty 冲突
-    # 如需调试，使用 docker exec policy-syncer curl http://localhost:8080/healthz
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - app-net
+      APISIX_ADMIN_URL: http://apisix:9080/apisix/admin/plugin_metadata/authz-casbin
+      APISIX_ADMIN_KEY: edd1c9f034335f136f87ad84b625c8f1
     depends_on:
-      apisix:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  # ============================================================================
-  # Redis (APISIX 限流 / Casdoor 缓存)
-  # 注意：Redis 由 Pigsty 管理（WSL2 :6379），Docker 中不单独部署
-  # ============================================================================
+      - apisix
+      - pgbouncer
