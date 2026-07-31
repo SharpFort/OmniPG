@@ -1,11 +1,16 @@
 # =============================================================================
 # OmniPG - Docker Compose Stack（全栈版: 网关 + Admin API + 内置 Dashboard）
+# 架构: PostgreSQL/pgBouncer/Redis 由 Pigsty 统一管理（宿主 WSL2），
+#       Compose 仅部署网关侧服务（etcd/APISIX/PostgREST/Swagger/Casdoor/Syncer）
 # 变更记录:
 #   2026-08-03 ① 新增 etcd 容器，APISIX 切回 traditional 模式（Admin API/Dashboard 可用）
 #              ② APISIX 新增端口: 9180(Admin API + Dashboard UI) / 7085(Status API)
 #              ③ 全部凭据参数化（gateway/.env），不再硬编码
 #              ④ 卷路径相对化；Swagger API_URL 参数化；Syncer Admin URL 修正为 9180
-#   配套文档: docs/审查文档/20-*、21-*
+#              ⑤ 【移除 docker PG】删除 pgsql/pgbouncer/casdoor-db 容器，
+#                 连接串改指宿主 Pigsty PG（host.docker.internal:6432/5432）
+#                 详见 docs/审查文档/22-*
+#   配套文档: docs/审查文档/20-*、21-*、22-*
 # =============================================================================
 
 networks:
@@ -16,10 +21,6 @@ networks:
         - subnet: 172.20.0.0/16
 
 volumes:
-  pgsql_data:
-    driver: local
-  casdoor_data:
-    driver: local
   etcd_data:
     driver: local
 
@@ -41,73 +42,6 @@ services:
       ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
     volumes:
       - etcd_data:/bitnami/etcd
-
-  # ===========================================================================
-  # pgsql — 业务数据库（PostgREST 数据源）
-  # 首次启动自动执行 ./postgres/init/*.sql（创建 authenticator/web_anon 角色）
-  # ===========================================================================
-  pgsql:
-    image: postgres:17-alpine
-    container_name: pgsql
-    restart: unless-stopped
-    networks:
-      app-net:
-        ipv4_address: 172.20.0.10
-    environment:
-      POSTGRES_DB: app_db
-      POSTGRES_USER: app_owner
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
-    ports:
-      - "5433:5432"    # 供宿主机执行 dbmate/apply-src（deploy-db.sh 设置 DB_PORT=5433）
-    volumes:
-      - pgsql_data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app_owner -d app_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ===========================================================================
-  # pgbouncer — 连接池（PostgREST → pgbouncer → pgsql）
-  # ===========================================================================
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: pgbouncer
-    restart: unless-stopped
-    networks:
-      app-net:
-        ipv4_address: 172.20.0.11
-    environment:
-      - DATABASE_URL=postgres://app_owner:${DB_PASSWORD:-dev_password_change_me}@pgsql:5432/app_db
-      - AUTH_USER=authenticator
-      - AUTH_PASSWORD=${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}
-      - AUTH_TYPE=scram-sha-256
-      - POOL_MODE=session
-      - MAX_CLIENT_CONN=100
-      - DEFAULT_POOL_SIZE=20
-      - ADMIN_USERS=app_owner
-      - LISTEN_PORT=6432
-    depends_on:
-      pgsql:
-        condition: service_healthy
-
-  # ===========================================================================
-  # casdoor-db — Casdoor 专用数据库
-  # ===========================================================================
-  casdoor-db:
-    image: postgres:17-alpine
-    container_name: casdoor-db
-    restart: unless-stopped
-    networks:
-      app-net:
-        ipv4_address: 172.20.0.5
-    environment:
-      POSTGRES_DB: casdoor
-      POSTGRES_USER: casdoor
-      POSTGRES_PASSWORD: ${CASDOOR_DB_PASSWORD:-casdoor}
-    volumes:
-      - casdoor_data:/var/lib/postgresql/data
 
   # ===========================================================================
   # APISIX API 网关（Traditional 模式: 网关 + Admin API + 内置 Dashboard）
@@ -133,7 +67,7 @@ services:
       - etcd
 
   # ===========================================================================
-  # PostgREST API 引擎
+  # PostgREST API 引擎（数据源: 宿主 Pigsty pgBouncer，经 host.docker.internal）
   # ===========================================================================
   postgrest:
     image: postgrest/postgrest:v14.15
@@ -143,7 +77,7 @@ services:
       app-net:
         ipv4_address: 172.20.0.2
     environment:
-      PGRST_DB_URI: "postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@pgbouncer:6432/app_db?sslmode=disable"
+      PGRST_DB_URI: "postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@host.docker.internal:6432/app_db?sslmode=disable"
       PGRST_DB_SCHEMAS: "api_v1_sys,api_v1_sales,api_v1_inventory"
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_sys,api_v1_sales,api_v1_inventory,public,sales,inventory"
@@ -159,8 +93,8 @@ services:
       PGRST_DB_TX_END: "commit"
     ports:
       - "3001:3000"
-    depends_on:
-      - pgbouncer
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ===========================================================================
   # Swagger UI
@@ -179,7 +113,7 @@ services:
       - "8082:8080"
 
   # ===========================================================================
-  # Casdoor IAM/OAuth 服务
+  # Casdoor IAM/OAuth 服务（数据源: 宿主 Pigsty PG 的 casdoor 库）
   # ===========================================================================
   casdoor:
     image: casbin/casdoor:v1.680.0
@@ -192,16 +126,15 @@ services:
       - "8000:8000"
     environment:
       driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor} host=casdoor-db port=5432 sslmode=disable dbname=casdoor"
+      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=5432 sslmode=disable dbname=casdoor"
       runMode: dev
       httpPort: 8000
-    volumes:
-      - casdoor_data:/app/conf
-    depends_on:
-      - casdoor-db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ===========================================================================
   # Policy Syncer（traditional 模式下 Admin API 可用，直接推送 Casbin 策略）
+  # 数据源: 宿主 Pigsty pgBouncer
   # ===========================================================================
   syncer:
     build:
@@ -213,13 +146,14 @@ services:
       app-net:
         ipv4_address: 172.20.0.7
     environment:
-      DB_HOST: pgbouncer
+      DB_HOST: host.docker.internal
       DB_PORT: "6432"
       DB_USER: app_owner
       DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
       SSL_MODE: disable
       APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
       APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - apisix
-      - pgbouncer

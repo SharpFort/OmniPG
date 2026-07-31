@@ -2,8 +2,8 @@
 # =============================================================================
 # 数据库部署脚本
 # 用法: ./scripts/deploy-db.sh <environment> [db_port]
-# 示例: ./scripts/deploy-db.sh development          # 宿主 Pigsty PG (5432)
-#       ./scripts/deploy-db.sh development 5433     # docker pgsql 容器 (5433)
+# 示例: ./scripts/deploy-db.sh development          # 宿主 Pigsty PG (5432，默认)
+#       ./scripts/deploy-db.sh development 5433     # 备用：指向其他 PG 实例
 # 说明: 数据库连接凭据来自 .env.<environment>（DB_USER/DB_PASSWORD），
 #       不再在脚本内硬编码密码。
 # =============================================================================
