@@ -30,7 +30,7 @@ echo "============================================"
 echo ""
 echo "【0/10】依赖预检..."
 DEPS_OK=1
-for t in docker curl psql python3; do
+for t in docker curl psql; do
     if command -v "$t" >/dev/null 2>&1; then
         echo "  ✅ $t"
     else
@@ -38,6 +38,19 @@ for t in docker curl psql python3; do
         DEPS_OK=0
     fi
 done
+# JSON 解析器: python3 优先，python 兜底（Windows 上可能只有 python）
+PYTHON_BIN=""
+for cand in python3 python; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c "import sys,json" >/dev/null 2>&1; then
+        PYTHON_BIN="$(command -v "$cand")"
+        echo "  ✅ JSON 解析器: $cand ($PYTHON_BIN)"
+        break
+    fi
+done
+if [ -z "$PYTHON_BIN" ]; then
+    echo "  ❌ python3/python 均不可用（需支持 json 模块）"
+    DEPS_OK=0
+fi
 [ "$DEPS_OK" = "1" ] || { echo "  依赖缺失，中止。"; exit 1; }
 
 # 加载 gateway/.env（APISIX_ADMIN_KEY / AUTHENTICATOR_PASSWORD 等）
@@ -121,7 +134,7 @@ echo ""
 echo "【7/10】路由清单（Admin API，预期 8 条）..."
 ROUTE_COUNT=$(curl -s --max-time 5 http://localhost:9180/apisix/admin/routes \
     -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
-    | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))' 2>/dev/null || echo "err")
+    | "$PYTHON_BIN" -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))' 2>/dev/null || echo "err")
 if [ "$ROUTE_COUNT" = "8" ]; then
     log_pass "路由 8/8（jwks/login/refresh/sys/sales/inventory/rpc/catch-all）"
 elif [ "$ROUTE_COUNT" = "err" ] || [ -z "$ROUTE_COUNT" ]; then
@@ -136,7 +149,7 @@ echo "【8/10】登录链路（user_login_sso → JWT）..."
 TOKEN=$(curl -s --max-time 10 -X POST http://localhost:9080/api/v1/rpc/user_login_sso \
     -H "Content-Type: application/json" \
     -d "{\"p_username\":\"${LOGIN_USER}\",\"p_password\":\"${LOGIN_PASS}\"}" \
-    | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get("access_token",""))' 2>/dev/null)
+    | "$PYTHON_BIN" -c 'import sys,json; d=json.load(sys.stdin); print(d.get("access_token",""))' 2>/dev/null)
 if [ -n "$TOKEN" ] && [ "$TOKEN" != "null" ]; then
     log_pass "登录成功，JWT 已签发（长度 ${#TOKEN}）"
 else
