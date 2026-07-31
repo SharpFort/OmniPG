@@ -28,10 +28,11 @@ else
     echo "  警告: 未找到 .env.$ENV，使用默认配置"
 fi
 
-# 2. 拉取最新镜像
+# 2. 拉取最新镜像（syncer 为 build-only 服务，忽略拉取失败并单独构建）
 echo ""
 echo "[2/5] 拉取最新镜像..."
-docker compose pull
+docker compose pull --ignore-pull-failures || true
+docker compose build syncer
 
 # 3. 重启服务
 echo ""
@@ -64,10 +65,15 @@ check_service() {
     fi
 }
 
-check_service "APISIX" "http://localhost:9080/apisix/status"
+check_service "APISIX" "http://localhost:7085/status"
 check_service "PostgREST" "http://localhost:3001/"
 check_service "Casdoor" "http://localhost:8000/api/health"
-check_service "Syncer" "http://localhost:8080/healthz"
+# Syncer 无宿主端口映射，用容器状态检查
+if docker inspect --format='{{.State.Status}}' policy-syncer 2>/dev/null | grep -q running; then
+    echo "  ✅ Syncer"
+else
+    echo "  ❌ Syncer"
+fi
 check_service "Swagger" "http://localhost:8082/"
 
 echo ""

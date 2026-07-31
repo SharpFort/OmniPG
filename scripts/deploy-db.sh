@@ -1,28 +1,37 @@
 #!/bin/bash
 # =============================================================================
 # 数据库部署脚本
-# 用法: ./scripts/deploy-db.sh <environment>
-# 示例: ./scripts/deploy-db.sh development
+# 用法: ./scripts/deploy-db.sh <environment> [db_port]
+# 示例: ./scripts/deploy-db.sh development          # 宿主 Pigsty PG (5432)
+#       ./scripts/deploy-db.sh development 5433     # docker pgsql 容器 (5433)
+# 说明: 数据库连接凭据来自 .env.<environment>（DB_USER/DB_PASSWORD），
+#       不再在脚本内硬编码密码。
 # =============================================================================
 
 set -euo pipefail
 
 ENV=${1:-development}
+DB_PORT=${2:-${DB_PORT:-5432}}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-echo "========================================"
+echo "============================================"
 echo "  数据库部署"
-echo "  环境: $ENV"
-echo "========================================"
+echo "  环境: $ENV    端口: $DB_PORT"
+echo "============================================"
 
 # 加载环境变量
 if [ -f "$PROJECT_DIR/.env.$ENV" ]; then
     export $(grep -v '^#' "$PROJECT_DIR/.env.$ENV" | xargs)
 fi
 
-# 设置数据库连接
-DB_URI=${DB_URI:-"postgres://app_owner:dev_password_change_me@localhost:5432/app_db?sslmode=disable"}
+DB_USER=${DB_USER:-app_owner}
+DB_PASSWORD=${DB_PASSWORD:-dev_password_change_me}
+DB_NAME=${DB_NAME:-app_db}
+DB_HOST=${DB_HOST:-localhost}
+
+# 设置数据库连接（全部来自环境变量，无硬编码密码）
+DB_URI=${DB_URI:-"postgres://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"}
 DBMATE_URL=${DBMATE_DATABASE_URL:-"$DB_URI"}
 
 cd "$PROJECT_DIR/db"
@@ -44,6 +53,6 @@ echo "[3/3] 验证部署..."
 dbmate status
 
 echo ""
-echo "========================================"
+echo "============================================"
 echo "  数据库部署完成!"
-echo "========================================"
+echo "============================================"

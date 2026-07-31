@@ -1,3 +1,8 @@
+# =============================================================================
+# ⚠️ 本文件仅适用于 standalone 模式（config_provider: yaml）
+# 当前项目已切换为 traditional 模式（etcd + Admin API），本文件不再被加载！
+# 路由由 scripts/setup_apisix.sh 通过 Admin API 管理（历史配置留档参考）。
+# =============================================================================
 routes:
   - uri: /well-known/jwks
     upstream:
