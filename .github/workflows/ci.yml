@@ -98,7 +98,7 @@ jobs:
       - name: Go build
         run: |
           cd db/syncer
-          go build -o bin/syncer ./cmd/main.go
+          go build -o bin/syncer ./cmd/syncer/
       - name: Go test
         run: |
           cd db/syncer
