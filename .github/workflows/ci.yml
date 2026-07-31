@@ -69,7 +69,7 @@ jobs:
           sudo mv dbmate /usr/local/bin/
       - name: dbmate dry-run
         env:
-          DBMATE_DATABASE_URL: "postgres://postgres:***@localhost:5432/test_db?sslmode=disable"
+          DBMATE_DATABASE_URL: "postgres://postgres:test@localhost:5432/test_db?sslmode=disable"
         run: |
           cd db
           dbmate up --dry-run
