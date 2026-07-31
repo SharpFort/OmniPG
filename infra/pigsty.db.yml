@@ -2,7 +2,7 @@ all:
   children:
     pg_omnipg:
       hosts:
-        192.168.0.128: { pg_seq: 1, pg_role: primary }
+        127.0.0.1: { pg_seq: 1, pg_role: primary }
       vars:
         pg_cluster: pg_omnipg
         pg_extensions:
@@ -78,7 +78,7 @@ all:
 
     infra:
       hosts:
-        192.168.0.128: { infra_seq: 1 }
+        127.0.0.1: { infra_seq: 1 }
       vars:
         repo_enabled: false
         nginx_enabled: true
@@ -91,14 +91,14 @@ all:
 
     etcd:
       hosts:
-        192.168.0.128: { etcd_seq: 1 }
+        127.0.0.1: { etcd_seq: 1 }
       vars:
         etcd_cluster: etcd
         etcd_safeguard: false
 
   vars:
     version: v4.4.0
-    admin_ip: 192.168.0.128
+    admin_ip: 127.0.0.1
     region: china
     proxy_env:
       no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"

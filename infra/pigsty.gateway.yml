@@ -2,11 +2,11 @@ all:
   children:
     docker:
       hosts:
-        192.168.0.129: { docker_seq: 1 }
+        127.0.0.1: { docker_seq: 1 }
 
     vibe:
       hosts:
-        192.168.0.129: { vibe_seq: 1 }
+        127.0.0.1: { vibe_seq: 1 }
       vars:
         vibe_enabled: true
         vibe_packages:
@@ -17,7 +17,7 @@ all:
 
   vars:
     version: v4.4.0
-    admin_ip: 192.168.0.129
+    admin_ip: 127.0.0.1
     region: china
     proxy_env:
       no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"
