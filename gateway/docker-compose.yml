@@ -126,7 +126,7 @@ services:
       - "8000:8000"
     environment:
       driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=5432 sslmode=disable dbname=casdoor"
+      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
       runMode: dev
       httpPort: 8000
     extra_hosts:
