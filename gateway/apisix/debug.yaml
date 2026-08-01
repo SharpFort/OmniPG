@@ -1,7 +1,0 @@
-basic:
-  enable: true
-
-http_filter:
-  enable: true
-  enable_header_name: X-APISIX-Dynamic-Debug
-#END
