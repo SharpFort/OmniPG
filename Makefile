@@ -73,7 +73,7 @@ test-db:
 	cd db && pg_prove -U app_owner -d app_db tests/ || true
 
 test-syncer:
-	cd db/syncer && go test -v ./...
+	cd db/casbin-syncer && go test -v ./...
 
 test-e2e:
 	bash scripts/e2e-test.sh
