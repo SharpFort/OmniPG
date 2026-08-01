@@ -1,0 +1,6 @@
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata
+COPY policy-syncer /usr/local/bin/policy-syncer
+RUN addgroup -S syncer && adduser -S syncer -G syncer
+USER syncer
+ENTRYPOINT ["policy-syncer"]

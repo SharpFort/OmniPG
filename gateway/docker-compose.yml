@@ -133,27 +133,6 @@ services:
       - "host.docker.internal:host-gateway"
 
   # ===========================================================================
-  # Policy Syncer（traditional 模式下 Admin API 可用，直接推送 Casbin 策略）
-  # 数据源: 宿主 Pigsty pgBouncer
+  # Policy Syncer（已迁移至 WSL2 本地 systemd 服务，不再通过 Docker 运行）
+  # 详见: db/casbin-syncer/ + scripts/casbin-syncer.service
   # ===========================================================================
-  syncer:
-    build:
-      context: ../db/syncer
-      dockerfile: Dockerfile
-    container_name: policy-syncer
-    restart: unless-stopped
-    networks:
-      app-net:
-        ipv4_address: 172.20.0.7
-    environment:
-      DB_HOST: host.docker.internal
-      DB_PORT: "6432"
-      DB_USER: app_owner
-      DB_PASSWORD: ${DB_PASSWORD:-dev_password_change_me}
-      SSL_MODE: disable
-      APISIX_ADMIN_URL: http://apisix:9180/apisix/admin/plugin_metadata/authz-casbin
-      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - apisix

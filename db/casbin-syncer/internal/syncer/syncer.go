@@ -1,6 +1,7 @@
 package syncer
 
 import (
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
@@ -11,8 +12,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"policy-syncer/internal/apisix"
-	"policy-syncer/internal/database"
+	"casbin-syncer/internal/apisix"
+	"casbin-syncer/internal/database"
 )
 
 // Casbin 模型配置（必须与 etcd 中的 model.conf 一致）

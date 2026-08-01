@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"policy-syncer/internal/apisix"
-	"policy-syncer/internal/database"
-	"policy-syncer/internal/syncer"
+	"casbin-syncer/internal/apisix"
+	"casbin-syncer/internal/database"
+	"casbin-syncer/internal/syncer"
 )
 
 // ==============================================================================
@@ -48,13 +48,10 @@ func main() {
 	log.Println("========================================")
 
 	// 1. 构建数据库连接
-	// 修复 P1-4: DSN 密码需要进行 URL 编码，避免特殊字符解析错误
-	dsn := fmt.Sprintf("postgres://%s:***@%s:%s/%s?sslmode=%s",
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		url.QueryEscape(DBUser), url.QueryEscape(DBPassword), DBHost, DBPort, DBName, SSLMode)
-	maskedDSN := fmt.Sprintf("postgres://%s:***@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(DBUser), DBHost, DBPort, DBName, SSLMode)
 
-	log.Printf("连接数据库: %s:%s/%s", DBHost, DBPort, DBName)
+	log.Printf("连接数据库: %s:%s/%s (user=%s)", DBHost, DBPort, DBName, DBUser)
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		log.Fatalf("数据库连接失败: %v", err)

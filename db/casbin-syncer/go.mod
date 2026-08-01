@@ -1,4 +1,4 @@
-module policy-syncer
+module casbin-syncer
 
 go 1.22
 
