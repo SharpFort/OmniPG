@@ -73,7 +73,7 @@ BEGIN
 
     -- 8. 调用 Casdoor 获取 JWT
     DECLARE
-        v_response http_response;
+        v_response net.http_response;
         v_casdoor_url text;
     BEGIN
         SELECT key_value INTO v_casdoor_url FROM sys_secret WHERE key_name = 'casdoor_jwks_url';
@@ -81,7 +81,7 @@ BEGIN
             RAISE EXCEPTION 'Casdoor URL not configured' USING ERRCODE = 'P0098';
         END IF;
         
-        v_response := http_post(
+        v_response := net.http_post(
             v_casdoor_url || '/api/login/oauth/access_token',
             'username=' || p_username || '&password=' || p_password || '&scope=read',
             'application/x-www-form-urlencoded'

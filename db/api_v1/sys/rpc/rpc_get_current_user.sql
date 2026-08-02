@@ -12,7 +12,7 @@ DECLARE
     v_user_id uuid;
     v_user RECORD;
 BEGIN
-    v_user_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_user_id := current_user_id();
     
     IF v_user_id IS NULL OR v_user_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
         RAISE EXCEPTION 'Unauthorized' USING ERRCODE = 'P0001';

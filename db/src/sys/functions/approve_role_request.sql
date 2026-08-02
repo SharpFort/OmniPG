@@ -8,7 +8,7 @@ DECLARE
     v_req RECORD;
     v_approver_id uuid;
 BEGIN
-    v_approver_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_approver_id := current_user_id();
 
     SELECT * INTO v_req FROM sys_user_role_request 
     WHERE id = p_request_id AND status = 'pending' FOR UPDATE;

@@ -4,4 +4,4 @@
 CREATE OR REPLACE VIEW api_v1_sys.sys_user_role AS
 SELECT user_id, role_id, tenant_id, created_at, created_by
 FROM public.sys_user_role;
-COMMENT ON VIEW api_v1_sys.sys_user_role IS '用户-角色关联视图'；
+COMMENT ON VIEW api_v1_sys.sys_user_role IS '用户-角色关联视图';

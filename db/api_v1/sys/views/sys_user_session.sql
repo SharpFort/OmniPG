@@ -4,4 +4,4 @@
 CREATE OR REPLACE VIEW api_v1_sys.sys_user_session AS
 SELECT id, user_id, tenant_id, refresh_token_hash, active_jti, is_used, client_ip, user_agent, created_at, expired_at
 FROM public.sys_user_session;
-COMMENT ON VIEW api_v1_sys.sys_user_session IS '用户会话视图'；
+COMMENT ON VIEW api_v1_sys.sys_user_session IS '用户会话视图';

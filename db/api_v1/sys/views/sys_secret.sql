@@ -3,4 +3,4 @@
 
 CREATE OR REPLACE VIEW api_v1_sys.sys_secret AS
 SELECT key_name FROM public.sys_secret;
-COMMENT ON VIEW api_v1_sys.sys_secret IS '密钥表视图（仅暴露 key_name）'；
+COMMENT ON VIEW api_v1_sys.sys_secret IS '密钥表视图（仅暴露 key_name）';

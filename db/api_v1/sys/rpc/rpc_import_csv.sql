@@ -41,7 +41,7 @@ BEGIN
       AND table_name NOT IN ('sys_secret', 'sys_token_blacklist', 'sys_cron_log', 'sys_audit_log');
     
     IF NOT (p_table_name = ANY(v_valid_tables)) THEN
-        RAISE EXCEPTION 'Table % not found or not importable' USING ERRCODE = 'P0001';
+        RAISE EXCEPTION 'Table % not found or not importable', p_table_name USING ERRCODE = 'P0001';
     END IF;
     
     -- 验证数据

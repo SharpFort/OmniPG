@@ -13,7 +13,7 @@ DECLARE
     v_roles jsonb;
     v_permissions jsonb;
 BEGIN
-    v_user_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_user_id := current_user_id();
     v_roles := (current_setting('request.jwt.claims', true)::json->'roles')::jsonb;
     
     IF v_user_id IS NULL OR v_user_id = '00000000-0000-0000-0000-000000000000'::uuid THEN

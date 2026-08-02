@@ -14,7 +14,7 @@ DECLARE
     v_exp integer;
 BEGIN
     v_jti := current_setting('request.jwt.claims', true)::json->>'jti';
-    v_user_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_user_id := current_user_id();
     
     IF v_jti IS NULL THEN
         RAISE EXCEPTION 'No token found' USING ERRCODE = 'P0001';

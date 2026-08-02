@@ -17,7 +17,7 @@ DECLARE
     v_role_tenant_id uuid;
     v_request_id uuid;
 BEGIN
-    v_applicant_id := (current_setting('request.jwt.claims', true)::json->>'user_id')::uuid;
+    v_applicant_id := current_user_id();
     v_target_user_id := COALESCE(p_user_id, v_applicant_id);
     
     SELECT tenant_id INTO v_role_tenant_id

@@ -5,6 +5,6 @@
 CREATE OR REPLACE VIEW api_v1_sales.v_my_orders AS
 SELECT o.id, o.order_no, o.user_id, o.total_amount, o.status, o.created_at
 FROM sales.orders o
-WHERE o.user_id = (current_setting('request.jwt.claims', true)::json->>'user_id')::UUID;
+WHERE o.user_id = current_user_id();
 
 COMMENT ON VIEW api_v1_sales.v_my_orders IS '我的订单视图：仅显示当前登录用户的订单';

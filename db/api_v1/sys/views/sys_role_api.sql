@@ -4,4 +4,4 @@
 CREATE OR REPLACE VIEW api_v1_sys.sys_role_api AS
 SELECT role_id, api_id, created_at, created_by
 FROM public.sys_role_api;
-COMMENT ON VIEW api_v1_sys.sys_role_api IS '角色-API 关联视图'；
+COMMENT ON VIEW api_v1_sys.sys_role_api IS '角色-API 关联视图';

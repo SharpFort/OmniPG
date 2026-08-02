@@ -4,4 +4,4 @@
 CREATE OR REPLACE VIEW api_v1_sys.sys_role_menu AS
 SELECT role_id, menu_id, created_at, created_by
 FROM public.sys_role_menu;
-COMMENT ON VIEW api_v1_sys.sys_role_menu IS '角色-菜单关联视图'；
+COMMENT ON VIEW api_v1_sys.sys_role_menu IS '角色-菜单关联视图';
