@@ -56,22 +56,20 @@ func (e *urlError) Error() string { return e.msg }
 // ==============================================================================
 
 func TestFormatToCSV_Empty(t *testing.T) {
-	s := &Syncer{}
-	result := s.formatToCSV([]database.PolicyRow{})
+	result := formatToCSV([]database.PolicyRow{})
 	if result != "" {
 		t.Errorf("空策略应返回空串, 得到 %q", result)
 	}
 }
 
 func TestFormatToCSV_SingleRow(t *testing.T) {
-	s := &Syncer{}
 	row := database.PolicyRow{
 		Ptype: "p",
 		V0:    sql.NullString{String: "role_admin", Valid: true},
 		V1:    sql.NullString{String: "/sys_user", Valid: true},
 		V2:    sql.NullString{String: "GET", Valid: true},
 	}
-	result := s.formatToCSV([]database.PolicyRow{row})
+	result := formatToCSV([]database.PolicyRow{row})
 	expected := "p,role_admin,/sys_user,GET"
 	if result != expected {
 		t.Errorf("单行策略格式错误\n期望: %q\n实际: %q", expected, result)
@@ -80,7 +78,6 @@ func TestFormatToCSV_SingleRow(t *testing.T) {
 
 func TestFormatToCSV_NoTrailingNewline(t *testing.T) {
 	// P0-1 验证：formatToCSV 尾部不应有 \n（与 SQL string_agg 行为一致）
-	s := &Syncer{}
 	rows := []database.PolicyRow{
 		{
 			Ptype: "p",
@@ -95,7 +92,7 @@ func TestFormatToCSV_NoTrailingNewline(t *testing.T) {
 			V2:    sql.NullString{String: "GET", Valid: true},
 		},
 	}
-	result := s.formatToCSV(rows)
+	result := formatToCSV(rows)
 
 	if strings.HasSuffix(result, "\n") {
 		t.Errorf("formatToCSV 不应有尾部换行符, 得到 %q", result)
@@ -109,7 +106,6 @@ func TestFormatToCSV_NoTrailingNewline(t *testing.T) {
 
 func TestFormatToCSV_WithNullColumns(t *testing.T) {
 	// 测试 NULL 列（Valid=false 的 sql.NullString）
-	s := &Syncer{}
 	row := database.PolicyRow{
 		Ptype: "p",
 		V0:    sql.NullString{String: "role_admin", Valid: true},
@@ -119,7 +115,7 @@ func TestFormatToCSV_WithNullColumns(t *testing.T) {
 		V4:    sql.NullString{Valid: false},
 		V5:    sql.NullString{Valid: false},
 	}
-	result := s.formatToCSV([]database.PolicyRow{row})
+	result := formatToCSV([]database.PolicyRow{row})
 	// NULL 列不应出现在输出中（被 lastValidIdx 截断）
 	expected := "p,role_admin,/sys_user,GET"
 	if result != expected {
@@ -129,7 +125,6 @@ func TestFormatToCSV_WithNullColumns(t *testing.T) {
 
 func TestFormatToCSV_AllNullColumns(t *testing.T) {
 	// 所有 V 列都为 NULL，只保留 ptype
-	s := &Syncer{}
 	row := database.PolicyRow{
 		Ptype: "p",
 		V0:    sql.NullString{Valid: false},
@@ -139,7 +134,7 @@ func TestFormatToCSV_AllNullColumns(t *testing.T) {
 		V4:    sql.NullString{Valid: false},
 		V5:    sql.NullString{Valid: false},
 	}
-	result := s.formatToCSV([]database.PolicyRow{row})
+	result := formatToCSV([]database.PolicyRow{row})
 	expected := "p"
 	if result != expected {
 		t.Errorf("全 NULL 列只应保留 ptype\n期望: %q\n实际: %q", expected, result)
@@ -149,13 +144,12 @@ func TestFormatToCSV_AllNullColumns(t *testing.T) {
 // 验证与 PostgreSQL string_agg 一致性
 // PG: string_agg(concat_ws(',', ptype, v0, v1, ...), E'\n') 不会在末尾加 \n
 func TestFormatToCSV_ConsistencyWithStringAgg(t *testing.T) {
-	s := &Syncer{}
 	rows := []database.PolicyRow{
 		{Ptype: "p", V0: sql.NullString{String: "admin", Valid: true}, V1: sql.NullString{String: "/api", Valid: true}},
 		{Ptype: "p", V0: sql.NullString{String: "user", Valid: true}, V1: sql.NullString{String: "/public", Valid: true}},
 		{Ptype: "p", V0: sql.NullString{String: "guest", Valid: true}, V1: sql.NullString{String: "/health", Valid: true}},
 	}
-	result := s.formatToCSV(rows)
+	result := formatToCSV(rows)
 	lines := strings.Split(result, "\n")
 	if len(lines) != 3 {
 		t.Errorf("应有 3 行, 得到 %d 行: %q", len(lines), result)
@@ -294,7 +288,6 @@ func TestTruncate(t *testing.T) {
 // ==============================================================================
 
 func BenchmarkFormatToCSV(b *testing.B) {
-	s := &Syncer{}
 	// 生成 1000 行模拟策略
 	rows := make([]database.PolicyRow, 1000)
 	for i := 0; i < 1000; i++ {
@@ -308,12 +301,11 @@ func BenchmarkFormatToCSV(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = s.formatToCSV(rows)
+		_ = formatToCSV(rows)
 	}
 }
 
 func BenchmarkFormatToCSV_Large(b *testing.B) {
-	s := &Syncer{}
 	// 生成 50000 行模拟策略（大规模）
 	rows := make([]database.PolicyRow, 50000)
 	for i := 0; i < 50000; i++ {
@@ -327,6 +319,6 @@ func BenchmarkFormatToCSV_Large(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = s.formatToCSV(rows)
+		_ = formatToCSV(rows)
 	}
 }

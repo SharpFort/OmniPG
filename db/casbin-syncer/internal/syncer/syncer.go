@@ -70,12 +70,9 @@ func (s *Syncer) Wait() {
 }
 
 // StartEventLoop 事件循环
-func (s *Syncer) StartEventLoop(ctx context.Context, notifyChan <-chan *pq.Notification, cancel context.CancelFunc) {
+func (s *Syncer) StartEventLoop(ctx context.Context, notifyChan <-chan *pq.Notification) {
 	reconcileTicker := time.NewTicker(ReconcileInterval)
 	defer reconcileTicker.Stop()
-
-	lockTicker := time.NewTicker(1 * time.Minute)
-	defer lockTicker.Stop()
 
 	var debounceTimer *time.Timer
 	var debounceChan <-chan time.Time
@@ -137,16 +134,6 @@ func (s *Syncer) StartEventLoop(ctx context.Context, notifyChan <-chan *pq.Notif
 			} else {
 				log.Println("🔍 对账触发，但同步已在进行中，跳过")
 			}
-
-		case <-lockTicker.C:
-			var stillLeader bool
-			err := s.db.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", AdvisoryLockKey).Scan(&stillLeader)
-			if err != nil || !stillLeader {
-				log.Println("⚠️  Advisory Lock 已丢失！安全退出...")
-				atomic.StoreInt32(&IsLeader, 0)
-				cancel()
-				return
-			}
 		}
 	}
 }
@@ -188,11 +175,7 @@ func (s *Syncer) Reconcile() error {
 	apisixPolicy, err := s.client.GetPolicy()
 	if err != nil {
 		// 修复 P1-5: 区分网络错误与 APISIX 未初始化
-		errStr := err.Error()
-		if strings.Contains(errStr, "connection refused") ||
-			strings.Contains(errStr, "timeout") ||
-			strings.Contains(errStr, "no such host") ||
-			strings.Contains(errStr, "context deadline exceeded") {
+		if isNetworkError(err) {
 			log.Printf("⚠️  APISIX 暂时不可用（网络抖动），跳过本次对账: %v", err)
 			return nil
 		}
@@ -238,6 +221,18 @@ func formatToCSV(rows []database.PolicyRow) string {
 		lines = append(lines, strings.Join(parts, ","))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// isNetworkError 判断是否为网络类错误（APISIX 暂时不可用）
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "no such host") ||
+		strings.Contains(errStr, "context deadline exceeded")
 }
 
 func truncate(s string, n int) string {

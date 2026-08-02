@@ -76,25 +76,26 @@ func main() {
 	log.Println("✅ pgcrypto 扩展确认就绪")
 
 	// 2. Advisory Lock 选主（多实例部署时只有一个 leader）
-	tx, err := db.Begin()
+	// ⚠️ 必须用专用连接持有锁：pg_try_advisory_lock 是 session 级锁，
+	//    心跳必须复用同一连接校验（连接池的其他连接会误判锁已丢失，导致崩溃重启）
+	lockConn, err := db.Conn(context.Background())
 	if err != nil {
-		log.Fatalf("开启事务失败: %v", err)
+		log.Fatalf("获取 Advisory Lock 连接失败: %v", err)
 	}
+	defer lockConn.Close()
 
 	var acquired bool
-	if err := tx.QueryRow("SELECT pg_try_advisory_lock($1)", syncer.AdvisoryLockKey).Scan(&acquired); err != nil {
-		tx.Rollback()
+	if err := lockConn.QueryRowContext(context.Background(), "SELECT pg_try_advisory_lock($1)", syncer.AdvisoryLockKey).Scan(&acquired); err != nil {
 		log.Fatalf("获取 Advisory Lock 失败: %v", err)
 	}
 	if !acquired {
-		tx.Rollback()
 		log.Println("⚠️  另一个实例正在运行作为 leader，当前实例将退出")
 		return
 	}
 	log.Println("✅ 已获取 Advisory Lock，当前实例为 leader")
 	atomic.StoreInt32(&syncer.IsLeader, 1)
 
-	// 修复 P1-2: 启动心跳协程，定期验证 Advisory Lock 是否仍被持有
+	// 修复 P1-2: 启动心跳协程，定期验证锁连接仍存活（session 级锁随连接存在）
 	lockCtx, lockCancel := context.WithCancel(context.Background())
 	defer lockCancel()
 
@@ -107,9 +108,9 @@ func main() {
 				return
 			case <-ticker.C:
 				var stillLeader bool
-				err := db.QueryRowContext(lockCtx, "SELECT pg_try_advisory_lock($1)", syncer.AdvisoryLockKey).Scan(&stillLeader)
+				err := lockConn.QueryRowContext(lockCtx, "SELECT pg_try_advisory_lock($1)", syncer.AdvisoryLockKey).Scan(&stillLeader)
 				if err != nil || !stillLeader {
-					log.Println("⚠️  Advisory Lock 已丢失！安全退出...")
+					log.Println("⚠️  Advisory Lock 连接已失效，安全退出...")
 					atomic.StoreInt32(&syncer.IsLeader, 0)
 					lockCancel()
 					return
@@ -163,9 +164,10 @@ func main() {
 		fmt.Fprintf(w, "syncer_is_leader %d\n", atomic.LoadInt32(&syncer.IsLeader))
 	})
 
+	httpAddr := ":" + getEnv("HTTP_PORT", "8080")
 	go func() {
-		log.Println("✅ /healthz (8080) 和 /metrics 端点已启动")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Printf("✅ HTTP 端点 (%s) 已启动: /healthz + /metrics", httpAddr)
+		if err := http.ListenAndServe(httpAddr, nil); err != nil {
 			log.Printf("HTTP 服务器错误: %v", err)
 		}
 	}()
@@ -200,7 +202,7 @@ func main() {
 		case <-time.After(shutdownTimeout):
 			log.Printf("⚠️  等待同步超时（%s），强制关闭", shutdownTimeout)
 		}
-		tx.Rollback()
+		lockConn.Close()
 		db.Close()
 		os.Exit(0)
 	}()
@@ -220,7 +222,7 @@ func main() {
 
 	// 8. 进入事件循环
 	log.Println("📡 事件循环已启动，实时同步就绪。")
-	s.StartEventLoop(ctx, listener.Notify, cancel)
+	s.StartEventLoop(ctx, listener.Notify)
 }
 
 // ==============================================================================
