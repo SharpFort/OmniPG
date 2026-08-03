@@ -3,9 +3,11 @@
 # 04.7 §10 payload 解析脚本 —— 汇总 out/ 下接收到的 webhook，输出判定要点：
 #   action / operator(user) / requestUri / response / object.users 完整性
 # 用法: bash 03_inspect_payloads.sh
-# 依赖: python3
+# 依赖: python3（Windows git-bash 自动回退 python）
 # =============================================================================
 cd "$(dirname "$0")" || exit 1
+# 注意: 不能只查 command -v（Windows 的 python3 是 Store 存根，存在但执行即失败）
+if python3 -c 'import sys' >/dev/null 2>&1; then PY=python3; else PY=python; fi
 
 count=$(ls out/*.json 2>/dev/null | wc -l)
 echo "payload 文件数: $count"
@@ -14,7 +16,7 @@ echo "payload 文件数: $count"
 for f in out/*.json; do
   [ -e "$f" ] || continue
   echo "---- $(basename "$f")"
-  python3 - "$f" <<'PY'
+  "$PY" - "$f" <<'PY'
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 obj = p.get("object") or ""

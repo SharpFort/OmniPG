@@ -8,22 +8,24 @@
 # 环境变量（必填）:
 #   CASDOOR_URL, CLIENT_ID, CLIENT_SECRET, USERNAME(org/name), PASSWORD
 #   被测用户建议挂 2+ 个角色（其中一个先禁用）以观察 V8/V9
-# 依赖: curl, python3
+# 依赖: curl, python3（Windows git-bash 自动回退 python）
 # =============================================================================
 : "${CASDOOR_URL:?CASDOOR_URL 必填}"
 : "${CLIENT_ID:?CLIENT_ID 必填（测试应用 clientId）}"
 : "${CLIENT_SECRET:?CLIENT_SECRET 必填}"
 : "${USERNAME:?USERNAME 必填（格式 org/name）}"
 : "${PASSWORD:?PASSWORD 必填}"
+# 注意: 不能只查 command -v（Windows 的 python3 是 Store 存根，存在但执行即失败）
+if python3 -c 'import sys' >/dev/null 2>&1; then PY=python3; else PY=python; fi
 
 echo "== 请求 token (password grant) =="
 RESP=$(curl -sS -X POST "$CASDOOR_URL/api/login/oauth/access_token" \
   -d "grant_type=password&client_id=$CLIENT_ID&client_secret=$CLIENT_SECRET&username=$USERNAME&password=$PASSWORD")
-echo "$RESP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print("error:",d.get("error"),d.get("error_description") or "") if "error" in d else print("token 获取成功")'
+echo "$RESP" | "$PY" -c 'import sys,json;d=json.load(sys.stdin);print("error:",d.get("error"),d.get("error_description") or "") if "error" in d else print("token 获取成功")'
 
-TOKEN=$(echo "$RESP" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+TOKEN=$(echo "$RESP" | "$PY" -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
 
-python3 - "$TOKEN" <<'PY'
+"$PY" - "$TOKEN" <<'PY'
 import base64, json, sys
 t = sys.argv[1].split(".")[1]
 t += "=" * (-len(t) % 4)
