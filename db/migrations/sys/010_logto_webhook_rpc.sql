@@ -240,9 +240,11 @@ END $$;
 -- §3 JIT 兜底建档 — 重写 ensure_user（Logto 版）
 --     登录时若 users 表无记录则自动创建（webhook 丢失/延迟的兜底）
 --     来源: JWT claims（sub/username/name/avatar），不再依赖 Casdoor 69 字段
---     旧函数 api_v1_sys.ensure_user() → .deprecated；新函数保留同名
+--     旧函数 api_v1_sys.ensure_user()（返回 uuid）→ 先 DROP 再建（返回 text）
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION api_v1_sys.ensure_user()
+DROP FUNCTION IF EXISTS api_v1_sys.ensure_user();
+
+CREATE FUNCTION api_v1_sys.ensure_user()
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -286,24 +288,39 @@ GRANT EXECUTE ON FUNCTION api_v1_sys.ensure_user() TO authenticated;
 
 -- 4.1 Casdoor webhook RPC 撤销（新 RPC 为 webhook_logto，签名不冲突）
 DO $$
+DECLARE v_rec record;
 BEGIN
-    IF to_regproc('api_v1_sys.webhook_user_upsert') IS NOT NULL THEN
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION api_v1_sys.webhook_user_upsert(jsonb) FROM web_anon';
-        RAISE NOTICE 'REVOKED api_v1_sys.webhook_user_upsert(jsonb) FROM web_anon';
-    END IF;
-    IF to_regproc('api_v1_sys.webhook_user_delete') IS NOT NULL THEN
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION api_v1_sys.webhook_user_delete(jsonb) FROM web_anon';
-        RAISE NOTICE 'REVOKED api_v1_sys.webhook_user_delete(jsonb) FROM web_anon';
-    END IF;
+    FOR v_rec IN
+        SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'api_v1_sys'
+          AND p.proname IN ('webhook_user_upsert', 'webhook_user_delete')
+    LOOP
+        BEGIN
+            EXECUTE format('REVOKE EXECUTE ON FUNCTION api_v1_sys.%I(%s) FROM web_anon',
+                           v_rec.proname, v_rec.args);
+            RAISE NOTICE 'REVOKED api_v1_sys.%(%) FROM web_anon', v_rec.proname, v_rec.args;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'SKIP revoke api_v1_sys.%(%) — %', v_rec.proname, v_rec.args, SQLERRM;
+        END;
+    END LOOP;
 END $$;
 
 -- 4.2 rpc_create_user 退役（管理端建号改调 Logto Management API，05 §10.2）
 DO $$
+DECLARE v_rec record;
 BEGIN
-    IF to_regproc('api_v1_sys.create_user') IS NOT NULL THEN
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION api_v1_sys.create_user(text, text) FROM authenticated';
-        RAISE NOTICE 'REVOKED api_v1_sys.create_user(text,text) FROM authenticated';
-    END IF;
+    FOR v_rec IN
+        SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'api_v1_sys' AND p.proname = 'create_user'
+    LOOP
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION api_v1_sys.%I(%s) FROM authenticated',
+                       v_rec.proname, v_rec.args);
+        RAISE NOTICE 'REVOKED api_v1_sys.%(%) FROM authenticated', v_rec.proname, v_rec.args;
+    END LOOP;
 END $$;
 
 -- 4.3 check_token_blacklist 保留但恒真（D25：不启用黑名单机制）

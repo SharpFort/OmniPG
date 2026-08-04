@@ -128,14 +128,14 @@ services:
     restart: unless-stopped
     networks:
       app-net:
-        ipv4_address: 172.20.0.6
+        ipv4_address: 172.20.0.9
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
     ports:
       - "3001:3001"   # Core API / OIDC / Management API
       - "3002:3002"   # Admin Console
     environment:
       TRUST_PROXY_HEADER: "1"
-      DB_URL: "postgres://logto:${LOGTO_DB_PASSWORD:-logto_dev_pass_2026}@host.docker.internal:6432/logto?sslmode=disable"
+      DB_URL: "postgres://logto:${LOGTO_DB_PASSWORD:-logto_dev_pass_2026}@host.docker.internal:5433/logto?sslmode=disable"
       DATABASE_STATEMENT_TIMEOUT: "DISABLE_TIMEOUT"   # pgBouncer 兼容（v1.36.0+）
       ENDPOINT: "http://localhost:3001"
       ADMIN_ENDPOINT: "http://localhost:3002"

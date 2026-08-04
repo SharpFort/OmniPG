@@ -17,8 +17,8 @@ INSERT INTO iam_api (path, method, name, description, is_active)
 SELECT
     a.path,
     a.method,
-    a.name,
-    a.description,
+    a.api_name,
+    NULL::varchar AS description,   -- sys_api 视图无 description 列（api_v1_sys.sys_api 列集）
     (a.deleted_at IS NULL) AS is_active
 FROM sys_api a
 WHERE a.deleted_at IS NULL                                          -- 排除软删
@@ -30,7 +30,7 @@ ON CONFLICT (path, method) DO UPDATE SET
     is_active   = EXCLUDED.is_active,
     updated_at  = now();
 
-RAISE NOTICE 'Seeded iam_api: % rows', (SELECT count(*) FROM iam_api);
+DO $$ BEGIN RAISE NOTICE 'Seeded iam_api: % rows', (SELECT count(*) FROM iam_api); END $$;
 
 -- ==============================================================================
 -- §2 iam_menu — 从 sys_menu 迁移菜单树
@@ -40,10 +40,10 @@ INSERT INTO iam_menu (id, parent_id, menu_name, path, icon, order_num, is_active
 SELECT
     m.id,
     m.parent_id,
-    m.menu_name,
+    m.name       AS menu_name,      -- sys_menu 视图列名: name（非 menu_name）
     m.path,
     m.icon,
-    COALESCE(m.order_num, 0),
+    COALESCE(m.sort_order, 0),      -- sys_menu 视图列名: sort_order（非 order_num）
     (m.deleted_at IS NULL) AS is_active
 FROM sys_menu m
 WHERE m.deleted_at IS NULL
@@ -55,7 +55,7 @@ ON CONFLICT (id) DO UPDATE SET
     is_active  = EXCLUDED.is_active,
     updated_at = now();
 
-RAISE NOTICE 'Seeded iam_menu: % rows', (SELECT count(*) FROM iam_menu);
+DO $$ BEGIN RAISE NOTICE 'Seeded iam_menu: % rows', (SELECT count(*) FROM iam_menu); END $$;
 
 -- ==============================================================================
 -- §3 iam_role_api — 初始角色→API 绑定
@@ -70,8 +70,8 @@ FROM iam_api a
 WHERE a.is_active = true
 ON CONFLICT (role_code, api_id) DO NOTHING;
 
-RAISE NOTICE 'Seeded iam_role_api (role_super_admin): % rows',
-    (SELECT count(*) FROM iam_role_api WHERE role_code = 'role_super_admin');
+DO $$ BEGIN RAISE NOTICE 'Seeded iam_role_api (role_super_admin): % rows',
+    (SELECT count(*) FROM iam_role_api WHERE role_code = 'role_super_admin'); END $$;
 
 -- ==============================================================================
 -- §4 iam_role_menu — 初始角色→菜单绑定
@@ -83,8 +83,8 @@ FROM iam_menu m
 WHERE m.is_active = true
 ON CONFLICT (role_code, menu_id) DO NOTHING;
 
-RAISE NOTICE 'Seeded iam_role_menu (role_super_admin): % rows',
-    (SELECT count(*) FROM iam_role_menu WHERE role_code = 'role_super_admin');
+DO $$ BEGIN RAISE NOTICE 'Seeded iam_role_menu (role_super_admin): % rows',
+    (SELECT count(*) FROM iam_role_menu WHERE role_code = 'role_super_admin'); END $$;
 
 -- ==============================================================================
 -- §5 默认 tenant/users 登录种子（webhook 同步之前的手工兜底）
@@ -96,9 +96,7 @@ RAISE NOTICE 'Seeded iam_role_menu (role_super_admin): % rows',
 -- 如需本地测试可直接 INSERT 占位租户
 
 -- ==============================================================================
--- migrate:down
+-- 注意: 本项目迁移由 apply-src.sh 幂等重放（psql 全文件执行，不识别
+--       -- migrate:down 分段标记），故不设 down 段（避免种子被误删）。
+--       回滚走整体 pg_dump restore。
 -- ==============================================================================
-DELETE FROM iam_role_api WHERE role_code = 'role_super_admin';  -- 仅清理初始绑定
-DELETE FROM iam_role_menu WHERE role_code = 'role_super_admin';
-DELETE FROM iam_api;      -- 可在 down 时清空种子（apply-src 重跑上游 009 不依赖种子）
-DELETE FROM iam_menu;

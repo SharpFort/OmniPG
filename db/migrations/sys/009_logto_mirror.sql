@@ -216,8 +216,11 @@ CREATE INDEX IF NOT EXISTS idx_iam_role_menu_menu ON iam_role_menu(menu_id);
 --     Logto: roles = ["role_super_admin", "tenant_admin", ...]（字符串数组）
 --     Casdoor: roles = [{name: "super_admin", isEnabled: true, ...}]（对象数组）
 --     本版本: jsonb_array_elements_text — 直接拿字符串，无 isEnabled 概念
+--     旧版返回 text[]（对象数组解析）→ DROP 重建（语义不同但返回类型相同，仍先 DROP 保幂等）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION current_user_roles() RETURNS text[]
+DROP FUNCTION IF EXISTS current_user_roles();
+
+CREATE FUNCTION current_user_roles() RETURNS text[]
 LANGUAGE sql STABLE AS $$
     SELECT COALESCE(ARRAY(
         SELECT jsonb_array_elements_text(
@@ -229,9 +232,27 @@ $$;
 COMMENT ON FUNCTION current_user_roles() IS '当前用户 Logto 角色名数组（JWT roles claim，字符串数组，零查询）';
 
 -- ---------------------------------------------------------------------------
--- 3.2 current_tenant_id() — 从 organization_id claim 提取（保留设计，不变）
+-- 3.2 current_tenant_id() — 从 organization_id claim 提取
+--     旧版返回 uuid（查 sys_user_profile）→ DROP 重建（返回类型 uuid→text 必须 DROP）
+--     旧 RLS 策略依赖旧函数（user_role_tenant_policy / request_tenant_policy /
+--     session_user_policy / blacklist_system_policy 等），先 DROP 策略再 DROP 函数
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS text
+DROP POLICY IF EXISTS user_role_tenant_policy ON sys_user_role;
+DROP POLICY IF EXISTS request_tenant_policy ON sys_user_role_request;
+DROP POLICY IF EXISTS session_user_policy ON sys_user_session;
+DROP POLICY IF EXISTS blacklist_system_policy ON sys_token_blacklist;
+DROP POLICY IF EXISTS tenant_isolation_policy ON sys_tenant;
+DROP POLICY IF EXISTS dept_tenant_isolation_policy ON sys_department;
+DROP POLICY IF EXISTS role_tenant_isolation_policy ON sys_role;
+DROP POLICY IF EXISTS api_read_policy ON sys_api;
+DROP POLICY IF EXISTS menu_read_policy ON sys_menu;
+DROP POLICY IF EXISTS secret_system_policy ON sys_secret;
+DROP POLICY IF EXISTS mirror_tenant_policy ON casdoor_user_mirror;
+DROP POLICY IF EXISTS profile_tenant_policy ON sys_user_profile;
+
+DROP FUNCTION IF EXISTS current_tenant_id();
+
+CREATE FUNCTION current_tenant_id() RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb ->> 'organization_id', '')
 $$;
@@ -240,8 +261,11 @@ COMMENT ON FUNCTION current_tenant_id() IS '当前租户 ID = Logto organization
 
 -- ---------------------------------------------------------------------------
 -- 3.3 current_user_id() — 从 sub claim 提取（Logto user id = 21 位 nanoid）
+--     旧版返回 uuid → DROP 重建
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION current_user_id() RETURNS text
+DROP FUNCTION IF EXISTS current_user_id();
+
+CREATE FUNCTION current_user_id() RETURNS text
 LANGUAGE sql STABLE AS $$
     SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')
 $$;
@@ -250,9 +274,11 @@ COMMENT ON FUNCTION current_user_id() IS '当前用户 ID = Logto sub claim（21
 
 -- ---------------------------------------------------------------------------
 -- 3.4 is_super_admin() — 检查是否含全局超管角色
---     Logto 角色名 = role_super_admin（全局角色，05 §6.2）
+--     旧版引用旧 current_user_roles（对象数组）→ DROP 重建避免依赖旧函数签名
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION is_super_admin() RETURNS boolean
+DROP FUNCTION IF EXISTS is_super_admin();
+
+CREATE FUNCTION is_super_admin() RETURNS boolean
 LANGUAGE sql STABLE AS $$
     SELECT current_user_roles() @> ARRAY['role_super_admin']
 $$;
@@ -264,30 +290,9 @@ COMMENT ON FUNCTION is_super_admin() IS '当前用户是否含 role_super_admin 
 -- ==============================================================================
 
 -- ---------------------------------------------------------------------------
--- 4.1 public.sys_user 兼容视图 — 新版：users + sys_user_profile 投影
---     沿用 security_invoker 语义；列结构与旧版对齐（username/email/phone/is_active/tenant_id）
+-- 4.1 public.sys_user 兼容视图 — 移至迁移 012 重建（依赖 sys_user_profile
+--     text 化完成，009 阶段 profile 仍为 uuid，类型不匹配）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW public.sys_user
-WITH (security_invoker = true) AS
-SELECT
-    u.id,
-    u.username,
-    NULL::text AS password_hash,              -- 密码由 Logto 管理，不再暴露
-    p.tenant_id,
-    p.dept_id,
-    u.primary_email  AS email,
-    u.primary_phone  AS phone,
-    NOT u.is_suspended AS is_active,          -- D17: is_active = NOT isSuspended
-    u.created_at,
-    u.updated_at,
-    u.deleted_at,
-    u.created_by,
-    u.updated_by,
-    u.deleted_by
-FROM users u
-LEFT JOIN sys_user_profile p ON p.user_id = u.id;
-
-COMMENT ON VIEW public.sys_user IS 'Logto 用户兼容视图（替代 Casdoor 版 casdoor_user_mirror 投影）；security_invoker=true';
 
 -- ---------------------------------------------------------------------------
 -- 4.2 casbin_rule 视图 — 重建为 iam_role_api + iam_role_menu 投影（E3）
@@ -340,27 +345,11 @@ GRANT SELECT ON iam_menu TO authenticated;
 GRANT SELECT ON iam_role_api TO authenticated;
 GRANT SELECT ON iam_role_menu TO authenticated;
 
--- 兼容视图
-GRANT SELECT ON public.sys_user TO authenticated;
+-- 兼容视图（casbin_rule 在 009 建；public.sys_user 在 012 建并 GRANT）
 GRANT SELECT ON casbin_rule TO authenticated;
 
 -- ==============================================================================
--- migrate:down
+-- 注意: 本项目迁移由 apply-src.sh 幂等重放（psql 全文件执行，不识别
+--       -- migrate:down 分段标记），故不设 down 段（避免建表后被误删）。
+--       回滚走整体 pg_dump restore（/tmp/app_db_before_logto.dump）。
 -- ==============================================================================
--- 注意: down 需按依赖顺序删除（FK → 表 → 函数/视图）
--- 回滚到 Casdoor 版本需重跑 007 迁移 + apply-src
-
-DROP VIEW IF EXISTS public.sys_user CASCADE;
-DROP VIEW IF EXISTS casbin_rule CASCADE;
-DROP TABLE IF EXISTS iam_user_role CASCADE;
-DROP TABLE IF EXISTS iam_role_menu CASCADE;
-DROP TABLE IF EXISTS iam_role_api CASCADE;
-DROP TABLE IF EXISTS iam_menu CASCADE;
-DROP TABLE IF EXISTS iam_api CASCADE;
-DROP TABLE IF EXISTS iam_role CASCADE;
-DROP TABLE IF EXISTS user_tenants CASCADE;
-DROP TABLE IF EXISTS tenants CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
--- RLS helper 恢复 Casdoor 版（对象数组版）由 apply-src 重跑 db/src/sys/functions/current_user_roles.sql
--- 本迁移仅 down 时不恢复旧函数签名；完整回滚需配套执行 db/src 目录 apply-src

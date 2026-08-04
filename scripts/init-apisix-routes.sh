@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
-AUTH="X-API-KEY: ***"
+AUTH="X-API-KEY: ${ADMIN_KEY}"
 
 # ---------------------------------------------------------------------------
 # [0] 预先清理 Casdoor 时代旧路由（幂等：DELETE 不存在路由 204）
@@ -33,7 +33,7 @@ echo "  OK"
 # ---------------------------------------------------------------------------
 echo "[2] Fetch Logto JWKS..."
 LOGTO_OIDC="http://localhost:3001/oidc/.well-known/openid-configuration"
-JWKS_URI=$(curl -sf "$LOGTO_OIDC" | python3 -c "import sys,json; print(json.load(sys.stdin)['jwks_uri'])" 2>/dev/null || echo "http://localhost:3001/oidc/jwks")
+JWKS_URI=$(curl -sf "$LOGTO_OIDC" | ${PYTHON:-python3} -c "import sys,json; print(json.load(sys.stdin)['jwks_uri'])" 2>/dev/null || echo "http://localhost:3001/oidc/jwks")
 echo "  JWKS URI: $JWKS_URI"
 JWKS_JSON=$(curl -sf "$JWKS_URI")
 if [ -z "$JWKS_JSON" ]; then
@@ -45,7 +45,7 @@ echo "  JWKS fetched OK"
 # jwt-auth 插件元数据：RS256 + JWKS JSON（APISIX key 字段接受 JSON 字符串）
 curl -s -X PUT http://localhost:9180/apisix/admin/plugin_metadata/jwt-auth \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d "{\"algorithm\":\"RS256\",\"key\":$(echo "$JWKS_JSON" | python3 -c 'import sys,json; print(json.dumps(json.dumps(json.load(sys.stdin))))')}"
+  -d "{\"algorithm\":\"RS256\",\"key\":$(echo "$JWKS_JSON" | ${PYTHON:-python3} -c 'import sys,json; print(json.dumps(json.dumps(json.load(sys.stdin))))')}"
 echo "  jwt-auth → RS256 + Logto JWKS"
 
 # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgre
 # [5] 汇总
 # ---------------------------------------------------------------------------
 echo
-COUNT=$(curl -s http://localhost:9180/apisix/admin/routes -H "$AUTH" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))')
+COUNT=$(curl -s http://localhost:9180/apisix/admin/routes -H "$AUTH" | ${PYTHON:-python3} -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))')
 echo "  ${COUNT} routes configured"
 echo "  Dashboard: http://localhost:9180/ui"
 echo "  Logto OIDC: http://localhost:9080/logto/oidc/.well-known/openid-configuration"
