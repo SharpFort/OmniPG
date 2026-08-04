@@ -1,11 +1,25 @@
 #!/bin/bash
-# APISIX route init - run inside WSL2
+# APISIX route init — Logto 版（Phase 2: 替代 Casdoor）
+# 变更: jwt-auth HS256→RS256（Logto JWKS）；移除 Casdoor 路由；
+#       新增 /logto/* 同源代理；新增 /rpc/webhook_logto（webhook 接收入口）
+#       新增 POST /rpc/ensure_user（JIT 建档，authenticated 调）
 set -euo pipefail
 
 ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
-JWKS_JSON="${JWKS_JSON:-{\"keys\":[{\"kty\":\"oct\",\"kid\":\"dev-hs256\",\"alg\":\"HS256\",\"k\":\"c2VjcmV0X2RldmVsb3BtZW50X2tleV9hdF9sZWFzdF9zZXZlbl9jaGFyYWN0ZXJzIQ==\"}]}}"
-AUTH="X-API-KEY: ${ADMIN_KEY}"
+AUTH="X-API-KEY: ***"
 
+# ---------------------------------------------------------------------------
+# [0] 预先清理 Casdoor 时代旧路由（幂等：DELETE 不存在路由 204）
+# ---------------------------------------------------------------------------
+echo "[0] Cleanup Casdoor routes..."
+for rid in jwks user_login_sso refresh_token_rtr casdoor_proxy; do
+  curl -s -X DELETE "http://localhost:9180/apisix/admin/routes/${rid}" -H "$AUTH" || true
+done
+echo "  OK"
+
+# ---------------------------------------------------------------------------
+# [1] 等待 APISIX 就绪
+# ---------------------------------------------------------------------------
 echo "[1] Wait APISIX..."
 for i in $(seq 1 15); do
   curl -sf http://localhost:7085/status 2>/dev/null | grep -q '"status":"ok"' && break
@@ -13,33 +27,71 @@ for i in $(seq 1 15); do
 done
 echo "  OK"
 
-echo "[2] jwt-auth metadata..."
-# JWK base64 key (from JWKS_JSON k field)
-JWK="c2VjcmV0X2RldmVsb3BtZW50X2tleV9hdF9sZWFzdF9zZXZlbl9jaGFyYWN0ZXJzIQ=="
+# ---------------------------------------------------------------------------
+# [2] 获取 Logto JWKS（RS256 公钥）并注入 jwt-auth 元数据
+#     Logto OIDC discovery: /.well-known/openid-configuration → jwks_uri
+# ---------------------------------------------------------------------------
+echo "[2] Fetch Logto JWKS..."
+LOGTO_OIDC="http://localhost:3001/oidc/.well-known/openid-configuration"
+JWKS_URI=$(curl -sf "$LOGTO_OIDC" | python3 -c "import sys,json; print(json.load(sys.stdin)['jwks_uri'])" 2>/dev/null || echo "http://localhost:3001/oidc/jwks")
+echo "  JWKS URI: $JWKS_URI"
+JWKS_JSON=$(curl -sf "$JWKS_URI")
+if [ -z "$JWKS_JSON" ]; then
+  echo "  ERROR: Cannot fetch Logto JWKS; is Logto running at localhost:3001?"
+  exit 2
+fi
+echo "  JWKS fetched OK"
+
+# jwt-auth 插件元数据：RS256 + JWKS JSON（APISIX key 字段接受 JSON 字符串）
 curl -s -X PUT http://localhost:9180/apisix/admin/plugin_metadata/jwt-auth \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d "{\"algorithm\":\"HS256\",\"key\":\"${JWK}\",\"base64_secret\":true}"
-echo "  OK"
+  -d "{\"algorithm\":\"RS256\",\"key\":$(echo "$JWKS_JSON" | python3 -c 'import sys,json; print(json.dumps(json.dumps(json.load(sys.stdin))))')}"
+echo "  jwt-auth → RS256 + Logto JWKS"
 
+# ---------------------------------------------------------------------------
+# [3] Global CORS
+# ---------------------------------------------------------------------------
 echo "[3] Global CORS..."
 curl -s -X PUT http://localhost:9180/apisix/admin/global_rules/1 \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":true}}}'
+  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":true}}}'
 echo "  OK"
 
+# ---------------------------------------------------------------------------
+# [4] Routes
+# ---------------------------------------------------------------------------
 echo "[4] Routes..."
 put() { curl -s -X PUT "http://localhost:9180/apisix/admin/routes/$1" -H "$AUTH" -H 'Content-Type: application/json' -d "$2"; }
 
-put jwks '{"uri":"/.well-known/jwks","upstream":{"type":"roundrobin","nodes":{"app-casdoor:8000":1}},"priority":100}'
-put user_login_sso '{"uri":"/rpc/user_login_sso","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":90,"plugins":{"request-validation":{"body_schema":{"type":"object","required":["p_username","p_password"],"properties":{"p_username":{"type":"string","minLength":3},"p_password":{"type":"string","minLength":6}}}}}}'
-put refresh_token_rtr '{"uri":"/rpc/refresh_token_rtr","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":90}'
+# 4.1 Logto JWKS 代理（前端 SDK / OIDC 客户端拉取公钥）
+put logto_jwks '{"uri":"/.well-known/jwks","upstream":{"type":"roundrobin","nodes":{"app-logto:3001":1}},"priority":100}'
+
+# 4.2 Logto 同源代理 /logto/*（前端 SDK endpoint，CORS 规避；若配置 Logto CORS 则可去掉此路由）
+put logto_proxy '{"uri":"/logto/*","upstream":{"type":"roundrobin","nodes":{"app-logto:3001":1}},"priority":60,"plugins":{"proxy-rewrite":{"regex_uri":["^/logto/(.*)","/$1"]}}}'
+
+# 4.3 Webhook 接收入口 — /rpc/webhook_logto（POST，web_anon 可调，无 jwt-auth）
+#     验签由 APISIX serverless-pre-function 完成（P0 开发期先跳过，T5 生产加）
+put webhook_logto '{"uri":"/rpc/webhook_logto","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":95,"methods":["POST"],"plugins":{"request-validation":{"body_schema":{"type":"object","required":["event"]}}}}'
+
+# 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth）
+put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{}}}'
+
+# 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema）
 put api_v1_sys '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_sys/$1"]},"jwt-auth":{}}}'
 put api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/api_v1_sales/$1"]},"jwt-auth":{}}}'
 put api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/api_v1_inventory/$1"]},"jwt-auth":{}}}'
+
+# 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高）
 put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{}}}'
+
+# 4.7 Catch-all（AuthN 准入）
 put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{}}}'
 
+# ---------------------------------------------------------------------------
+# [5] 汇总
+# ---------------------------------------------------------------------------
 echo
 COUNT=$(curl -s http://localhost:9180/apisix/admin/routes -H "$AUTH" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))')
-echo "  ${COUNT} routes created"
+echo "  ${COUNT} routes configured"
 echo "  Dashboard: http://localhost:9180/ui"
+echo "  Logto OIDC: http://localhost:9080/logto/oidc/.well-known/openid-configuration"
