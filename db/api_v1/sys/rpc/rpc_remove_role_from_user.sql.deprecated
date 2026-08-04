@@ -1,3 +1,10 @@
+-- ==============================================================================
+-- DEPRECATED (04.8 方案C, 2026-08-04): 角色分配/审批管理面收敛 Casdoor UI（D2/D4）
+-- 停用原因: Casdoor 为角色分配唯一真相源, 应用侧禁止直接写 sys_user_role 镜像
+-- 处置:     已由 db/migrations/sys/008_role_mirror_guard.sql 撤销 GRANT EXECUTE
+-- 恢复:     移除 .deprecated 后缀重新 apply-src.sh（函数体原样保留, GRANT 语句在文件内）
+-- ==============================================================================
+
 -- db/api_v1/sys/rpc/rpc_remove_role_from_user.sql
 -- 移除用户角色 RPC
 -- 来源: 20260707000015_system_management_api.sql

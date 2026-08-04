@@ -1,28 +1,29 @@
 -- db/api_v1/sys/rpc/rpc_webhook_user_upsert.sql
--- Casdoor Webhook 接收 RPC：new-user / update-user 事件 → upsert 用户（Phase 1, D2）
--- 鉴权: 请求头 X-Webhook-Secret 必须等于 sys_secret 中 casdoor_webhook_secret（Phase 2 配置）
--- 签名设计: (event text, user jsonb) —— PostgREST 按 body 键自动匹配参数，
---           Casdoor webhook 原始 payload {"event":"...","user":{...}} 可直接 POST
--- 说明: 仅同步核心字段（id/name/displayName/email/phone/avatar/状态），
---       全量字段由 Casdoor Database Syncer 对账补齐（D2 组合方案）
+-- Casdoor Webhook 接收 RPC：new-user / add-user / update-user 事件 → upsert 用户
+-- 方案 C 重写（04.8 §5.2）：签名 (event text, "user" jsonb) → (payload jsonb) 整包接收
+-- 重写原因（C7/§14.2）：真实 payload = Record 结构，无 event 字段；
+--   user 是操作者用户名（字符串）；用户对象在 object（JSON 字符串，需二次解析）。
+--   Phase 1 的 (event, user) 参数假设与真实 payload 不匹配，从未被命中。
+-- 守卫：① X-Webhook-Secret 鉴权 ② action 校验 ③ response 成败守卫（H4）
+-- 语义：失败/越权请求（response 非 status:"ok"）静默跳过，不落库（避免重试风暴）；
+--       鉴权/结构错误 RAISE（HTTP 500 → Casdoor 重试，属可恢复场景）。
 
-CREATE OR REPLACE FUNCTION api_v1_sys.webhook_user_upsert(
-    event text,
-    "user" jsonb
-)
+CREATE OR REPLACE FUNCTION api_v1_sys.webhook_user_upsert(payload jsonb)
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_secret      text;
-    v_header      text;
-    v_user        jsonb := "user";
-    v_sub         uuid;
-    v_tenant      uuid;
+    v_secret   text;
+    v_header   text;
+    v_action   text;
+    v_response text;
+    v_user     jsonb;
+    v_sub      uuid;
+    v_tenant   uuid;
 BEGIN
-    -- 1. 鉴权（webhook 端点公开，必须校验共享密钥）
+    -- ① 鉴权（webhook 端点公开，必须校验共享密钥）
     SELECT key_value INTO v_secret FROM sys_secret WHERE key_name = 'casdoor_webhook_secret';
     IF v_secret IS NULL OR v_secret = '' THEN
         RAISE EXCEPTION 'Webhook secret not configured' USING ERRCODE = 'P0098';
@@ -32,16 +33,30 @@ BEGIN
         RAISE EXCEPTION 'Invalid webhook secret' USING ERRCODE = 'P0098';
     END IF;
 
-    -- 2. 解析 user 对象
+    -- ② action 校验（new-user 为 signup 特判，object 为 DB 拉取的全量用户对象；
+    --    add-user/update-user 的 object 为请求体原文）
+    v_action := payload->>'action';
+    IF v_action IS NULL OR v_action NOT IN ('new-user', 'add-user', 'update-user') THEN
+        RAISE EXCEPTION 'Unsupported action: %', v_action USING ERRCODE = 'P0001';
+    END IF;
+
+    -- ③ 成败守卫（H4）：response 含 status:"ok" 才落库；失败/越权请求静默跳过
+    v_response := payload->>'response';
+    IF v_response IS NULL OR strpos(v_response, 'status:"ok"') = 0 THEN
+        RETURN NULL;
+    END IF;
+
+    -- ④ 解析 object（Record.Object 为 JSON 字符串，二次解析）
+    v_user := (payload->>'object')::jsonb;
     IF v_user IS NULL OR v_user = 'null'::jsonb THEN
-        RAISE EXCEPTION 'Invalid payload: missing user' USING ERRCODE = 'P0001';
+        RAISE EXCEPTION 'Invalid payload: missing object' USING ERRCODE = 'P0001';
     END IF;
     v_sub := NULLIF(v_user->>'id', '')::uuid;
     IF v_sub IS NULL THEN
         RAISE EXCEPTION 'Invalid payload: missing user.id' USING ERRCODE = 'P0001';
     END IF;
 
-    -- 3. upsert 镜像表核心字段
+    -- ⑤ 落库：upsert 镜像表核心字段（与 Phase 1 逻辑一致；全量字段由 Database Syncer/JIT 对账）
     INSERT INTO casdoor_user_mirror (id, name, displayname, email, phone, avatar,
                                      isforbidden, isdeleted, isadmin,
                                      score, signupapplication)
@@ -70,7 +85,7 @@ BEGIN
         score            = EXCLUDED.score,
         signupapplication = EXCLUDED.signupapplication;
 
-    -- 4. 业务档案（D5: 默认租户）
+    -- ⑥ 业务档案（默认租户，JIT 兜底同款）
     SELECT id INTO v_tenant
     FROM sys_tenant
     WHERE tenant_code = 'default' AND deleted_at IS NULL
@@ -84,5 +99,9 @@ BEGIN
     RETURN v_sub;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_sys.webhook_user_upsert(text, jsonb) IS 'Casdoor webhook 用户新增/更新接收（Phase 1, D2；参数名匹配原始 payload）';
-GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_user_upsert(text, jsonb) TO web_anon;
+
+COMMENT ON FUNCTION api_v1_sys.webhook_user_upsert(jsonb) IS 'Casdoor webhook 用户新增/更新接收（方案 C 重写：整包 payload + response 成败守卫）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_user_upsert(jsonb) TO web_anon;
+
+-- 移除 Phase 1 旧签名（(event text, "user" jsonb)），避免 PostgREST 暴露两个版本
+DROP FUNCTION IF EXISTS api_v1_sys.webhook_user_upsert(text, jsonb);
