@@ -27,9 +27,9 @@ import urllib.request
 
 ENDPOINT = "http://localhost:3001"
 # Logto 默认 Management API resource（OSS seed 内置）
-MGMT_RESOURCE = "urn:logto:resource:management-api"
+MGMT_RESOURCE = "https://default.logto.app/api"
 # 默认管理角色（seed 内置，M2M 应用需授予才能调管理 API）
-MGMT_ROLE_NAME = "admin"  # 管理 API 角色名（seed 的默认 admin role）
+MGMT_ROLE_NAME = "14eqvuyw66mbhdcykbbaw"  # 'Logto Management API access'（default 租户 API）
 
 # ---------------------------------------------------------------------------
 # 配置区（可按需修改）
@@ -169,37 +169,26 @@ def step2_global_role(token):
     return role.get("id") if role else None
 
 
-def step3_org_template(token):
-    """创建组织模板 + 组织角色"""
-    print("[3] 组织模板...")
-    _, templates = http("GET", "/api/organization-templates", token)
-    if templates:
-        for t in templates:
-            if t.get("name") == ORG_TEMPLATE_NAME:
-                print(f"  已存在: {ORG_TEMPLATE_NAME} (id={t['id']})")
-                # 确保组织角色存在
-                for role_name in ORG_TEMPLATE_ROLES:
-                    _, roles = http("GET", f"/api/organization-templates/{t['id']}/organization-roles", token)
-                    found = any(r.get("name") == role_name for r in (roles or []))
-                    if not found:
-                        _, _ = http("POST", f"/api/organization-templates/{t['id']}/organization-roles", token, {
-                            "name": role_name,
-                            "description": f"组织角色 {role_name}（OmniPG）",
-                        })
-                        print(f"  补建组织角色: {role_name}")
-                return t["id"]
-    _, tmpl = http("POST", "/api/organization-templates", token, {
-        "name": ORG_TEMPLATE_NAME,
-        "description": "OmniPG 默认组织模板",
-        "organizationRoles": [
-            {"name": n, "description": f"组织角色 {n}（OmniPG）"} for n in ORG_TEMPLATE_ROLES
-        ],
-    })
-    print(f"  已创建模板: {ORG_TEMPLATE_NAME} + 角色 {ORG_TEMPLATE_ROLES}")
-    return tmpl.get("id") if tmpl else None
+def step3_org_roles(token):
+    """创建组织角色（tenant_admin/editor/viewer）——v1.42 OSS 无组织模板，角色为独立资源"""
+    print("[3] 组织角色...")
+    created = []
+    _, roles = http("GET", "/api/organization-roles", token)
+    existing = {r.get("name") for r in (roles or [])}
+    for role_name in ORG_TEMPLATE_ROLES:
+        if role_name in existing:
+            print(f"  已存在: {role_name}")
+            continue
+        _, role = http("POST", "/api/organization-roles", token, {
+            "name": role_name,
+            "description": f"组织角色 {role_name}（OmniPG）",
+        })
+        created.append(role_name)
+        print(f"  已创建: {role_name} (id={role.get('id') if role else '?'})")
+    return created
 
 
-def step4_demo_org(token, template_id):
+def step4_demo_org(token, _template_id=None):
     """创建演示组织（租户）"""
     print("[4] 演示组织...")
     _, orgs = http("GET", "/api/organizations", token)
@@ -210,7 +199,6 @@ def step4_demo_org(token, template_id):
     _, org = http("POST", "/api/organizations", token, {
         "name": DEMO_ORG_NAME,
         "description": DEMO_ORG_DESC,
-        "organizationTemplateId": template_id,
     })
     print(f"  已创建: {DEMO_ORG_NAME} (id={org.get('id') if org else '?'})")
     return org.get("id") if org else None
@@ -232,7 +220,10 @@ def step5_webhook(token):
             return h["id"]
     _, hook = http("POST", "/api/hooks", token, {
         "name": WEBHOOK_NAME,
-        "uri": "http://host.docker.internal:9080/rpc/webhook_logto",
+        "config": {
+            "url": "http://host.docker.internal:9080/rpc/webhook_logto",
+            "headers": {},
+        },
         "events": events,
         "enabled": True,
     })
@@ -241,11 +232,10 @@ def step5_webhook(token):
 
 
 def step6_claims_script(token):
-    """配置 access-token Custom Token Claims 脚本"""
+    """配置 access-token Custom Token Claims 脚本（tokenType 走路径参数，body 不含）"""
     print("[6] Custom Token Claims 脚本...")
     path = "/api/configs/jwt-customizer/access-token"
     status, _ = http("PUT", path, token, {
-        "tokenType": "access-token",
         "script": CLAIMS_SCRIPT,
         "environmentVariables": {},
         "blockIssuanceOnError": False,
@@ -263,39 +253,24 @@ def step6_claims_script(token):
 
 
 def main():
+    global ENDPOINT
     parser = argparse.ArgumentParser(description="Logto OSS 配置自动化")
     parser.add_argument("--endpoint", default=ENDPOINT)
     parser.add_argument("--verify", action="store_true", help="仅核对配置")
-    parser.add_argument("--m2m-secret", default="", help="已存在 M2M 应用时的 secret（首次运行会输出）")
+    parser.add_argument("--m2m-app-id", default="", help="M2M 应用 ID（默认 omnipg_management_m2m）")
+    parser.add_argument("--m2m-secret", default="", help="M2M 应用 Secret（DB 直插或 Console 创建）")
     args = parser.parse_args()
-    global ENDPOINT
+
     ENDPOINT = args.endpoint
 
     print(f"Logto endpoint: {ENDPOINT}")
 
-    # 需要先有 M2M 应用；若没有则提示先手动创建（Console → Applications → Machine-to-machine）
-    # 首次运行：脚本会尝试创建 M2M 应用（需管理 token）—— 先探测是否已有可用 token 方式
     if args.verify:
         print("== verify 模式 ==")
         return
 
-    # 说明：首次运行需在 Console 手动创建 M2M 应用并填入 secret
-    print("""
-====================================================================
-  首次运行说明:
-  1. 浏览器打开 Logto Console http://localhost:3002/
-  2. Applications → Create application → Machine-to-machine
-     - 名称: omnipg-management
-     - 复制 App ID / App Secret 填入下方参数
-  3. 创建后在 Applications → <omnipg-management> → Permissions
-     - 勾选 Management API 的 admin role 并保存
-====================================================================
-""")
-    app_id = input("M2M App ID: ").strip() or M2M_APP_ID
-    app_secret = input("M2M App Secret: ").strip()
-    if not app_secret:
-        print("缺少 secret，退出")
-        sys.exit(1)
+    app_id = args.m2m_app_id or "omnipg_management_m2m"
+    app_secret = args.m2m_secret or "omnipg_m2m_secret_2026_0123456789abcdef"
 
     token = get_m2m_token(app_id, app_secret)
     if not token:
@@ -304,8 +279,8 @@ def main():
     print("管理 token 获取成功\n")
 
     step2_global_role(token)
-    template_id = step3_org_template(token)
-    step4_demo_org(token, template_id)
+    step3_org_roles(token)
+    step4_demo_org(token)
     step5_webhook(token)
     step6_claims_script(token)
     print("\n全部完成 ✅")
