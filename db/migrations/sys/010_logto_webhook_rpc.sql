@@ -85,6 +85,29 @@ GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_logto(jsonb) TO web_anon;
 -- ==============================================================================
 
 -- ---------------------------------------------------------------------------
+-- 2.0 logto_ts — Logto 时间字段统一转换
+--     Logto API 返回 createdAt/updatedAt/lastSignInAt 为**毫秒时间戳数字**
+--     （如 1785943092358），webhook 投递时保留原样；测试/手工调用可能是 ISO 字符串
+--     → 兼容两种格式，非法值返回 NULL
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION logto_ts(v text) RETURNS timestamptz
+LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+    IF v IS NULL OR v = '' THEN RETURN NULL; END IF;
+    IF v ~ '^[0-9]+$' THEN
+        -- 毫秒时间戳（13 位）或秒（10 位）
+        IF length(v) >= 13 THEN
+            RETURN to_timestamp(v::bigint / 1000.0);
+        ELSE
+            RETURN to_timestamp(v::bigint);
+        END IF;
+    END IF;
+    RETURN v::timestamptz;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END $$;
+
+-- ---------------------------------------------------------------------------
 -- 2.1 sync_user_upsert — 用户创建/更新
 --     data 字段 = Logto User entity（F2 白名单）
 --     字段: id, username, primaryEmail, primaryPhone, name, avatar,
@@ -105,8 +128,8 @@ BEGIN
         COALESCE(data->>'avatar', ''),
         COALESCE(data->'customData', '{}'),
         COALESCE(data->'identities', '{}'),
-        NULLIF(data->>'lastSignInAt', '')::timestamptz,
-        COALESCE(NULLIF(data->>'createdAt', '')::timestamptz, now()),
+        logto_ts(data->>'lastSignInAt'),
+        COALESCE(logto_ts(data->>'createdAt'), now()),
         COALESCE(data->>'applicationId', ''),
         COALESCE((data->>'isSuspended')::boolean, false)
     )
@@ -148,7 +171,7 @@ BEGIN
         COALESCE(data->>'name', ''),
         COALESCE(data->>'description', ''),
         COALESCE(data->'customData', '{}'),
-        COALESCE(NULLIF(data->>'createdAt', '')::timestamptz, now())
+        COALESCE(logto_ts(data->>'createdAt'), now())
     )
     ON CONFLICT (id) DO UPDATE SET
         name        = EXCLUDED.name,

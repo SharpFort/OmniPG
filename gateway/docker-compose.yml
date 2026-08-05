@@ -85,7 +85,7 @@ services:
       JWKS_JSON: '${JWKS_JSON}'
       PGRST_JWT_SECRET: '${JWKS_JSON}'
       # Phase 1 D10: Casdoor JWT roles 为角色对象数组（[{name:...}]），取首个角色名（JSPath 语法，. 开头）
-      PGRST_JWT_ROLE_CLAIM_KEY: ".roles[0].name"
+      PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
       PGRST_DB_PRE_REQUEST: "api_v1_sys.check_token_blacklist"
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"
       PGRST_SERVER_HOST: "0.0.0.0"

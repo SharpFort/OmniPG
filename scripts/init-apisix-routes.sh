@@ -70,8 +70,13 @@ put logto_jwks '{"uri":"/.well-known/jwks","upstream":{"type":"roundrobin","node
 put logto_proxy '{"uri":"/logto/*","upstream":{"type":"roundrobin","nodes":{"app-logto:3001":1}},"priority":60,"plugins":{"proxy-rewrite":{"regex_uri":["^/logto/(.*)","/$1"]}}}'
 
 # 4.3 Webhook 接收入口 — /rpc/webhook_logto（POST，web_anon 可调，无 jwt-auth）
-#     验签由 APISIX serverless-pre-function 完成（P0 开发期先跳过，T5 生产加）
-put webhook_logto '{"uri":"/rpc/webhook_logto","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":95,"methods":["POST"],"plugins":{"request-validation":{"body_schema":{"type":"object","required":["event"]}}}}'
+#     验签由 APISIX serverless-pre-function 完成（HMAC-SHA256(rawBody) vs logto-signature-sha-256）
+#     注意：不可叠加 request-validation（其 JSON 重排会破坏 rawBody 签名）
+WEBHOOK_SIGNING_KEY="${LOGTO_WEBHOOK_SIGNING_KEY:-}"
+if [ -z "$WEBHOOK_SIGNING_KEY" ]; then
+  echo "  !! 缺少 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env），webhook 验签将被禁用"
+fi
+put webhook_logto "{\"uri\":\"/rpc/webhook_logto\",\"upstream\":{\"type\":\"roundrobin\",\"nodes\":{\"app-postgrest:3000\":1}},\"priority\":95,\"methods\":[\"POST\"],\"plugins\":{\"serverless-pre-function\":{\"phase\":\"access\",\"signing_key\":\"${WEBHOOK_SIGNING_KEY}\",\"functions\":[\"return function(conf, ctx)\\\\n  local resty_hmac = require('resty.openssl.hmac')\\\\n  local resty_str = require('resty.string')\\\\n  local key = conf.signing_key\\\\n  ngx.req.read_body()\\\\n  local body = ngx.var.request_body or ''\\\\n  local sig = ngx.var.http_logto_signature_sha_256 or ''\\\\n  if sig == '' then return ngx.exit(401) end\\\\n  local hmac = resty_hmac.new(key, 'sha256')\\\\n  hmac:update(body)\\\\n  local expected = resty_str.to_hex(hmac:final())\\\\n  if expected ~= sig then\\\\n    ngx.log(ngx.ERR, 'webhook signature mismatch')\\\\n    return ngx.exit(401)\\\\n  end\\\\nend\"]}}}"
 
 # 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth）
 put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{}}}'
