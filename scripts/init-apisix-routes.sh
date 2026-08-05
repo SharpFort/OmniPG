@@ -72,11 +72,60 @@ put logto_proxy '{"uri":"/logto/*","upstream":{"type":"roundrobin","nodes":{"app
 # 4.3 Webhook 接收入口 — /rpc/webhook_logto（POST，web_anon 可调，无 jwt-auth）
 #     验签由 APISIX serverless-pre-function 完成（HMAC-SHA256(rawBody) vs logto-signature-sha-256）
 #     注意：不可叠加 request-validation（其 JSON 重排会破坏 rawBody 签名）
+#     注意：大 body（>client_body_buffer_size）会落临时文件，须 get_body_file() 回退读取
 WEBHOOK_SIGNING_KEY="${LOGTO_WEBHOOK_SIGNING_KEY:-}"
 if [ -z "$WEBHOOK_SIGNING_KEY" ]; then
   echo "  !! 缺少 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env），webhook 验签将被禁用"
 fi
-put webhook_logto "{\"uri\":\"/rpc/webhook_logto\",\"upstream\":{\"type\":\"roundrobin\",\"nodes\":{\"app-postgrest:3000\":1}},\"priority\":95,\"methods\":[\"POST\"],\"plugins\":{\"serverless-pre-function\":{\"phase\":\"access\",\"signing_key\":\"${WEBHOOK_SIGNING_KEY}\",\"functions\":[\"return function(conf, ctx)\\\\n  local resty_hmac = require('resty.openssl.hmac')\\\\n  local resty_str = require('resty.string')\\\\n  local key = conf.signing_key\\\\n  ngx.req.read_body()\\\\n  local body = ngx.var.request_body or ''\\\\n  local sig = ngx.var.http_logto_signature_sha_256 or ''\\\\n  if sig == '' then return ngx.exit(401) end\\\\n  local hmac = resty_hmac.new(key, 'sha256')\\\\n  hmac:update(body)\\\\n  local expected = resty_str.to_hex(hmac:final())\\\\n  if expected ~= sig then\\\\n    ngx.log(ngx.ERR, 'webhook signature mismatch')\\\\n    return ngx.exit(401)\\\\n  end\\\\nend\"]}}}"
+# 用 python 生成路由 JSON（避免 bash 内嵌 Lua 转义地狱）
+cat > .webhook_verify.lua <<'LUA'
+return function(conf, ctx)
+  local resty_hmac = require('resty.openssl.hmac')
+  local resty_str = require('resty.string')
+  local key = conf.signing_key
+  ngx.req.read_body()
+  local body = ngx.req.get_body_data()
+  if not body then
+    local file = ngx.req.get_body_file()
+    if file then
+      local f = assert(io.open(file, 'rb'))
+      body = f:read('*a')
+      f:close()
+    end
+  end
+  body = body or ''
+  local sig = ngx.var.http_logto_signature_sha_256 or ''
+  if sig == '' then return ngx.exit(401) end
+  local hmac = resty_hmac.new(key, 'sha256')
+  hmac:update(body)
+  local expected = resty_str.to_hex(hmac:final())
+  if expected ~= sig then
+    ngx.log(ngx.ERR, 'webhook signature mismatch: expected=' .. expected .. ' got=' .. sig)
+    return ngx.exit(401)
+  end
+end
+LUA
+WEBHOOK_LUA="$(cat .webhook_verify.lua)"
+rm -f .webhook_verify.lua
+WEBHOOK_JSON="$(${PYTHON:-python3} -c '
+import json, os
+lua_fn = os.environ["WEBHOOK_LUA"]
+route = {
+    "uri": "/rpc/webhook_logto",
+    "upstream": {"type": "roundrobin", "nodes": {"app-postgrest:3000": 1}},
+    "priority": 95,
+    "methods": ["POST"],
+    "plugins": {
+        "serverless-pre-function": {
+            "phase": "access",
+            "signing_key": os.environ["WEBHOOK_SIGNING_KEY"],
+            "functions": [lua_fn],
+        }
+    },
+}
+print(json.dumps(route))
+')"
+put webhook_logto "$WEBHOOK_JSON"
 
 # 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth）
 put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{}}}'
