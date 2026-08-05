@@ -19,15 +19,18 @@
 --    受 Logto webhook 调用的统一入口（订阅事件: User.* / Organization.* / Membership / Role.*）
 --    验签由 APISIX 前置完成；此处按 event 分发，失败静默返回 ok（Logto 重试机制）
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION api_v1_sys.webhook_logto(payload jsonb)
+-- 参数改无名（$1）：PostgREST 单 jsonb 参数 RPC 要求 body 平铺匹配无名参数，
+-- 具名参数（payload）会要求 body 用 {"payload": ...} 包装 → Logto 平铺 body 404
+DROP FUNCTION IF EXISTS api_v1_sys.webhook_logto(jsonb);
+CREATE FUNCTION api_v1_sys.webhook_logto(jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_event text := payload->>'event';
-    v_data  jsonb := payload->'data';
+    v_event text := $1->>'event';
+    v_data  jsonb := $1->'data';
 BEGIN
     CASE v_event
         -- ═══ 用户事件 ═══
@@ -49,9 +52,9 @@ BEGIN
         -- ═══ 成员关系事件（增量 diff）═══
         WHEN 'Organization.Membership.Updated' THEN
             PERFORM sync_membership_delta(
-                payload->>'organizationId',
-                COALESCE(payload->'addedUserIds', '[]'::jsonb),
-                COALESCE(payload->'removedUserIds', '[]'::jsonb));
+                $1->>'organizationId',
+                COALESCE($1->'addedUserIds', '[]'::jsonb),
+                COALESCE($1->'removedUserIds', '[]'::jsonb));
 
         -- ═══ 角色目录事件 ═══
         WHEN 'Role.Created' THEN
