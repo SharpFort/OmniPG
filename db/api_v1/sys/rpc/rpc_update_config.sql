@@ -11,7 +11,7 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-    UPDATE public.sys_config
+    UPDATE public.app_config
     SET config_value = p_config_value, updated_at = now()
     WHERE config_key = p_config_key;
     

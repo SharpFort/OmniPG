@@ -3,5 +3,5 @@
 
 CREATE OR REPLACE VIEW api_v1_sys.sys_cron_log AS
 SELECT id, job_name, execution_time, result, duration_ms
-FROM public.sys_cron_log;
+FROM public.cron_job_log;
 COMMENT ON VIEW api_v1_sys.sys_cron_log IS 'Cron 执行日志视图（只读）';

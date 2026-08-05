@@ -86,11 +86,11 @@ CREATE INDEX IF NOT EXISTS idx_ut_org ON user_tenants(organization_id);
 CREATE INDEX IF NOT EXISTS idx_ut_user ON user_tenants(user_id);
 
 -- ---------------------------------------------------------------------------
--- 1.4 iam_role — Logto 角色目录镜像
+-- 1.4 role — Logto 角色目录镜像（无前缀镜像表：users/tenants/user_tenants/role）
 --     role_code = 生成列（GENERATED ALWAYS AS name），与 iam_role_api.role_code 对齐（E5）
 --     来源: Role.Created / Role.Data.Updated / Role.Deleted webhook
 -- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS iam_role (
+CREATE TABLE IF NOT EXISTS role (
     id              text PRIMARY KEY,                          -- Logto 角色 id
     name            varchar(128) NOT NULL,                     -- Logto 角色名（全局唯一，F20）
     role_code       text GENERATED ALWAYS AS (name) STORED,    -- 生成列 = name（E5），join key
@@ -100,11 +100,11 @@ CREATE TABLE IF NOT EXISTS iam_role (
     updated_at      timestamptz  NOT NULL DEFAULT now()
 );
 
-COMMENT ON TABLE iam_role IS 'Logto 角色目录镜像（只读投影；授权判定不读此表，读 claims roles）';
-COMMENT ON COLUMN iam_role.role_code IS '生成列 = name（E5），与 iam_role_api.role_code / 网关 required_roles 对齐';
+COMMENT ON TABLE role IS 'Logto 角色目录镜像（只读投影；授权判定不读此表，读 claims roles）';
+COMMENT ON COLUMN role.role_code IS '生成列 = name（E5），与 iam_role_api.role_code / 网关 required_roles 对齐';
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_iam_role_name ON iam_role(name);
-CREATE INDEX IF NOT EXISTS idx_iam_role_type ON iam_role(type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_role_name ON role(name);
+CREATE INDEX IF NOT EXISTS idx_role_type ON role(type);
 
 -- ---------------------------------------------------------------------------
 -- 1.5 iam_user_role — 用户↔角色分配镜像（P1 启用）
@@ -114,7 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_iam_role_type ON iam_role(type);
 -- ---------------------------------------------------------------------------
 -- CREATE TABLE IF NOT EXISTS iam_user_role (
 --     user_id   text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
---     role_id   text NOT NULL REFERENCES iam_role(id) ON DELETE CASCADE,
+--     role_id   text NOT NULL REFERENCES role(id) ON DELETE CASCADE,
 --     PRIMARY KEY (user_id, role_id)
 -- );
 
@@ -337,7 +337,7 @@ COMMENT ON VIEW casbin_rule IS 'Casbin 策略运行视图 — Logto 版：iam_ro
 GRANT SELECT ON users TO authenticated;
 GRANT SELECT ON tenants TO authenticated;
 GRANT SELECT ON user_tenants TO authenticated;
-GRANT SELECT ON iam_role TO authenticated;
+GRANT SELECT ON role TO authenticated;
 
 -- 自主表：CRUD 权限交管理端 RPC（带 has_permission 检查），authenticated 可读
 GRANT SELECT ON iam_api TO authenticated;

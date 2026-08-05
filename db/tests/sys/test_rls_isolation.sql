@@ -1,76 +1,67 @@
--- pgTAP 测试：多租户 RLS 穿透测试
--- 运行方式：pg_prove -U app_owner -d app_db db/tests/public/test_rls_isolation.sql
+-- pgTAP 测试：多租户 RLS 穿透测试（T7 重写：Logto 镜像表）
+-- 运行方式：pg_prove -U app_owner -d app_db db/tests/sys/test_rls_isolation.sql
 BEGIN;
-SELECT plan(10);
+SELECT plan(14);
 
 -- ============================================================
--- 1. RLS 策略存在性检查
+-- 1. 镜像表存在性 + RLS 策略
 -- ============================================================
-SELECT has_table('sys_user', '用户表 sys_user 存在');
-
--- 验证 RLS 策略存在
-SELECT results_eq(
-    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'sys_user' AND schemaname = 'public' $$,
-    ARRAY[2::bigint],
-    'sys_user 表有 2 个 RLS 策略（tenant_isolation + dept_isolation）'
-);
+SELECT has_table('users', '用户镜像表 users 存在');
+SELECT has_table('tenants', '租户镜像表 tenants 存在');
+SELECT has_table('user_tenants', '成员镜像表 user_tenants 存在');
+SELECT has_table('role', '角色镜像表 role 存在');
 
 -- ============================================================
--- 2. tenant_isolation_strict_policy 验证
+-- 2. RLS 策略存在性
 -- ============================================================
 SELECT results_eq(
-    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'sys_user' AND policyname = 'tenant_isolation_strict_policy' $$,
+    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'users' AND schemaname = 'public' $$,
     ARRAY[1::bigint],
-    'tenant_isolation_strict_policy 策略存在'
-);
-
--- ============================================================
--- 3. 部门隔离验证
--- ============================================================
-SELECT results_eq(
-    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'sys_user' AND policyname = 'employee_dept_isolation_policy' $$,
-    ARRAY[1::bigint],
-    'employee_dept_isolation_policy 策略存在'
-);
-
--- ============================================================
--- 4. RLS 启用状态验证
--- ============================================================
-SELECT results_eq(
-    $$ SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = 'sys_user' AND n.nspname = 'public' AND c.relrowsecurity = true $$,
-    ARRAY[1::bigint],
-    'sys_user 表已启用 RLS'
-);
-
--- ============================================================
--- 5. 其他表 RLS 启用状态
--- ============================================================
-SELECT results_eq(
-    $$ SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = 'sys_role' AND n.nspname = 'public' AND c.relrowsecurity = true $$,
-    ARRAY[1::bigint],
-    'sys_role 表已启用 RLS'
+    'users 表有 1 个 RLS 策略（users_tenant_policy）'
 );
 
 SELECT results_eq(
-    $$ SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = 'sys_api' AND n.nspname = 'public' AND c.relrowsecurity = true $$,
+    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'user_tenants' AND policyname = 'user_tenants_policy' $$,
     ARRAY[1::bigint],
-    'sys_api 表已启用 RLS'
+    'user_tenants_policy 策略存在'
+);
+
+SELECT results_eq(
+    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'user_profile' AND policyname = 'profile_tenant_policy' $$,
+    ARRAY[1::bigint],
+    'profile_tenant_policy 策略存在'
 );
 
 -- ============================================================
--- 6. 辅助函数存在性
--- ============================================================
-SELECT has_function('current_user_id', ARRAY[], 'current_user_id() 函数存在');
-SELECT has_function('current_tenant_id', ARRAY[], 'current_tenant_id() 函数存在');
-SELECT has_function('current_user_dept_id', ARRAY[], 'current_user_dept_id() 函数存在');
-
--- ============================================================
--- 7. sys_token_blacklist 的 RESTRICTIVE 策略
+-- 3. RLS 启用状态验证
 -- ============================================================
 SELECT results_eq(
-    $$ SELECT count(*) FROM pg_policies WHERE tablename = 'sys_token_blacklist' AND policyname = 'blacklist_internal' $$,
+    $$ SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = 'users' AND n.nspname = 'public' AND c.relrowsecurity = true $$,
     ARRAY[1::bigint],
-    'sys_token_blacklist 有 RESTRICTIVE 策略阻止直接访问'
+    'users 表已启用 RLS'
+);
+
+SELECT results_eq(
+    $$ SELECT count(*) FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid WHERE c.relname = 'role' AND n.nspname = 'public' AND c.relrowsecurity = true $$,
+    ARRAY[1::bigint],
+    'role 表已启用 RLS'
+);
+
+-- ============================================================
+-- 4. 辅助函数存在性（Logto claims 语义）
+-- ============================================================
+SELECT has_function('current_user_id', ARRAY[]::text[], 'current_user_id() 函数存在');
+SELECT has_function('current_tenant_id', ARRAY[]::text[], 'current_tenant_id() 函数存在');
+SELECT has_function('current_user_roles', ARRAY[]::text[], 'current_user_roles() 函数存在');
+SELECT has_function('is_super_admin', ARRAY[]::text[], 'is_super_admin() 函数存在');
+
+-- ============================================================
+-- 5. RLS helper 返回类型（text / text[] — Logto nanoid）
+-- ============================================================
+SELECT ok(
+    (SELECT data_type = 'text' FROM information_schema.routines
+     WHERE routine_name = 'current_tenant_id' AND specific_schema = 'public'),
+    'current_tenant_id 返回 text（Logto organization_id）'
 );
 
 SELECT * FROM finish();

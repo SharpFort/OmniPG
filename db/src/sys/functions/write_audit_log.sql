@@ -1,10 +1,10 @@
 -- db/src/sys/functions/write_audit_log.sql
 -- 通用审计日志写入函数（供触发器和业务 RPC 调用）
--- P0 修复：标准化审计日志写入，支持来源追踪
+-- T7: sys_audit_log → audit_log；user_id 类型 text（Logto sub）
 --
 -- 调用场景：
 --   1. 触发器自动调用（数据变更审计）
---   2. RPC 手动调用（业务事件审计：登录/登出/踢人/密码修改等）
+--   2. RPC 手动调用（业务事件审计：登录/登出/密码修改等）
 --
 -- 参数说明：
 --   p_table_name : 操作的表名
@@ -28,19 +28,19 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_tenant_id uuid;
-    v_user_id uuid;
+    v_tenant_id text;
+    v_user_id text;
 BEGIN
-    -- 提取 tenant_id（优先从 new_data，其次 old_data）
+    -- 提取 tenant_id（优先从 new_data，其次 old_data；Logto organization_id）
     v_tenant_id := COALESCE(
-        (p_new_data->>'tenant_id')::uuid,
-        (p_old_data->>'tenant_id')::uuid
+        p_new_data->>'tenant_id',
+        p_old_data->>'tenant_id'
     );
-    
+
     -- 提取 user_id（从 JWT 上下文）
     v_user_id := current_user_id();
-    
-    INSERT INTO public.sys_audit_log (
+
+    INSERT INTO public.audit_log (
         table_name,
         operation,
         old_data,
@@ -64,7 +64,7 @@ BEGIN
 END;
 $$;
 
-COMMENT ON FUNCTION public.write_audit_log(text, text, jsonb, jsonb, text, text) IS 
+COMMENT ON FUNCTION public.write_audit_log(text, text, jsonb, jsonb, text, text) IS
 '通用审计日志写入函数：标准化数据变更和业务事件的审计记录。
 触发器场景：自动记录表数据变更（source=trigger）
-业务场景：记录登录/登出/踢人/密码修改等事件（source=rpc/business）';
+业务场景：记录登录/登出/密码修改等事件（source=rpc/business）';

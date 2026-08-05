@@ -11,7 +11,7 @@ AS $$
         json_object_agg(config_key, config_value),
         '{}'::json
     )
-    FROM public.sys_config
+    FROM public.app_config
     WHERE is_public = TRUE;
 $$;
 COMMENT ON FUNCTION api_v1_sys.get_all_public_configs() IS '获取所有公开配置（前端初始化）';

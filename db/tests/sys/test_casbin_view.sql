@@ -1,7 +1,7 @@
--- pgTAP 测试：casbin_rule 视图
--- 运行方式：pg_prove -U app_owner -d app_db db/tests/public/test_casbin_view.sql
+-- pgTAP 测试：casbin_rule 视图（T7 重写：Logto 自主表投影）
+-- 运行方式：pg_prove -U app_owner -d app_db db/tests/sys/test_casbin_view.sql
 BEGIN;
-SELECT plan(10);
+SELECT plan(8);
 
 -- ============================================================
 -- 1. 视图存在性检查
@@ -25,20 +25,19 @@ SELECT results_eq(
 
 -- 验证 v0 列输出的是 role_code（非 UUID）
 SELECT results_eq(
-    $$ SELECT v0 FROM casbin_rule LIMIT 1 $$,
-    ARRAY['super_admin'::varchar],
+    $$ SELECT v0 FROM casbin_rule WHERE v0 IS NOT NULL LIMIT 1 $$,
+    ARRAY['role_super_admin'::varchar],
     'v0 列输出角色代码（role_code）'
 );
 
 -- ============================================================
 -- 4. is_active 过滤验证
 -- ============================================================
--- 禁用角色后，其策略不应出现在视图中
--- 先确认 super_admin 的策略存在
+-- 确认 role_super_admin 的策略存在（种子数据）
 SELECT results_eq(
-    $$ SELECT count(*) FROM casbin_rule WHERE v0 = 'super_admin' $$,
-    ARRAY[1::bigint],
-    'super_admin 的策略存在（种子数据）'
+    $$ SELECT count(*) > 0 FROM casbin_rule WHERE v0 = 'role_super_admin' $$,
+    ARRAY[true],
+    'role_super_admin 的策略存在（种子数据）'
 );
 
 -- 验证禁用的 API 不会出现在视图中
@@ -53,7 +52,7 @@ SELECT results_eq(
 -- ============================================================
 -- 验证 is_active = false 的 API 不会出现在视图中
 SELECT results_eq(
-    $$ SELECT count(*) FROM casbin_rule c JOIN sys_api a ON c.v1 = a.path AND c.v2 = a.method WHERE a.is_active = false $$,
+    $$ SELECT count(*) FROM casbin_rule c JOIN iam_api a ON c.v1 = a.path AND c.v2 = a.method WHERE a.is_active = false $$,
     ARRAY[0::bigint],
     '禁用的 API 不会出现在 casbin_rule 视图中'
 );

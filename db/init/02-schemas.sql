@@ -39,16 +39,9 @@ BEGIN
 END
 $$;
 
--- 4. casdoor 角色（Casdoor 服务专用）
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'casdoor') THEN
-        CREATE ROLE casdoor LOGIN PASSWORD 'casdoor_dev_pass';
-    END IF;
-END
-$$;
+-- 4. （T7 移除）casdoor 角色已退役——Logto 直连 PG 5433，无 casdoor DB/角色
 
--- 业务角色（JWT roles 数组映射到 PG 角色，与 sys_role.role_code 一致）
+-- 业务角色（JWT roles 数组映射到 PG 角色，与 role.role_code 一致）
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'super_admin') THEN
@@ -95,15 +88,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA net TO authenticated;
 \echo 'Schema 和角色创建完成'
 
 -- ==============================================================================
--- api_v1.check_token_blacklist 包装函数
--- PostgREST PGRST_DB_PRE_REQUEST = api_v1.check_token_blacklist
--- 实际函数在 public schema（07 Migration 005 创建）
--- 需要在 api_v1 schema 中创建 SECURITY DEFINER 包装函数供 PostgREST 调用
+-- T7: 原 api_v1.check_token_blacklist 包装函数（PGRST_DB_PRE_REQUEST）已退役
+--     D12: 会话/吊销交 Logto；PGRST_DB_PRE_REQUEST 已清空
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION api_v1.check_token_blacklist()
-RETURNS void
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$ SELECT public.check_token_blacklist() $$;
-COMMENT ON FUNCTION api_v1.check_token_blacklist() IS 'PostgREST db-pre-request 包装（委托 public.check_token_blacklist）';
+

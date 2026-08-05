@@ -10,6 +10,6 @@ SELECT
     is_public,
     created_at,
     updated_at
-FROM public.sys_config;
+FROM public.app_config;
 
 COMMENT ON VIEW api_v1_sys.sys_config IS '系统配置视图（公开配置，不含敏感描述）';

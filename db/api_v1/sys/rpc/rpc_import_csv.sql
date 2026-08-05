@@ -38,7 +38,7 @@ BEGIN
     FROM information_schema.tables
     WHERE table_schema = 'api_v1_sys'
       AND table_type IN ('VIEW', 'BASE TABLE')
-      AND table_name NOT IN ('sys_secret', 'sys_token_blacklist', 'sys_cron_log', 'sys_audit_log');
+      AND table_name NOT IN ('app_config', 'audit_log', 'cron_job_log');
     
     IF NOT (p_table_name = ANY(v_valid_tables)) THEN
         RAISE EXCEPTION 'Table % not found or not importable', p_table_name USING ERRCODE = 'P0001';

@@ -1,6 +1,6 @@
 -- db/src/sys/types/audit_operation.sql
 -- 审计操作类型枚举
--- 来源: sys_audit_log.operation 字段
+-- 来源: audit_log.operation 字段（T7）
 
 DO $$ BEGIN
     CREATE TYPE public.audit_operation AS ENUM ('INSERT', 'UPDATE', 'DELETE');

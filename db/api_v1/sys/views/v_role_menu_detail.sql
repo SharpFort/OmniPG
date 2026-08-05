@@ -1,21 +1,21 @@
--- db/api_v1/sys/views/v_role_menu_detail.sql
--- 角色-菜单关联详情视图
--- 来源: 20260707000016_relationship_management.sql
+-- db/api_v1/sys/views/v_role_menu_detail
+-- T7: 重建为 iam_role_menu 投影（Logto 语义），与 013 迁移一致
+-- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
-CREATE OR REPLACE VIEW api_v1_sys.v_role_menu_detail AS
-SELECT 
-    rm.role_id,
+DROP VIEW IF EXISTS api_v1_sys.v_role_menu_detail CASCADE;
+CREATE VIEW api_v1_sys.v_role_menu_detail AS
+SELECT
+    rm.id AS role_id,
     rm.menu_id,
     rm.created_at,
-    r.role_code,
-    r.role_name,
+    rm.role_code,
+    COALESCE(r.name, rm.role_code) AS role_name,
     m.name AS menu_name,
     m.type AS menu_type,
     m.title AS menu_title,
     m.permission_code,
     m.parent_id AS menu_parent_id
-FROM public.sys_role_menu rm
-JOIN public.sys_role r ON rm.role_id = r.id
-JOIN public.sys_menu m ON rm.menu_id = m.id
-WHERE r.deleted_at IS NULL AND m.deleted_at IS NULL;
-COMMENT ON VIEW api_v1_sys.v_role_menu_detail IS '角色-菜单关联详情视图';
+FROM iam_role_menu rm
+JOIN role r ON r.role_code = rm.role_code
+JOIN sys_menu m ON m.id = rm.menu_id;
+COMMENT ON VIEW api_v1_sys.v_role_menu_detail IS '角色-菜单明细视图（Logto 镜像：iam_role_menu）';

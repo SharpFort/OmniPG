@@ -86,7 +86,7 @@ services:
       PGRST_JWT_SECRET: '${JWKS_JSON}'
       # Phase 1 D10: Casdoor JWT roles 为角色对象数组（[{name:...}]），取首个角色名（JSPath 语法，. 开头）
       PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
-      PGRST_DB_PRE_REQUEST: "api_v1_sys.check_token_blacklist"
+      PGRST_DB_PRE_REQUEST: ""
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"
       PGRST_SERVER_HOST: "0.0.0.0"
       PGRST_SERVER_PORT: "3000"
@@ -139,26 +139,6 @@ services:
       DATABASE_STATEMENT_TIMEOUT: "DISABLE_TIMEOUT"   # pgBouncer 兼容（v1.36.0+）
       ENDPOINT: "http://localhost:3001"
       ADMIN_ENDPOINT: "http://localhost:3002"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  # ===========================================================================
-  # Casdoor IAM/OAuth 服务 — 待移除（T7），Logto 替代已上线
-  # ===========================================================================
-  casdoor:
-    image: casbin/casdoor:3.133.0
-    container_name: app-casdoor
-    restart: unless-stopped
-    networks:
-      app-net:
-        ipv4_address: 172.20.0.7
-    ports:
-      - "8000:8000"
-    environment:
-      driverName: postgres
-      dataSourceName: "user=casdoor password=${CASDOOR_DB_PASSWORD:-casdoor_dev_pass} host=host.docker.internal port=6432 sslmode=disable dbname=casdoor"
-      runMode: dev
-      httpPort: 8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

@@ -15,7 +15,7 @@ BEGIN
         'config_value', config_value,
         'config_type', config_type
     ) INTO v_result
-    FROM public.sys_config
+    FROM public.app_config
     WHERE config_key = p_config_key AND is_public = TRUE;
     
     RETURN v_result;

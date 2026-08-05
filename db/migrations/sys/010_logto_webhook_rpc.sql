@@ -238,7 +238,7 @@ END $$;
 CREATE OR REPLACE FUNCTION sync_role_upsert(data jsonb) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-    INSERT INTO iam_role (id, name, type, is_default, created_at)
+    INSERT INTO role (id, name, type, is_default, created_at)
     VALUES (
         data->>'id',
         COALESCE(data->>'name', ''),
@@ -259,7 +259,7 @@ END $$;
 CREATE OR REPLACE FUNCTION sync_role_delete(role_id text) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-    DELETE FROM iam_role WHERE id = role_id;
+    DELETE FROM role WHERE id = role_id;
 END $$;
 
 -- ==============================================================================

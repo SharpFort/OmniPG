@@ -1,6 +1,6 @@
 -- db/api_v1/sys/rpc/rpc_get_current_user.sql
--- 获取当前登录用户信息 RPC
--- 来源: 20260707000014_auth_rpc_functions.sql
+-- 获取当前登录用户信息 RPC（T7: Logto 镜像语义 users+user_profile+tenants+department）
+-- 来源: 20260707000014_auth_rpc_functions.sql → T7 适配
 
 CREATE OR REPLACE FUNCTION api_v1_sys.get_current_user()
 RETURNS json
@@ -9,30 +9,32 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_user_id uuid;
+    v_user_id text;
     v_user RECORD;
 BEGIN
     v_user_id := current_user_id();
-    
-    IF v_user_id IS NULL OR v_user_id = '00000000-0000-0000-0000-000000000000'::uuid THEN
+
+    IF v_user_id IS NULL OR v_user_id = '' THEN
         RAISE EXCEPTION 'Unauthorized' USING ERRCODE = 'P0001';
     END IF;
-    
-    SELECT u.id, u.username, u.email, u.phone, u.tenant_id, u.dept_id, u.is_active,
+
+    SELECT u.id, u.username, u.primary_email AS email, u.primary_phone AS phone,
+           p.tenant_id, p.dept_id, (NOT u.is_suspended) AS is_active,
            u.created_at, u.updated_at,
-           t.tenant_name, t.tenant_code,
+           t.name AS tenant_name,
            d.dept_name,
            (current_setting('request.jwt.claims', true)::json->'roles')::jsonb AS roles
     INTO v_user
-    FROM public.sys_user u
-    LEFT JOIN public.sys_tenant t ON u.tenant_id = t.id
-    LEFT JOIN public.sys_department d ON u.dept_id = d.id
+    FROM public.users u
+    LEFT JOIN public.user_profile p ON p.user_id = u.id
+    LEFT JOIN public.tenants t ON p.tenant_id = t.id
+    LEFT JOIN public.department d ON p.dept_id = d.id
     WHERE u.id = v_user_id AND u.deleted_at IS NULL;
-    
+
     IF NOT FOUND THEN
         RAISE EXCEPTION 'User not found' USING ERRCODE = 'P0001';
     END IF;
-    
+
     RETURN json_build_object(
         'id', v_user.id,
         'username', v_user.username,
@@ -40,7 +42,6 @@ BEGIN
         'phone', v_user.phone,
         'tenant_id', v_user.tenant_id,
         'tenant_name', v_user.tenant_name,
-        'tenant_code', v_user.tenant_code,
         'dept_id', v_user.dept_id,
         'dept_name', v_user.dept_name,
         'is_active', v_user.is_active,
@@ -50,5 +51,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1_sys.get_current_user() IS '获取当前登录用户信息（从 JWT claims 提取）';
+COMMENT ON FUNCTION api_v1_sys.get_current_user() IS '获取当前登录用户信息（Logto 镜像：users+user_profile+tenants）';
 GRANT EXECUTE ON FUNCTION api_v1_sys.get_current_user() TO authenticated;

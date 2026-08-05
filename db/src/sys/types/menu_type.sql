@@ -1,6 +1,6 @@
 -- db/src/sys/types/menu_type.sql
 -- 菜单类型枚举
--- 来源: sys_menu.type 字段
+-- 来源: iam_menu.type 字段（T7）
 
 DO $$ BEGIN
     CREATE TYPE public.menu_type AS ENUM ('DIR', 'MENU', 'BUTTON');

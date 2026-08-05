@@ -1,0 +1,22 @@
+[Unit]
+Description=Casbin Policy Syncer for APISIX
+After=network.target postgresql@18-main.service pgbouncer.service
+
+[Service]
+Type=simple
+User=root
+Environment="DB_HOST=127.0.0.1"
+Environment="DB_PORT=6432"
+Environment="DB_USER=app_owner"
+Environment="DB_PASSWORD=dev_password_change_me"
+Environment="DB_NAME=app_db"
+Environment="SSL_MODE=disable"
+Environment="HTTP_PORT=9081"
+Environment="APISIX_ADMIN_URL=http://127.0.0.1:9180/apisix/admin/plugin_metadata/authz-casbin"
+Environment="APISIX_ADMIN_KEY=edd1c9f034335f136f87ad84b625c8f1"
+ExecStart=/usr/local/bin/casbin-syncer
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

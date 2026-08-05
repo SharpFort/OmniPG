@@ -1,18 +1,15 @@
--- 02_function_test.sql：函数行为测试
+-- 02_function_test.sql：函数行为测试（T7 更新：Logto claims 语义）
 BEGIN;
-SELECT plan(14);
+SELECT plan(13);
 
--- sha256 函数测试
-SELECT function_lang_is('sha256', 'sql');
-SELECT is(sha256('hello'::bytea), encode(digest('hello', 'sha256'), 'hex'), 'sha256 正确计算');
+-- sha256 函数测试（pgcrypto 内置，语言 internal）
+SELECT is(encode(sha256('hello'::bytea), 'hex'), encode(digest('hello', 'sha256'), 'hex'), 'sha256 正确计算');
 
--- current_user_id 函数（无 JWT 时应返回全零 UUID）
+-- current_user_id 函数（无 JWT 时返回 NULL）
 SELECT lives_ok('SELECT current_user_id()', 'current_user_id 不抛异常');
+SELECT is(current_user_id(), NULL, '无 JWT 时 user_id 为 NULL');
 SELECT is(current_tenant_id(), NULL, '无 JWT 时 tenant_id 为 NULL');
-
--- cleanup_expired_tokens 函数
-SELECT function_lang_is('cleanup_expired_tokens', 'plpgsql');
-SELECT lives_ok('SELECT cleanup_expired_tokens()', 'cleanup 函数可调用');
+SELECT is(current_user_roles(), ARRAY[]::text[], '无 JWT 时 roles 为空数组');
 
 -- update_updated_at 函数存在
 SELECT has_function('update_updated_at');
@@ -24,6 +21,7 @@ SELECT has_function('audit_trigger_func');
 -- is_super_admin 函数
 SELECT has_function('is_super_admin');
 SELECT function_lang_is('is_super_admin', 'sql');
+SELECT is(is_super_admin(), false, '无 JWT 时非超管');
 
 -- pg_pwhash 函数
 SELECT has_function('pwhash_crypt');

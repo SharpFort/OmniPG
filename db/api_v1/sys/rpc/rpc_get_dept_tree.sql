@@ -17,7 +17,7 @@ BEGIN
             1 AS level,
             ARRAY[d.id] AS path_ids,
             ARRAY[d.dept_name] AS path_names
-        FROM public.sys_department d
+        FROM public.department d
         WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
           AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
         
@@ -28,7 +28,7 @@ BEGIN
             dt.level + 1,
             dt.path_ids || d.id,
             dt.path_names || d.dept_name
-        FROM public.sys_department d
+        FROM public.department d
         JOIN dept_tree dt ON d.parent_id = dt.id
         WHERE d.deleted_at IS NULL AND dt.level < 10
     )

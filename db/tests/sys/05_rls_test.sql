@@ -1,26 +1,67 @@
--- 05_rls_test.sql：RLS 行级安全策略测试
+-- 05_rls_test.sql：RLS 行级安全策略测试（T7 重写：Logto 镜像表 + 自主表）
 BEGIN;
-SELECT plan(8);
+SELECT plan(12);
 
--- 注意：此测试需要在 RLS 迁移后执行，并使用不同 tenant_id 的 JWT
+-- 1. 验证关键表上有 RLS 启用（用 pg_class 查询，bigint cast）
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'users' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'users RLS 已启用');
 
--- 1. 验证关键表上有 RLS 启用
-SELECT table_has_rls('sys_tenant');
-SELECT table_has_rls('sys_user');
-SELECT table_has_rls('sys_role');
-SELECT table_has_rls('sys_department');
-SELECT table_has_rls('sys_api');
-SELECT table_has_rls('sys_menu');
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'tenants' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'tenants RLS 已启用');
 
--- 2. 验证 sys_role 的 RLS 策略允许全局角色（tenant_id=NULL）
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'user_tenants' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'user_tenants RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'role' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'role RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'user_profile' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'user_profile RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'department' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'department RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'iam_api' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'iam_api RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'iam_menu' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'iam_menu RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'iam_role_api' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'iam_role_api RLS 已启用');
+
+SELECT is(
+    (SELECT count(*)::bigint FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+     WHERE c.relname = 'iam_role_menu' AND n.nspname = 'public' AND c.relrowsecurity = true),
+    1::bigint, 'iam_role_menu RLS 已启用');
+
+-- role 镜像表全局可读
 SELECT lives_ok($$
-    SELECT 1 FROM sys_role WHERE tenant_id IS NULL
-$$, '全局角色可查询');
+    SELECT 1 FROM role LIMIT 1
+$$, 'role 镜像表可读');
 
--- 3. 验证 sys_api 的 RLS 策略允许所有认证用户读取
+-- iam_api 策略允许读取激活项
 SELECT lives_ok($$
-    SELECT 1 FROM sys_api WHERE is_active = TRUE
-$$, 'API 资源可读');
+    SELECT 1 FROM iam_api WHERE is_active = TRUE LIMIT 1
+$$, 'iam_api 激活项可读');
 
 SELECT * FROM finish();
 ROLLBACK;

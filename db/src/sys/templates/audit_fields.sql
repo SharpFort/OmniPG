@@ -8,7 +8,7 @@
 --
 -- 重要提示：
 --   1. 模板中的 _by 字段（created_by/updated_by/deleted_by）定义为普通 UUID，
---       不强制外键约束（避免循环引用问题，特别是 sys_tenant 表）
+--       不强制外键约束（避免循环引用问题，特别是 tenants 镜像表（T7））
 --   2. 如需外键约束，建议在表创建后通过 ALTER TABLE 单独添加
 --   3. 所有模板中的索引使用 PostgreSQL 标准写法（CREATE INDEX），非内联索引
 --   4. _by 字段推荐使用 UUID v7（时间有序），可通过 is_uuid_v7() 函数验证
