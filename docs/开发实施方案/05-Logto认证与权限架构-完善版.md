@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.3（2026-08-04）— **admin 模块补全决策（05.1 分析定稿）**：命名采纳备选 B（无前缀=平台基础域）；新增 position/user_position（树形）、sys_dict_type/data、sys_login_log、ip_region_v4（019 迁移）；audit_log 扩展为统一审计流（log_type+jsonb，D-5）；日志策略（操作日志业务侧 + 访问日志 APISIX + 异常 PG 日志）；登录日志 = webhook PostSignIn + 失败对账（否决网关/前端独立获取）
 > - v2.2（2026-08-04）— **命名修正（E2 细化）**：role / user_role 同为 Logto 镜像表，与其他镜像表统一**无前缀**——命名规则定为"无前缀 = 镜像（Logto 权威，只读）/ `iam_` 前缀 = 自主（PG 权威，可写）"
 > - v2.1（2026-08-04）— **第二轮实现决策（§6.7 E1-E5）**：表前缀统一 `iam_`（弃 public_）；casbin_rule 视图与自主表并存（性能等价，Redis 不采纳）；pg_session_jwt 不采纳（PostgREST 已做 PG 端解析，P2 备选）；role_code 生成列
 > - v2.0（2026-08-04）— **定稿修订（N2 → 变体 B）**：角色目录+分配改托管 Logto（JWT 脚本零 fetch）；新增 GitHub issues 调查（PR #8674 被拒原因、issue #5099 挂起，F21）；角色名唯一性源码确认（F20）；§6 数据模型重写（Logto 权威 / PG 镜像 / PG 自主三类）
@@ -155,7 +156,7 @@
 | Logto（自部署 OSS v1.42） | 认证（密码/验证码/微信/第三方）、组织（租户）与成员管理、**角色目录 CRUD / 用户↔角色分配**、签发 JWT | Application（clientId/secret、redirectUri）、社交连接器（wechat-web/native）、webhook 指向 PostgREST RPC、组织模板角色（tenant_admin/editor/viewer 等）、全局角色、access-token Custom Token Claims 脚本（context 版）、access token 寿命 15 分钟 |
 | APISIX | jwt-auth（Logto JWKS 验签）+ authz-role-check（required_roles） | Logto `/.well-known/jwks`；路由级 `required_roles`（静态配置） |
 | PostgREST | 业务 API 层 | JWKS 指向 Logto；`request.jwt.claims` 注入（组织 token 的 organization_id） |
-| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 | 镜像：users/tenants/user_tenants/role/user_role；自主：iam_api/iam_menu/iam_role_api/iam_role_menu（全新建，N4）；RLS 策略 |
+| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 + admin 系统管理表 | 镜像：users/tenants/user_tenants/role/user_role；授权：iam_api/iam_menu/iam_role_api/iam_role_menu；系统管理：app_config/audit_log/cron_job_log/department/user_profile/position/user_position/sys_dict_type/sys_dict_data/sys_login_log/ip_region_v4（019 迁移，05.1 定稿）；RLS 策略 |
 | 前端 | Logto SDK 登录 + token 管理 + 菜单缓存 | SDK（react/vue）、axios 拦截器、`rpc_get_user_permissions` 登录时查一次 |
 
 ---
@@ -427,7 +428,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 | # | 议题 | 结论 | 理由 |
 |:---|:---|:---|:---|
 | E1 | pg_session_jwt 替代网关 jwt-auth + authz-role-check | ❌ **不采纳** | PG 端解析已由 PostgREST 完成（验签 + 注入 `request.jwt.claims`），pg_session_jwt（Supabase 扩展）功能重复且面向"无 PostgREST 直连"场景；网关是分层防御（未授权请求不占 PG 连接、保护 PostgREST 表级暴露端点、统一 401/限流/审计）。**P2 备选**：仅当出现非 PostgREST 入口（如内部任务需带身份）时按需引入 |
-| E2 | 表前缀 sys_ → iam_（v2.2 修正：镜像表统一无前缀） | ✅ **采纳（前缀用 `iam_` 而非 `public_`）** | `public_` 与 PG 保留概念冲突（public schema / PUBLIC 权限）。**命名规则：无前缀 = Logto 镜像（只读，权威在 Logto）：`users` / `tenants` / `user_tenants` / `role` / `user_role`；`iam_` 前缀 = 业务自主（可写，权威在 PG）：`iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`**（role/user_role 同为镜像表，与其他镜像表统一无前缀，v2.2 修正） |
+| E2 | 表前缀（v2.3 定稿：备选方案 B） | ✅ **无前缀 = 平台基础域（Logto 镜像只读 + 系统管理可写），`iam_` = 授权域** | `public_` 与 PG 保留概念冲突。**命名规则：无前缀 = 平台基础域：`users` / `tenants` / `user_tenants` / `role` / `user_role`（Logto 镜像，只读）+ `app_config` / `audit_log` / `cron_job_log` / `department` / `user_profile` / `position` / `sys_dict_type` / `sys_dict_data` / `sys_login_log` / `ip_region_v4`（系统管理，可写）；`iam_` 前缀 = 授权域（可写）：`iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`**（v2.2 修正镜像统一无前缀；v2.3 采纳备选 B，系统表保持无前缀） |
 | E3 | casbin_rule 视图 vs 直接自主表；Redis 缓存 | ✅ **视图并存（表真相源 + 视图投影）；❌ Redis 不采纳** | 视图查询时内联 = 底层表查询，**性能等价**；`casbin_rule` 视图（v0=role_code, v1=资源, v2=action，排除用户维度）作为 iam_role_api/iam_role_menu 的只读投影供 rpc_get_user_permissions 消费。Redis 收益 ≈ 0.1ms 小表索引查询，成本 = 缓存失效管道 + 一致性负担，违背无状态原则；**正确演进方向 = perms-in-JWT**（P2-16，Logto scope claim 原生，授权判定零查询且无缓存一致性问题） |
 | E5 | role 镜像加 role_code 列 | ⚠️ **部分采纳（生成列，勿独立映射）** | role_code = Logto 角色名（F20 唯一），绑定表（iam_role_api/iam_role_menu）直接以 role_code 为 join key（已是现状）；镜像表如需语义化列名用**生成列** `role_code text GENERATED ALWAYS AS (name) STORED`，单一真相源，不引入独立映射 |
 
@@ -504,8 +505,9 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 - 内置 claims 不可覆盖（F5），脚本无法伪造 `sub` / `organization_id` / `aud`
 
 ### 9.4 最小权限
-- Logto webhook 接收 RPC：仅写镜像表（users/tenants/user_tenants/role），无业务表权限
-- ③ 自主表（iam_role_api/iam_menu 等）：业务角色管理，仅管理端经 RPC 写（带 has_permission 检查）
+- Logto webhook 接收 RPC：仅写镜像表（users/tenants/user_tenants/role）+ sys_login_log（PostSignIn 同步，D-C），无业务表权限
+- ③ 授权表（iam_role_api/iam_menu 等）：业务角色管理，仅管理端经 RPC 写（带 has_permission 检查）
+- 系统管理表（app_config/audit_log/department/position/sys_dict_*/sys_login_log 等）：管理端经 RPC 写（带 has_permission）；audit_log 触发器写经 SECURITY DEFINER
 - 镜像表无任何凭据字段（F2 白名单天然保证）；Logto 管理凭据（M2M client secret）仅存部署配置
 
 ### 9.5 降级策略
@@ -571,9 +573,9 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 ### P0（核心链路）
 1. [ ] 部署 Logto OSS（Docker Compose，Pigsty 同机或独立容器）；配置 SMTP/短信连接器（阿里云短信等）、微信 web/native 连接器；**确认 OSS 版 Custom Token Claims 配置入口可用**（v1.42 实测）
 2. [ ] Logto Console 初始化：创建全局角色（role_super_admin）；组织模板配置组织角色（tenant_admin / editor / viewer）；创建租户（组织）并分配成员角色
-3. [ ] PG：新建镜像表 `users`（Logto 白名单字段，id=Logto user id 主键）、`tenants`（id=Logto organization id）、`user_tenants`、`role`；**全新建** ③ 自主表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`（role_code = Logto 角色名，N4）；`rpc_webhook_logto(payload)`（§4.3，含 Role.* 分发）；RLS helper（§5.3.1）
+3. [ ] PG：新建镜像表 `users`（Logto 白名单字段，id=Logto user id 主键）、`tenants`（id=Logto organization id）、`user_tenants`、`role`；**全新建** ③ 授权表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`（role_code = Logto 角色名，N4）+ admin 系统管理表（019 迁移：position/user_position/sys_dict_type/sys_dict_data/sys_login_log/ip_region_v4 + audit_log 扩展）；`rpc_webhook_logto(payload)`（§4.3，含 Role.* 与 PostSignIn 分发）；RLS helper（§5.3.1）
 4. [ ] Logto Console：配置 access-token Custom Token Claims 脚本（§5.1.1 context 版，**零 fetch**）；access token 寿命 15 分钟；**测试脚本**（Console 自带 test 功能）
-5. [ ] Logto 应用配置：webhook（订阅 User.Created/Data.Updated/Deleted + Organization.Created/Data.Updated/Deleted + Organization.Membership.Updated + Role.Created/Deleted/Data.Updated，signing key 入部署配置）
+5. [ ] Logto 应用配置：webhook（订阅 User.Created/Data.Updated/Deleted + Organization.Created/Data.Updated/Deleted + Organization.Membership.Updated + Role.Created/Deleted/Data.Updated + **PostSignIn**（登录日志，D-C），signing key 入部署配置）
 6. [ ] APISIX：jwt-auth 切 Logto JWKS；authz-role-check 挂载（复用 04.6 插件源码）；webhook 验签前置（自定义 Lua 或 serverless-pre-function）
 7. [ ] PostgREST：JWKS 指向 Logto；`request.jwt.claims` 验证（组织 token 的 organization_id 注入）
 8. [ ] 前端：Logto SDK 接入（signIn → getAccessToken(resource, organizationId) → axios 拦截器）；登录后 `rpc_get_user_permissions`（claims roles + iam_role_api/iam_menu）缓存权限树
@@ -585,15 +587,18 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 12. [ ] **user_role 分配镜像**（§6.5）：管理操作主动同步 RPC（rpc_sync_user_roles）+ JIT 覆盖 + 每日对账（管理端报表需要时启用）
 13. [ ] 角色名不可变更约束落地：管理端拒绝重命名或走"新建+迁移"流程（§6.4）
 14. [ ] 审计：登录/登出/角色变更审计（Logto audit logs + PG 既有审计表）
+15. [ ] **登录日志补全（D-C）**：ip2region 数据导入（ipv4_source.txt → ip_region_v4）+ sys_login_log 写时解析 region；失败登录对账（Management API `GET /logs` 低频增量拉失败事件 → sys_login_log result=fail）
+16. [ ] **pg_cron 只读 RPC**：`rpc_list_cron_jobs()` / `rpc_list_cron_job_runs()`（SECURITY DEFINER 包装 cron.job + cron.job_run_details，管理端查看已设置任务/运行历史，不建 sys_job 表，D-E）
 
 ### P2（加固与观测）
-15. [ ] 镜像对账任务：每日低频全量对账 users/tenants/user_tenants/role（增量事件为主、对账兜底）
-16. [ ] 可选 Logto scope 绑定评估：角色挂 scope → JWT scope claim 原生携带权限点（perms-in-JWT），has_permission 改读 claims 零查询（§5.1.2 注）
-17. [ ] 秒级吊销评估：网关黑名单（jti）— 与零查询原则冲突，按需启用（04.6 §9.1 同款）
-18. [ ] 可选 `dept_id` claim：context 无部门数据 → 需脚本 fetch（回退 v1 模式）或 RLS helper 查小表，按业务需要评估
-19. [ ] 性能基准：签发延迟、网关吞吐压测（千万级容量验证，§8）
-20. [ ] 小程序需求若出现：评估 Logto custom connector 自研桥（~60 行）
-21. [ ] 非 PostgREST 入口出现时（如内部定时任务需带身份）评估 pg_session_jwt（E1 备选，仅按需引入，不替代网关）
+17. [ ] 镜像对账任务：每日低频全量对账 users/tenants/user_tenants/role（增量事件为主、对账兜底）
+18. [ ] 可选 Logto scope 绑定评估：角色挂 scope → JWT scope claim 原生携带权限点（perms-in-JWT），has_permission 改读 claims 零查询（§5.1.2 注）
+19. [ ] 秒级吊销评估：网关黑名单（jti）— 与零查询原则冲突，按需启用（04.6 §9.1 同款）
+20. [ ] 可选 `dept_id` claim：context 无部门数据 → 需脚本 fetch（回退 v1 模式）或 RLS helper 查小表，按业务需要评估
+21. [ ] 性能基准：签发延迟、网关吞吐压测（千万级容量验证，§8）
+22. [ ] 小程序需求若出现：评估 Logto custom connector 自研桥（~60 行）
+23. [ ] 非 PostgREST 入口出现时（如内部定时任务需带身份）评估 pg_session_jwt（E1 备选，仅按需引入，不替代网关）
+24. [ ] 登录地点经纬度（D-4 延伸）：GeoLite2-City CSV 导入 PG（ip_geolite2_city 表，全球覆盖 + 经纬度 + 时区），查询顺序 ip2region 优先 → GeoLite2 兜底；或高德/腾讯 IP 定位 API 异步补充
 
 ---
 
