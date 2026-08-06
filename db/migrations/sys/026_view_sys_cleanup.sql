@@ -60,9 +60,11 @@ CREATE VIEW api_v1_sys.v_login_log AS
 SELECT l.id, l.tenant_id, l.user_id, l.username, l.login_type, l.result,
        l.fail_reason, l.ip, l.user_agent,
        l.region                 AS region_snapshot,
-       g.region                 AS region_live,
-       g.source                 AS geo_source,
-       g.latitude, g.longitude, g.timezone,
+       g->>'region'             AS region_live,
+       g->>'source'             AS geo_source,
+       (g->>'latitude')::float8 AS latitude,
+       (g->>'longitude')::float8 AS longitude,
+       g->>'timezone'           AS timezone,
        l.logto_event, l.created_at
 FROM login_log l
 LEFT JOIN LATERAL geo_locate(l.ip) g ON true;
@@ -70,13 +72,22 @@ COMMENT ON VIEW api_v1_sys.v_login_log IS '登录日志视图：login_log + geo_
 
 -- ---------------------------------------------------------------------------
 -- §4 授权（新名视图；grant_all.sql 已同步，此处兜底幂等）
+--    注: 视图由 api_v1/public 源文件建在 api_v1_public；本迁移执行时
+--    api_v1_sys 中可能尚不存在 → 条件授权（存在才 GRANT，避免报错）
 -- ---------------------------------------------------------------------------
-GRANT SELECT ON api_v1_sys.iam_api, api_v1_sys.iam_menu, api_v1_sys.iam_role_api,
-    api_v1_sys.iam_role_menu, api_v1_sys.role, api_v1_sys.users,
-    api_v1_sys.user_role, api_v1_sys.app_config, api_v1_sys.config_admin,
-    api_v1_sys.cron_job_log, api_v1_sys.audit_log, api_v1_sys.department,
-    api_v1_sys.position, api_v1_sys.user_position, api_v1_sys.v_login_log
-    TO authenticated;
+DO $$
+DECLARE v_schema text := 'api_v1_sys';
+        v_views  text[] := ARRAY['iam_api','iam_menu','iam_role_api','iam_role_menu',
+            'role','users','user_role','app_config','config_admin','cron_job_log',
+            'audit_log','department','position','user_position','v_login_log'];
+        v_view   text;
+BEGIN
+    FOREACH v_view IN ARRAY v_views LOOP
+        IF to_regclass(format('%I.%I', v_schema, v_view)) IS NOT NULL THEN
+            EXECUTE format('GRANT SELECT ON %I.%I TO authenticated', v_schema, v_view);
+        END IF;
+    END LOOP;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §5 验证

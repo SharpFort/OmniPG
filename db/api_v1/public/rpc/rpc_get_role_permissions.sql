@@ -4,6 +4,7 @@
 -- 来源: 20260707000015_system_management_api.sql → T7 适配
 
 DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(uuid);
+DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(text);
 CREATE FUNCTION api_v1_public.get_role_permissions(p_role_code text)
 RETURNS json
 LANGUAGE plpgsql

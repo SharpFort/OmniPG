@@ -85,7 +85,7 @@ COMMENT ON FUNCTION log_operate(text, text, text, text, text, jsonb) IS '操作�
 -- §2 部门 CRUD（department，租户隔离）
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_create_department(
-    p_parent_id uuid DEFAULT NULL, p_dept_name text, p_sort_order int DEFAULT 0)
+    p_dept_name text, p_parent_id uuid DEFAULT NULL, p_sort_order int DEFAULT 0)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
@@ -103,8 +103,8 @@ BEGIN
                         'success', jsonb_build_object('name', p_dept_name));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_sys.rpc_create_department(uuid, text, int) IS '部门新增（sys:dept:create）';
-GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_department(uuid, text, int) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.rpc_create_department(text, uuid, int) IS '部门新增（sys:dept:create）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_department(text, uuid, int) TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_department(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_dept_name text DEFAULT NULL,
@@ -190,7 +190,7 @@ COMMENT ON FUNCTION api_v1_sys.rpc_get_position_tree() IS '岗位树（递归 CT
 GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_get_position_tree() TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_create_position(
-    p_parent_id uuid DEFAULT NULL, p_pos_name text, p_pos_code text DEFAULT NULL,
+    p_pos_name text, p_parent_id uuid DEFAULT NULL, p_pos_code text DEFAULT NULL,
     p_sort_no int DEFAULT 0)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -209,8 +209,8 @@ BEGIN
                         'success', jsonb_build_object('name', p_pos_name));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_sys.rpc_create_position(uuid, text, text, int) IS '岗位新增（sys:position:create）';
-GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_position(uuid, text, text, int) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.rpc_create_position(text, uuid, text, int) IS '岗位新增（sys:position:create）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_position(text, uuid, text, int) TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_position(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_pos_name text DEFAULT NULL,
@@ -490,7 +490,7 @@ GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_delete_dict_data(uuid) TO authenticated
 -- §5 菜单/角色绑定管理（iam_menu / iam_role_api / iam_role_menu，平台级）
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_create_menu(
-    p_parent_id uuid DEFAULT NULL, p_menu_name text, p_menu_type text DEFAULT 'menu',
+    p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
     p_perms text DEFAULT NULL, p_path text DEFAULT NULL, p_component text DEFAULT NULL,
     p_icon text DEFAULT NULL, p_order_num int DEFAULT 0)
 RETURNS json
@@ -515,8 +515,8 @@ BEGIN
                         'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_sys.rpc_create_menu(uuid, text, text, text, text, text, text, int) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button）';
-GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_menu(uuid, text, text, text, text, text, text, int) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int) TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_menu(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_menu_name text DEFAULT NULL,

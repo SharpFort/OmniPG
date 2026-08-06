@@ -74,6 +74,7 @@ put logto_proxy '{"uri":"/logto/*","upstream":{"type":"roundrobin","nodes":{"app
 #     注意：不可叠加 request-validation（其 JSON 重排会破坏 rawBody 签名）
 #     注意：大 body（>client_body_buffer_size）会落临时文件，须 get_body_file() 回退读取
 WEBHOOK_SIGNING_KEY="${LOGTO_WEBHOOK_SIGNING_KEY:-}"
+export WEBHOOK_SIGNING_KEY
 if [ -z "$WEBHOOK_SIGNING_KEY" ]; then
   echo "  !! 缺少 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env），webhook 验签将被禁用"
 fi
@@ -107,6 +108,7 @@ end
 LUA
 WEBHOOK_LUA="$(cat .webhook_verify.lua)"
 rm -f .webhook_verify.lua
+export WEBHOOK_LUA
 WEBHOOK_JSON="$(${PYTHON:-python3} -c '
 import json, os
 lua_fn = os.environ["WEBHOOK_LUA"]

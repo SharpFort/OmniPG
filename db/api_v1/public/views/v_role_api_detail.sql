@@ -1,6 +1,6 @@
--- db/api_v1/sys/views/v_role_api_detail
--- T7: 重建为 iam_role_api 投影（Logto 语义），与 013 迁移一致
--- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
+-- db/api_v1/public/views/v_role_api_detail.sql
+-- T9: 列对齐当前 iam_api（name/api_code）与 role 镜像
+-- 来源: 20260707000013_postgrest_api_v1.sql（T9 改造）
 
 DROP VIEW IF EXISTS api_v1_public.v_role_api_detail CASCADE;
 CREATE OR REPLACE VIEW api_v1_public.v_role_api_detail AS
@@ -12,7 +12,8 @@ SELECT
     COALESCE(r.name, ra.role_code) AS role_name,
     a.path,
     a.method,
-    a.api_name,
+    a.name AS api_name,
+    a.api_code,
     a.is_active AS api_is_active
 FROM iam_role_api ra
 JOIN role r ON r.role_code = ra.role_code

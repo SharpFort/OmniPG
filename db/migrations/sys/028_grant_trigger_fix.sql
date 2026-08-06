@@ -40,16 +40,19 @@ GRANT ALL ON department, audit_log, app_config, cron_job_log, user_profile,
 -- §2 触发器名 sys_ 残留清理（与 023 命名对齐）
 -- ---------------------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_audit_sys_department ON department;
+DROP TRIGGER IF EXISTS trg_audit_department ON department;
 CREATE TRIGGER trg_audit_department
     AFTER INSERT OR UPDATE OR DELETE ON department
     FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');
 
 DROP TRIGGER IF EXISTS trg_audit_sys_role_api ON iam_role_api;
+DROP TRIGGER IF EXISTS trg_audit_role_api ON iam_role_api;
 CREATE TRIGGER trg_audit_role_api
     AFTER INSERT OR UPDATE OR DELETE ON iam_role_api
     FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');
 
 DROP TRIGGER IF EXISTS trg_audit_sys_role_menu ON iam_role_menu;
+DROP TRIGGER IF EXISTS trg_audit_role_menu ON iam_role_menu;
 CREATE TRIGGER trg_audit_role_menu
     AFTER INSERT OR UPDATE OR DELETE ON iam_role_menu
     FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');

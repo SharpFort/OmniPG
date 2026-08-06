@@ -195,9 +195,11 @@ CREATE VIEW api_v1_sys.v_sys_login_log AS
 SELECT l.id, l.tenant_id, l.user_id, l.username, l.login_type, l.result,
        l.fail_reason, l.ip, l.user_agent,
        l.region                 AS region_snapshot,   -- 写入时 ip2region 快照
-       g.region                 AS region_live,       -- 实时归属（含 GeoLite2 兜底）
-       g.source                 AS geo_source,
-       g.latitude, g.longitude, g.timezone,
+       g->>'region'             AS region_live,       -- 实时归属（含 GeoLite2 兜底）
+       g->>'source'             AS geo_source,
+       (g->>'latitude')::float8 AS latitude,
+       (g->>'longitude')::float8 AS longitude,
+       g->>'timezone'           AS timezone,
        l.logto_event, l.created_at
 FROM sys_login_log l
 LEFT JOIN LATERAL geo_locate(l.ip) g ON true;

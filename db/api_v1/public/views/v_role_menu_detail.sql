@@ -1,6 +1,6 @@
--- db/api_v1/sys/views/v_role_menu_detail
--- T7: 重建为 iam_role_menu 投影（Logto 语义），与 013 迁移一致
--- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
+-- db/api_v1/public/views/v_role_menu_detail.sql
+-- T9: 列对齐当前 iam_menu（menu_name/menu_type/perms）
+-- 来源: 20260707000013_postgrest_api_v1.sql（T9 改造）
 
 DROP VIEW IF EXISTS api_v1_public.v_role_menu_detail CASCADE;
 CREATE OR REPLACE VIEW api_v1_public.v_role_menu_detail AS
@@ -10,10 +10,11 @@ SELECT
     rm.created_at,
     rm.role_code,
     COALESCE(r.name, rm.role_code) AS role_name,
-    m.name AS menu_name,
-    m.type AS menu_type,
-    m.title AS menu_title,
-    m.permission_code,
+    m.menu_name AS menu_name,
+    m.menu_type AS menu_type,
+    m.perms AS permission_code,
+    m.path AS menu_path,
+    m.icon AS menu_icon,
     m.parent_id AS menu_parent_id
 FROM iam_role_menu rm
 JOIN role r ON r.role_code = rm.role_code

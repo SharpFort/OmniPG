@@ -46,15 +46,17 @@ SELECT id, tenant_id, user_id, username, login_type, result, fail_reason,
 FROM login_log;
 COMMENT ON VIEW api_v1_sys.login_log IS '登录日志视图（sys_ 前缀移除，023）';
 
--- 021 v_sys_login_log 保险重建（引用新表名）
+-- 021 v_sys_login_log 保险重建（引用新表名；geo_locate 返回 jsonb → 键访问）
 DROP VIEW IF EXISTS api_v1_sys.v_sys_login_log CASCADE;
 CREATE VIEW api_v1_sys.v_sys_login_log AS
 SELECT l.id, l.tenant_id, l.user_id, l.username, l.login_type, l.result,
        l.fail_reason, l.ip, l.user_agent,
        l.region                 AS region_snapshot,
-       g.region                 AS region_live,
-       g.source                 AS geo_source,
-       g.latitude, g.longitude, g.timezone,
+       g->>'region'             AS region_live,
+       g->>'source'             AS geo_source,
+       (g->>'latitude')::float8 AS latitude,
+       (g->>'longitude')::float8 AS longitude,
+       g->>'timezone'           AS timezone,
        l.logto_event, l.created_at
 FROM login_log l
 LEFT JOIN LATERAL geo_locate(l.ip) g ON true;

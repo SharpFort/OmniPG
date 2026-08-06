@@ -11,13 +11,13 @@ GRANT SELECT ON api_v1_public.users TO authenticated;
 GRANT SELECT ON api_v1_public.role TO authenticated;
 GRANT SELECT ON api_v1_public.iam_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_menu TO authenticated;
-GRANT SELECT ON api_v1_public.users_role TO authenticated;
+GRANT SELECT ON api_v1_public.user_role TO authenticated;
 GRANT SELECT ON api_v1_public.iam_role_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_role_menu TO authenticated;
 GRANT SELECT ON api_v1_public.audit_log TO authenticated;
 GRANT SELECT ON api_v1_public.cron_job_log TO authenticated;
 GRANT SELECT ON api_v1_public.app_config TO authenticated;
-GRANT SELECT ON api_v1_public.app_config_admin TO authenticated;
+GRANT SELECT ON api_v1_public.config_admin TO authenticated;
 
 -- 视图查询权限（v_user_list/v_role_list 为前端核心；v_* 明细视图）
 GRANT SELECT ON api_v1_public.v_user_list TO authenticated;
@@ -28,6 +28,7 @@ GRANT SELECT ON api_v1_public.v_user_role_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_role_api_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_role_menu_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_audit_log_timeline TO authenticated;
+GRANT SELECT ON api_v1_public.v_audit_log_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_system_stats_realtime TO authenticated;
 
 -- =============================================================================
