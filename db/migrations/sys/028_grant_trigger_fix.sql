@@ -43,6 +43,10 @@ GRANT SELECT ON users, tenants, role, user_tenants TO role_admin, role_editor, r
 -- public schema USAGE（RLS 辅助函数 current_user_roles/is_super_admin 解析）
 GRANT USAGE ON SCHEMA public TO super_admin, role_admin, role_editor, role_guest, web_anon;
 
+-- api_v1_public schema USAGE（webhook 入口 web_anon 无 token 调用；role_guest 为
+-- JWT customizer fallback；027 RENAME 后这些角色的 USAGE 缺失导致 42501）
+GRANT USAGE ON SCHEMA api_v1_public TO web_anon, role_guest, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- §2 触发器名 sys_ 残留清理（与 023 命名对齐）
 -- ---------------------------------------------------------------------------

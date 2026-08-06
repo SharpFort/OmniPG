@@ -65,3 +65,5 @@ REVOKE DELETE ON ALL TABLES IN SCHEMA api_v1_public FROM role_admin;
 GRANT ALL ON ALL TABLES IN SCHEMA api_v1_public TO super_admin;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA api_v1_public TO super_admin;
 GRANT USAGE ON SCHEMA api_v1_public TO super_admin;
+-- webhook 入口（web_anon 无 token 调用）+ JWT fallback 角色 + RLS 中间角色
+GRANT USAGE ON SCHEMA api_v1_public TO web_anon, role_guest, authenticated;

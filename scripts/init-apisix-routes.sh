@@ -84,7 +84,9 @@ cat > .webhook_verify.lua <<'LUA'
 return function(conf, ctx)
   local resty_hmac = require('resty.openssl.hmac')
   local resty_str = require('resty.string')
-  local key = conf.signing_key
+  -- APISIX serverless-pre-function: 函数 conf 参数 = 整个插件配置对象，
+  -- signing_key 放在 schema 允许的 conf 字段内（顶层未知字段会被 APISIX 丢弃）
+  local key = (conf.conf and conf.conf.signing_key) or conf.signing_key
   ngx.req.read_body()
   local body = ngx.req.get_body_data()
   if not body then
@@ -121,8 +123,8 @@ route = {
     "plugins": {
         "serverless-pre-function": {
             "phase": "access",
-            "signing_key": os.environ["WEBHOOK_SIGNING_KEY"],
             "functions": [lua_fn],
+            "conf": {"signing_key": os.environ["WEBHOOK_SIGNING_KEY"]},
         }
     },
 }
