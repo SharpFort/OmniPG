@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.4（2026-08-04）— **登录日志链路落地（020 迁移）**：PostSignIn 平铺 payload 分发（源码核实无 data 包装）+ sync_login_log_write + ip2region(inet) 函数 + import-ip2region.sh 导入脚本；sys_login_log RLS 加本人可见；约束形式按场景选用（PG ENUM 复用型 / TEXT+CHECK 频繁变化，05.1 D-B）
 > - v2.3（2026-08-04）— **admin 模块补全决策（05.1 分析定稿）**：命名采纳备选 B（无前缀=平台基础域）；新增 position/user_position（树形）、sys_dict_type/data、sys_login_log、ip_region_v4（019 迁移）；audit_log 扩展为统一审计流（log_type+jsonb，D-5）；日志策略（操作日志业务侧 + 访问日志 APISIX + 异常 PG 日志）；登录日志 = webhook PostSignIn + 失败对账（否决网关/前端独立获取）
 > - v2.2（2026-08-04）— **命名修正（E2 细化）**：role / user_role 同为 Logto 镜像表，与其他镜像表统一**无前缀**——命名规则定为"无前缀 = 镜像（Logto 权威，只读）/ `iam_` 前缀 = 自主（PG 权威，可写）"
 > - v2.1（2026-08-04）— **第二轮实现决策（§6.7 E1-E5）**：表前缀统一 `iam_`（弃 public_）；casbin_rule 视图与自主表并存（性能等价，Redis 不采纳）；pg_session_jwt 不采纳（PostgREST 已做 PG 端解析，P2 备选）；role_code 生成列
@@ -297,6 +298,7 @@ USING (
 | **租户/组织 (Org)** | `Organization.Created`<br>`Organization.Data.Updated`<br>`Organization.Deleted` | 同步维护 `tenants` 物理表（id = Logto organization id） | `data` 为 Organization 实体（id/name/description/customData/createdAt） |
 | **租户成员关系** | `Organization.Membership.Updated` | **增量 diff 同步** `user_tenants`：`addedUserIds`→insert、`removedUserIds`→delete | 增量数组缺失=无变更（F3）；**不含角色绑定**（F12/F13） |
 | **角色目录 (Role)** | `Role.Created`<br>`Role.Deleted`<br>`Role.Data.Updated` | 同步维护 `role` 镜像（id/name/type/isDefault） | role_code = Role.name（F20 唯一）；**授权判定不依赖此镜像**（claims 直连 iam_role_api），镜像服务管理端展示/对账 |
+| **登录事件 (D-C, v2.4)** | `PostSignIn` | `sync_login_log_write` → `sys_login_log`（含 region 解析） | ⚠️ **interaction payload 顶层平铺、无 data 包装**（源码核实 `libraries/hook/index.ts`）：`{event, interactionEvent, sessionId, applicationId, userIp, userAgent, userId, user, hookId, createdAt}`；tenant_id 留 NULL（事件无组织上下文）；失败登录 → P1 对账 |
 
 **关键澄清（v2.0 修正）**：
 - **`Organization.Membership.Updated` 不携带任何角色绑定信息**（只含成员增删增量）——v1 表格中"同步维护 user_roles 关联表"的描述**删除**；user_roles 由 Logto 分配（权威），PG 镜像经 §6.5 策略收敛
