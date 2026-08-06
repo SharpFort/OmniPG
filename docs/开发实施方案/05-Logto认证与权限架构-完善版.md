@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.2（2026-08-04）— **命名修正（E2 细化）**：role / user_role 同为 Logto 镜像表，与其他镜像表统一**无前缀**——命名规则定为"无前缀 = 镜像（Logto 权威，只读）/ `iam_` 前缀 = 自主（PG 权威，可写）"
 > - v2.1（2026-08-04）— **第二轮实现决策（§6.7 E1-E5）**：表前缀统一 `iam_`（弃 public_）；casbin_rule 视图与自主表并存（性能等价，Redis 不采纳）；pg_session_jwt 不采纳（PostgREST 已做 PG 端解析，P2 备选）；role_code 生成列
 > - v2.0（2026-08-04）— **定稿修订（N2 → 变体 B）**：角色目录+分配改托管 Logto（JWT 脚本零 fetch）；新增 GitHub issues 调查（PR #8674 被拒原因、issue #5099 挂起，F21）；角色名唯一性源码确认（F20）；§6 数据模型重写（Logto 权威 / PG 镜像 / PG 自主三类）
 > - v1.0（2026-08-04）— 初稿：基于 Logto v1.42.0 官方文档与源码（logto-io/logto master、logto-io/docs master）核实的事实撰写
@@ -35,7 +36,7 @@
 | D7 | 用户同步 | **Webhook 保留**（Logto → PG 单向）：`User.Created / User.Data.Updated / User.Deleted` |
 | D8 | 租户同步 | **Webhook**：`Organization.Created / Data.Updated / Deleted` + `Organization.Membership.Updated`（增量数组 `addedUserIds / removedUserIds`，官方设计） |
 | D9 | 用户镜像 | **瘦身字段集**（id / username / primaryEmail / primaryPhone / name / avatar / customData / isSuspended / 时间戳等，官方 webhook payload 白名单），**不含任何凭据/MFA 秘密** |
-| D10 | 角色同步 | **PG 侧镜像策略**：角色目录（iam_role 镜像）经 `Role.*` 事件同步 + 对账；分配（iam_user_role 镜像）经 **JIT 覆盖 + 管理操作主动同步 + 对账**（官方无分配事件，F13/F21——JWT 永远准确，镜像仅服务管理面，允许延迟） |
+| D10 | 角色同步 | **PG 侧镜像策略**：角色目录（role 镜像）经 `Role.*` 事件同步 + 对账；分配（user_role 镜像）经 **JIT 覆盖 + 管理操作主动同步 + 对账**（官方无分配事件，F13/F21——JWT 永远准确，镜像仅服务管理面，允许延迟） |
 | D11 | 角色生效时效 | 角色变更在**下次 token 签发（刷新）时生效**，残留窗口 ≤ access token 寿命（建议 15 分钟），与 04.6 §9.1 语义一致 |
 | D12 | 会话/吊销 | Logto 原生会话管理：refresh token 撤销（revocation endpoint）即时失效；access token 残留 ≤ 寿命；可选 `maxAllowedGrants` 并发设备限制（官方事件 `Grant.LimitExceeded`） |
 | D13 | RLS | 从 JWT claims 读取 `sub / organization_id / roles`（PostgREST `request.jwt.claims` 注入，官方确认），**零查询** |
@@ -142,7 +143,7 @@
                         │ 验 Logto JWKS │──────▶ │ 自主：iam_api/iam_menu/         │
                         │ 注入 claims   │        │       iam_role_api/iam_role_menu │
                         └──────────────┘        │ 镜像：users/tenants/user_tenants │
-                                                │       iam_role/iam_user_role      │
+                                                │       role/user_role      │
                                                 │ RLS：读 claims → 数据隔离          │
                                                 └──────────────────────────────────┘
 ```
@@ -154,7 +155,7 @@
 | Logto（自部署 OSS v1.42） | 认证（密码/验证码/微信/第三方）、组织（租户）与成员管理、**角色目录 CRUD / 用户↔角色分配**、签发 JWT | Application（clientId/secret、redirectUri）、社交连接器（wechat-web/native）、webhook 指向 PostgREST RPC、组织模板角色（tenant_admin/editor/viewer 等）、全局角色、access-token Custom Token Claims 脚本（context 版）、access token 寿命 15 分钟 |
 | APISIX | jwt-auth（Logto JWKS 验签）+ authz-role-check（required_roles） | Logto `/.well-known/jwks`；路由级 `required_roles`（静态配置） |
 | PostgREST | 业务 API 层 | JWKS 指向 Logto；`request.jwt.claims` 注入（组织 token 的 organization_id） |
-| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 | 镜像：users/tenants/user_tenants/iam_role/iam_user_role；自主：iam_api/iam_menu/iam_role_api/iam_role_menu（全新建，N4）；RLS 策略 |
+| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 | 镜像：users/tenants/user_tenants/role/user_role；自主：iam_api/iam_menu/iam_role_api/iam_role_menu（全新建，N4）；RLS 策略 |
 | 前端 | Logto SDK 登录 + token 管理 + 菜单缓存 | SDK（react/vue）、axios 拦截器、`rpc_get_user_permissions` 登录时查一次 |
 
 ---
@@ -294,11 +295,11 @@ USING (
 | **用户 (User)** | `User.Created`<br>`User.Data.Updated`<br>`User.Deleted` | `INSERT ... ON CONFLICT DO UPDATE`（users 镜像） | payload `data` 为 UserEntity 白名单（F2），天然无凭据 |
 | **租户/组织 (Org)** | `Organization.Created`<br>`Organization.Data.Updated`<br>`Organization.Deleted` | 同步维护 `tenants` 物理表（id = Logto organization id） | `data` 为 Organization 实体（id/name/description/customData/createdAt） |
 | **租户成员关系** | `Organization.Membership.Updated` | **增量 diff 同步** `user_tenants`：`addedUserIds`→insert、`removedUserIds`→delete | 增量数组缺失=无变更（F3）；**不含角色绑定**（F12/F13） |
-| **角色目录 (Role)** | `Role.Created`<br>`Role.Deleted`<br>`Role.Data.Updated` | 同步维护 `iam_role` 镜像（id/name/type/isDefault） | role_code = Role.name（F20 唯一）；**授权判定不依赖此镜像**（claims 直连 iam_role_api），镜像服务管理端展示/对账 |
+| **角色目录 (Role)** | `Role.Created`<br>`Role.Deleted`<br>`Role.Data.Updated` | 同步维护 `role` 镜像（id/name/type/isDefault） | role_code = Role.name（F20 唯一）；**授权判定不依赖此镜像**（claims 直连 iam_role_api），镜像服务管理端展示/对账 |
 
 **关键澄清（v2.0 修正）**：
 - **`Organization.Membership.Updated` 不携带任何角色绑定信息**（只含成员增删增量）——v1 表格中"同步维护 user_roles 关联表"的描述**删除**；user_roles 由 Logto 分配（权威），PG 镜像经 §6.5 策略收敛
-- **用户↔角色分配、组织成员↔组织角色分配在 Logto 中无 webhook 事件（F13/F21）**：JWT 永远准确（context 实时计算，含全部隐式路径），PG 分配镜像（iam_user_role）通过 **JIT 覆盖 + 管理操作主动同步 + 对账** 收敛（§6.5），允许分钟级延迟——镜像仅服务管理面查询，不进授权路径
+- **用户↔角色分配、组织成员↔组织角色分配在 Logto 中无 webhook 事件（F13/F21）**：JWT 永远准确（context 实时计算，含全部隐式路径），PG 分配镜像（user_role）通过 **JIT 覆盖 + 管理操作主动同步 + 对账** 收敛（§6.5），允许分钟级延迟——镜像仅服务管理面查询，不进授权路径
 - 组织角色（OrganizationRole.* / OrganizationScope.*）事件：**可选订阅**（P2，如需同步组织角色目录到 PG 管理端展示）
 
 #### 4.3 Webhook 接收端设计（PostgREST RPC）
@@ -347,8 +348,8 @@ END $$;
 | 增量 5000 截断（F3） | 收到恰好 5000 条的数组 → 触发 `GET /organizations/:id/users` 全量对账 |
 | 投递失败监控 | webhook 执行统计在 Logto Console 可查（executionStats）；失败告警（P2） |
 | JIT 建档 | 用户首次出现（webhook 遗漏/并发竞态）→ 登录后按 claims 补建 users 镜像（ensure_user 逻辑，04.6 同款） |
-| 角色目录对账 | 每日低频对账 iam_role 镜像（Role.* 事件为主、对账兜底） |
-| 分配镜像收敛 | iam_user_role 经 **JIT 覆盖（按 claims 全量覆盖）+ 管理操作主动同步 + 每日对账**（§6.5）；镜像延迟不影响授权（判定读 claims） |
+| 角色目录对账 | 每日低频对账 role 镜像（Role.* 事件为主、对账兜底） |
+| 分配镜像收敛 | user_role 经 **JIT 覆盖（按 claims 全量覆盖）+ 管理操作主动同步 + 每日对账**（§6.5）；镜像延迟不影响授权（判定读 claims） |
 | 定期对账 | 每日低频全量对账 users/tenants/user_tenants 镜像（增量事件为主、对账兜底） |
 
 ---
@@ -360,7 +361,7 @@ END $$;
 | 类别 | 数据 | 权威方 | 业务 PG 侧 | 同步方式 |
 |:---|:---|:---|:---|:---|
 | **① Logto 权威** | 用户、组织（租户）、组织成员、**角色目录**、**用户↔角色分配**、组织成员↔组织角色分配 | Logto | — | 经 webhook / JIT / Management API 投影到 ② |
-| **② PG 镜像**（只读投影） | users、tenants、user_tenants、iam_role（角色目录）、iam_user_role（分配） | Logto | 镜像表（业务只读） | User.* / Organization.* / Membership / Role.* webhook + JIT 建档 + 分配 JIT 覆盖 + 对账（§4.5、§6.5） |
+| **② PG 镜像**（只读投影） | users、tenants、user_tenants、role（角色目录）、user_role（分配） | Logto | 镜像表（业务只读） | User.* / Organization.* / Membership / Role.* webhook + JIT 建档 + 分配 JIT 覆盖 + 对账（§4.5、§6.5） |
 | **③ PG 自主**（业务真相源，**全新建**） | iam_api（权限点目录）、iam_menu（菜单树）、iam_role_api（角色→API 绑定）、iam_role_menu（角色→菜单绑定） | **业务 PG** | 业务直接写 | 无（不依赖 Logto） |
 | **④ 授权判定** | 网关 required_roles / RLS / has_permission | PG 执行 | 读 claims + ③ 小表 | 零查询（claims）+ 小表索引 |
 
@@ -400,7 +401,7 @@ Logto organization_roles 表（组织模板）    → 租户角色（如 tenant_
 ### 6.5 分配镜像同步策略（官方无分配事件的落地，F13/F21）
 
 ```text
-Logto（权威：Console / Management API 分配）        PG iam_user_role（镜像）
+Logto（权威：Console / Management API 分配）        PG user_role（镜像）
   │ 分配变更
   ├─ ① 管理操作主动同步：业务管理端调 Management API 成功后
   │      → 立即调 rpc_sync_user_roles(user_id, roles[]) 更新 PG 镜像
@@ -411,7 +412,7 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
        → 镜像延迟分钟级可接受（仅管理端查询/报表消费）
 ```
 
-- **P0 阶段可不建 iam_user_role 镜像**：授权不依赖它；管理端"查某用户角色/某角色用户"先走 Logto Management API（`GET /api/users/:id/roles`、`GET /api/roles/:id/users`）
+- **P0 阶段可不建 user_role 镜像**：授权不依赖它；管理端"查某用户角色/某角色用户"先走 Logto Management API（`GET /api/users/:id/roles`、`GET /api/roles/:id/users`）
 - P1 按管理端报表需求再建镜像（§12 P1-11）
 
 ### 6.6 角色管理面决策记录（2026-08-04 定稿）
@@ -426,9 +427,9 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 | # | 议题 | 结论 | 理由 |
 |:---|:---|:---|:---|
 | E1 | pg_session_jwt 替代网关 jwt-auth + authz-role-check | ❌ **不采纳** | PG 端解析已由 PostgREST 完成（验签 + 注入 `request.jwt.claims`），pg_session_jwt（Supabase 扩展）功能重复且面向"无 PostgREST 直连"场景；网关是分层防御（未授权请求不占 PG 连接、保护 PostgREST 表级暴露端点、统一 401/限流/审计）。**P2 备选**：仅当出现非 PostgREST 入口（如内部任务需带身份）时按需引入 |
-| E2 | 表前缀 sys_ → iam_ | ✅ **采纳（前缀用 `iam_` 而非 `public_`）** | `public_` 与 PG 保留概念冲突（public schema / PUBLIC 权限）；`iam_` 语义自洽（身份与访问管理域）。命名：自主表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`；镜像表 `users` / `tenants` / `user_tenants`（无前缀，业务 JOIN 频繁）+ `iam_role` / `iam_user_role`（iam_ 前缀） |
+| E2 | 表前缀 sys_ → iam_（v2.2 修正：镜像表统一无前缀） | ✅ **采纳（前缀用 `iam_` 而非 `public_`）** | `public_` 与 PG 保留概念冲突（public schema / PUBLIC 权限）。**命名规则：无前缀 = Logto 镜像（只读，权威在 Logto）：`users` / `tenants` / `user_tenants` / `role` / `user_role`；`iam_` 前缀 = 业务自主（可写，权威在 PG）：`iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`**（role/user_role 同为镜像表，与其他镜像表统一无前缀，v2.2 修正） |
 | E3 | casbin_rule 视图 vs 直接自主表；Redis 缓存 | ✅ **视图并存（表真相源 + 视图投影）；❌ Redis 不采纳** | 视图查询时内联 = 底层表查询，**性能等价**；`casbin_rule` 视图（v0=role_code, v1=资源, v2=action，排除用户维度）作为 iam_role_api/iam_role_menu 的只读投影供 rpc_get_user_permissions 消费。Redis 收益 ≈ 0.1ms 小表索引查询，成本 = 缓存失效管道 + 一致性负担，违背无状态原则；**正确演进方向 = perms-in-JWT**（P2-16，Logto scope claim 原生，授权判定零查询且无缓存一致性问题） |
-| E5 | iam_role 镜像加 role_code 列 | ⚠️ **部分采纳（生成列，勿独立映射）** | role_code = Logto 角色名（F20 唯一），绑定表（iam_role_api/iam_role_menu）直接以 role_code 为 join key（已是现状）；镜像表如需语义化列名用**生成列** `role_code text GENERATED ALWAYS AS (name) STORED`，单一真相源，不引入独立映射 |
+| E5 | role 镜像加 role_code 列 | ⚠️ **部分采纳（生成列，勿独立映射）** | role_code = Logto 角色名（F20 唯一），绑定表（iam_role_api/iam_role_menu）直接以 role_code 为 join key（已是现状）；镜像表如需语义化列名用**生成列** `role_code text GENERATED ALWAYS AS (name) STORED`，单一真相源，不引入独立映射 |
 
 ---
 
@@ -475,7 +476,7 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 | token 签发成本 | **零外部查询** | 脚本纯内存读 context（Logto 本地实时计算角色，无 fetch、无 QPS 压力）；签发 QPS ≈ 活跃用户数 ÷ token 寿命，Logto 自身可水平扩展 |
 | 网关内存 | O(1) | 只读 JWT，无策略表（04.6 §8 对比同款结论） |
 | PG 授权表规模 | 角色×权限（5 万行封顶） | ③ 自主表（iam_role_api/iam_role_menu），不随用户数增长 |
-| 镜像表规模 | users / user_tenants / iam_role / iam_user_role 随用户数线性增长 | 属常规业务表（水平扩展），**不进授权路径** |
+| 镜像表规模 | users / user_tenants / role / user_role 随用户数线性增长 | 属常规业务表（水平扩展），**不进授权路径** |
 | 用户数影响面 | 仅 Logto 用户库 + PG 业务表 | Logto 可多副本 + 共享 PG/Redis 横向扩展（登录 QPS 瓶颈，04.6 §9.6 同款备注） |
 
 **结论**：用户数（千万级）仅影响身份存储与业务表规模，**不进入授权判定路径**。与 04.6 方案 B 同等保证，且少一个自建服务组件。
@@ -503,7 +504,7 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 - 内置 claims 不可覆盖（F5），脚本无法伪造 `sub` / `organization_id` / `aud`
 
 ### 9.4 最小权限
-- Logto webhook 接收 RPC：仅写镜像表（users/tenants/user_tenants/iam_role），无业务表权限
+- Logto webhook 接收 RPC：仅写镜像表（users/tenants/user_tenants/role），无业务表权限
 - ③ 自主表（iam_role_api/iam_menu 等）：业务角色管理，仅管理端经 RPC 写（带 has_permission 检查）
 - 镜像表无任何凭据字段（F2 白名单天然保证）；Logto 管理凭据（M2M client secret）仅存部署配置
 
@@ -556,7 +557,7 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 |:---|:---|:---|
 | Logto OSS 依赖（单点） | 登录/刷新不可用 | 多副本 + 共享 PG/Redis（OSS 官方支持 central cache）；已签发 token 不受影响（无每请求依赖） |
 | Custom Claims 脚本在 Logto 进程内执行 | 脚本 bug 影响签发 | 脚本极简（纯 context 提取，无外部调用）+ 3s 超时 + 脚本入仓版本管理（Logto 支持导入导出） |
-| 管理端查角色分配依赖 Logto Management API | 管理查询延迟/限流 | P1 建 iam_user_role 镜像（JIT 覆盖 + 主动同步 + 对账，§6.5）+ 查询缓存 |
+| 管理端查角色分配依赖 Logto Management API | 管理查询延迟/限流 | P1 建 user_role 镜像（JIT 覆盖 + 主动同步 + 对账，§6.5）+ 查询缓存 |
 | 无小程序登录 | 小程序场景缺失 | N1 决策不必须；未来需要时：Logto custom connector（自研 ~60 行微信小程序 OAuth 桥，参考 goth 调研）或引入 Casdoor 仅作小程序登录代理（不推荐双 IdP，P2 再议） |
 | 组织 token 需 refresh flow（F7） | 前端多一步换取 | SDK getAccessToken(resource, organizationId) 封装，对业务透明 |
 | Logto 升级兼容 | 版本升级破坏脚本/webhook | 锁版本 + 升级演练；webhook payload 结构有版本演进（delta 数组为 additive 设计，F3 注释） |
@@ -570,7 +571,7 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 ### P0（核心链路）
 1. [ ] 部署 Logto OSS（Docker Compose，Pigsty 同机或独立容器）；配置 SMTP/短信连接器（阿里云短信等）、微信 web/native 连接器；**确认 OSS 版 Custom Token Claims 配置入口可用**（v1.42 实测）
 2. [ ] Logto Console 初始化：创建全局角色（role_super_admin）；组织模板配置组织角色（tenant_admin / editor / viewer）；创建租户（组织）并分配成员角色
-3. [ ] PG：新建镜像表 `users`（Logto 白名单字段，id=Logto user id 主键）、`tenants`（id=Logto organization id）、`user_tenants`、`iam_role`；**全新建** ③ 自主表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`（role_code = Logto 角色名，N4）；`rpc_webhook_logto(payload)`（§4.3，含 Role.* 分发）；RLS helper（§5.3.1）
+3. [ ] PG：新建镜像表 `users`（Logto 白名单字段，id=Logto user id 主键）、`tenants`（id=Logto organization id）、`user_tenants`、`role`；**全新建** ③ 自主表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`（role_code = Logto 角色名，N4）；`rpc_webhook_logto(payload)`（§4.3，含 Role.* 分发）；RLS helper（§5.3.1）
 4. [ ] Logto Console：配置 access-token Custom Token Claims 脚本（§5.1.1 context 版，**零 fetch**）；access token 寿命 15 分钟；**测试脚本**（Console 自带 test 功能）
 5. [ ] Logto 应用配置：webhook（订阅 User.Created/Data.Updated/Deleted + Organization.Created/Data.Updated/Deleted + Organization.Membership.Updated + Role.Created/Deleted/Data.Updated，signing key 入部署配置）
 6. [ ] APISIX：jwt-auth 切 Logto JWKS；authz-role-check 挂载（复用 04.6 插件源码）；webhook 验签前置（自定义 Lua 或 serverless-pre-function）
@@ -581,12 +582,12 @@ Logto（权威：Console / Management API 分配）        PG iam_user_role（�
 ### P1（管理面与加固）
 10. [ ] 管理端：建号/禁用/角色分配走 Logto Management API（`POST /api/users`、`PATCH /api/users/:id/is-suspended`、`POST /api/roles/:id/users`，M2M 管理 token）；③ 绑定表管理（iam_role_api/iam_menu）自研 UI 直接写 PG（带 has_permission 检查）
 11. [ ] 组织（租户）生命周期：Console 或 Management API（`POST /api/organizations`）+ 邀请流程（Organization.Membership.Updated 自动同步）
-12. [ ] **iam_user_role 分配镜像**（§6.5）：管理操作主动同步 RPC（rpc_sync_user_roles）+ JIT 覆盖 + 每日对账（管理端报表需要时启用）
+12. [ ] **user_role 分配镜像**（§6.5）：管理操作主动同步 RPC（rpc_sync_user_roles）+ JIT 覆盖 + 每日对账（管理端报表需要时启用）
 13. [ ] 角色名不可变更约束落地：管理端拒绝重命名或走"新建+迁移"流程（§6.4）
 14. [ ] 审计：登录/登出/角色变更审计（Logto audit logs + PG 既有审计表）
 
 ### P2（加固与观测）
-15. [ ] 镜像对账任务：每日低频全量对账 users/tenants/user_tenants/iam_role（增量事件为主、对账兜底）
+15. [ ] 镜像对账任务：每日低频全量对账 users/tenants/user_tenants/role（增量事件为主、对账兜底）
 16. [ ] 可选 Logto scope 绑定评估：角色挂 scope → JWT scope claim 原生携带权限点（perms-in-JWT），has_permission 改读 claims 零查询（§5.1.2 注）
 17. [ ] 秒级吊销评估：网关黑名单（jti）— 与零查询原则冲突，按需启用（04.6 §9.1 同款）
 18. [ ] 可选 `dept_id` claim：context 无部门数据 → 需脚本 fetch（回退 v1 模式）或 RLS helper 查小表，按业务需要评估
