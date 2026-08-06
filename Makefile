@@ -70,7 +70,7 @@ migrate-status:
 test: test-db test-syncer test-e2e
 
 test-db:
-	cd db && pg_prove -U app_owner -d app_db tests/ || true
+	cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || true
 
 test-syncer:
 	cd db/casbin-syncer && go test -v ./...
