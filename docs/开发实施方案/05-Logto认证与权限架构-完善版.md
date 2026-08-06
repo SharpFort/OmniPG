@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.6（2026-08-04）— **05.2 决策落地**：① iam_menu 加按钮级字段（022 迁移：menu_type/perms/component/is_visible）；② 管理端写 Logto 路径**放弃**（建号/禁用/角色分配改 Logto Console + webhook 同步，P1-10 更新）；③ sys_ 前缀移除与 position 树 RPC 模式（05.2 §五/六，待 023）
 > - v2.5（2026-08-04）— **021 迁移（pg_cron RPC + GeoLite2 兜底 + 登录日志视图）**：`rpc_list_cron_jobs`/`rpc_list_cron_job_runs`（超管只读，D-E 落地）；`ip_geolite2_city` + staging + `import_geolite2_city()`（P2-24 落地）+ import-geolite2.sh；`geo_locate()` 查询顺序 ip2region→GeoLite2（含 IPv6 兜底）；ip2region 加 `family(ip)=4` 过滤；`v_sys_login_log` 视图（Logto 推送日志 + 实时地理 join）；audit_log 完备性确认（table_name/operation/old_data/new_data 已覆盖变动来源表名）
 > - v2.4（2026-08-04）— **登录日志链路落地（020 迁移）**：PostSignIn 平铺 payload 分发（源码核实无 data 包装）+ sync_login_log_write + ip2region(inet) 函数 + import-ip2region.sh 导入脚本；sys_login_log RLS 加本人可见；约束形式按场景选用（PG ENUM 复用型 / TEXT+CHECK 频繁变化，05.1 D-B）
 > - v2.3（2026-08-04）— **admin 模块补全决策（05.1 分析定稿）**：命名采纳备选 B（无前缀=平台基础域）；新增 position/user_position（树形）、sys_dict_type/data、sys_login_log、ip_region_v4（019 迁移）；audit_log 扩展为统一审计流（log_type+jsonb，D-5）；日志策略（操作日志业务侧 + 访问日志 APISIX + 异常 PG 日志）；登录日志 = webhook PostSignIn + 失败对账（否决网关/前端独立获取）
@@ -585,7 +586,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 9. [ ] e2e 验证：登录/刷新/**Logto 改角色分配→刷新→新 roles 生效**/吊销/RLS 隔离/组织切换/webhook 用户与成员与角色目录同步/5000 截断对账触发
 
 ### P1（管理面与加固）
-10. [ ] 管理端：建号/禁用/角色分配走 Logto Management API（`POST /api/users`、`PATCH /api/users/:id/is-suspended`、`POST /api/roles/:id/users`，M2M 管理 token）；③ 绑定表管理（iam_role_api/iam_menu）自研 UI 直接写 PG（带 has_permission 检查）
+10. [ ] ~~管理端建号/禁用/角色分配走 Logto Management API~~ → ✅ **改决策（v2.6）**：**Logto Console 管理**（建号/禁用/角色分配直接在 Logto 操作，业务端 webhook 同步镜像）；③ 绑定表管理（iam_role_api/iam_menu）自研 UI 直接写 PG（带 has_permission 检查）；原 Management API 路径 P2 备选（05.2 §4.1）
 11. [ ] 组织（租户）生命周期：Console 或 Management API（`POST /api/organizations`）+ 邀请流程（Organization.Membership.Updated 自动同步）
 12. [ ] **user_role 分配镜像**（§6.5）：管理操作主动同步 RPC（rpc_sync_user_roles）+ JIT 覆盖 + 每日对账（管理端报表需要时启用）
 13. [ ] 角色名不可变更约束落地：管理端拒绝重命名或走"新建+迁移"流程（§6.4）
