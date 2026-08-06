@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v3.0（2026-08-05）— **权限模型定稿（05.4）+ 029 门槛补齐 + 路线图状态更新**：三层模型（前端缓存 UX / has_permission 操作级 / RLS 数据级）与选择矩阵沉淀为 05.4 文档；4 个 DEFINER 写/管理 RPC 补 has_permission（update_config/import_csv/export_csv/cleanup_expired_tokens + 权限点 sys:config:write/sys:import/sys:export/sys:session:cleanup）；P0-3/P1-12/14/15 标记已实现，P1-13 约束定位于 Logto 侧
 > - v2.9（2026-08-05）— **schema 定稿：api_v1_sys → api_v1_public（027 迁移）**：系统管理 API 暴露层命名与 public 域对齐；02-schemas 兼容创建 + 027 条件 RENAME/双存清理（顺序无关、重放安全）；db/api_v1/sys → db/api_v1/public 目录 + 41 文件同步；视图名 = 底层表名规则延续
 > - v2.8（2026-08-04）— **P1 管理 CRUD 落地（024/025 迁移）**：CRUD RPC 21 个（部门/岗位/字典/菜单/绑定/用户资料，统一 has_permission + log_operate 审计模式）+ 权限点 seed ×20（iam_api.api_code，超管/租户管理员绑定）+ user_role 分配镜像表 + rpc_sync_user_roles（本人 JIT 防伪造）+ 租户列表/成员 RPC + rpc_get_position_tree + v_dict_list/v_user_roles/v_role_users 视图
 > - v2.7（2026-08-04）— **023 迁移（命名定稿 + P0 三项）**：① sys_ 前缀移除（dict_type/dict_data/login_log，iam_ 保留）；② `has_permission(code)` 实现（§6.3 落地：超管短路 + claims roles ∩ iam_role_api→iam_api.api_code）；③ 审计触发器补挂 8 张（系统管理 6 + 授权 2，镜像表不挂）；④ `rpc_search_login_logs`（租户维度登录日志查询）；⑤ iam_api 加 api_code 列（与 iam_menu.perms 对齐）
@@ -580,7 +581,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 ### P0（核心链路）
 1. [ ] 部署 Logto OSS（Docker Compose，Pigsty 同机或独立容器）；配置 SMTP/短信连接器（阿里云短信等）、微信 web/native 连接器；**确认 OSS 版 Custom Token Claims 配置入口可用**（v1.42 实测）
 2. [ ] Logto Console 初始化：创建全局角色（role_super_admin）；组织模板配置组织角色（tenant_admin / editor / viewer）；创建租户（组织）并分配成员角色
-3. [ ] PG：新建镜像表 `users`（Logto 白名单字段，id=Logto user id 主键）、`tenants`（id=Logto organization id）、`user_tenants`、`role`；**全新建** ③ 授权表 `iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`（role_code = Logto 角色名，N4）+ admin 系统管理表（019 迁移：position/user_position/dict_type/dict_data/login_log/ip_region_v4 + audit_log 扩展）；`rpc_webhook_logto(payload)`（§4.3，含 Role.* 与 PostSignIn 分发）；RLS helper（§5.3.1）
+3. [ ] ~~PG 建表 + webhook RPC + RLS helper~~ → ✅ **已实现（009-028 迁移）**：镜像表（users/tenants/user_tenants/role/user_role）+ 授权表（iam_api/iam_menu/iam_role_api/iam_role_menu）+ admin 系统管理表（position/user_position/dict_type/dict_data/login_log/ip_region_v4/ip_geolite2_city + audit_log 统一审计流）；`rpc_webhook_logto(payload)`（010，含 Role.* 与 PostSignIn 分发）；RLS helper + `has_permission`（023）；表级 GRANT 补齐（028）
 4. [ ] Logto Console：配置 access-token Custom Token Claims 脚本（§5.1.1 context 版，**零 fetch**）；access token 寿命 15 分钟；**测试脚本**（Console 自带 test 功能）
 5. [ ] Logto 应用配置：webhook（订阅 User.Created/Data.Updated/Deleted + Organization.Created/Data.Updated/Deleted + Organization.Membership.Updated + Role.Created/Deleted/Data.Updated + **PostSignIn**（登录日志，D-C），signing key 入部署配置）
 6. [ ] APISIX：jwt-auth 切 Logto JWKS；authz-role-check 挂载（复用 04.6 插件源码）；webhook 验签前置（自定义 Lua 或 serverless-pre-function）
@@ -591,10 +592,10 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 ### P1（管理面与加固）
 10. [ ] ~~管理端建号/禁用/角色分配走 Logto Management API~~ → ✅ **改决策（v2.6）**：**Logto Console 管理**（建号/禁用/角色分配直接在 Logto 操作，业务端 webhook 同步镜像）；③ 绑定表管理（iam_role_api/iam_menu）自研 UI 直接写 PG（带 has_permission 检查）；原 Management API 路径 P2 备选（05.2 §4.1）
 11. [ ] 组织（租户）生命周期：Console 或 Management API（`POST /api/organizations`）+ 邀请流程（Organization.Membership.Updated 自动同步）
-12. [ ] **user_role 分配镜像**（§6.5）：管理操作主动同步 RPC（rpc_sync_user_roles）+ JIT 覆盖 + 每日对账（管理端报表需要时启用）
-13. [ ] 角色名不可变更约束落地：管理端拒绝重命名或走"新建+迁移"流程（§6.4）
-14. [ ] 审计：登录/登出/角色变更审计（Logto audit logs + PG 既有审计表）
-15. [ ] **登录日志补全（D-C）**：ip2region 数据导入（ipv4_source.txt → ip_region_v4）+ login_log 写时解析 region；失败登录对账（Management API `GET /logs` 低频增量拉失败事件 → login_log result=fail）
+12. [ ] ~~**user_role 分配镜像**~~ → ✅ **已实现（024 §6.5/025）**：`user_role` 镜像表（RLS 本人可见/超管）+ `rpc_sync_user_roles()`（本人 JIT 覆盖读 claims 防伪造；他人同步走 P2 对账任务）+ v_user_roles/v_role_users 视图；每日对账脚本（P2）
+13. [ ] 角色名不可变更约束落地：**约束在 Logto 侧**（F20 唯一性 + §6.4 约定：重命名=新建+迁移绑定）；管理端绑定表按 role_code 引用，无重命名入口（天然遵守）
+14. [ ] ~~审计：登录/登出/角色变更审计~~ → ✅ **已实现（023 §4/028）**：审计触发器 11 个（系统管理 8 + 授权 3，data_change 差异日志）+ audit_log 统一审计流（log_type=operate 经 log_operate 统一写入）+ 登录审计（PostSignIn → login_log）；Logto audit logs 侧运维查看
+15. [ ] **登录日志补全（D-C）**：~~ip2region 数据导入 + region 解析~~ → ✅ **已实现（020/021/023，见 05.3）**：ip_region_v4 + ip_geolite2_city 双表 + import 脚本 + geo_locate 兜底 + v_login_log 视图 + rpc_search_login_logs（租户维度）；**剩余**：失败登录对账（Management API `GET /logs` 低频增量拉失败事件 → login_log result=fail，P2 对账任务一并）
 16. [ ] ~~**pg_cron 只读 RPC**~~ → ✅ **已实现（021）**：`rpc_list_cron_jobs()` / `rpc_list_cron_job_runs()`（SECURITY DEFINER + 超管门槛，包装 cron.job + cron.job_run_details，管理端查看已设置任务/运行历史，不建 sys_job 表，D-E）
 
 ### P2（加固与观测）
