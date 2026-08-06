@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.9（2026-08-05）— **schema 定稿：api_v1_sys → api_v1_public（027 迁移）**：系统管理 API 暴露层命名与 public 域对齐；02-schemas 兼容创建 + 027 条件 RENAME/双存清理（顺序无关、重放安全）；db/api_v1/sys → db/api_v1/public 目录 + 41 文件同步；视图名 = 底层表名规则延续
 > - v2.8（2026-08-04）— **P1 管理 CRUD 落地（024/025 迁移）**：CRUD RPC 21 个（部门/岗位/字典/菜单/绑定/用户资料，统一 has_permission + log_operate 审计模式）+ 权限点 seed ×20（iam_api.api_code，超管/租户管理员绑定）+ user_role 分配镜像表 + rpc_sync_user_roles（本人 JIT 防伪造）+ 租户列表/成员 RPC + rpc_get_position_tree + v_dict_list/v_user_roles/v_role_users 视图
 > - v2.7（2026-08-04）— **023 迁移（命名定稿 + P0 三项）**：① sys_ 前缀移除（dict_type/dict_data/login_log，iam_ 保留）；② `has_permission(code)` 实现（§6.3 落地：超管短路 + claims roles ∩ iam_role_api→iam_api.api_code）；③ 审计触发器补挂 8 张（系统管理 6 + 授权 2，镜像表不挂）；④ `rpc_search_login_logs`（租户维度登录日志查询）；⑤ iam_api 加 api_code 列（与 iam_menu.perms 对齐）
 > - v2.6（2026-08-04）— **05.2 决策落地**：① iam_menu 加按钮级字段（022 迁移：menu_type/perms/component/is_visible）；② 管理端写 Logto 路径**放弃**（建号/禁用/角色分配改 Logto Console + webhook 同步，P1-10 更新）；③ sys_ 前缀移除与 position 树 RPC 模式（05.2 §五/六，待 023）

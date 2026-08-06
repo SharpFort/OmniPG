@@ -93,12 +93,12 @@ SELECT hasnt_table('sys_user_legacy');
 
 -- 7. 视图存在（用 pg_views 查询，避免 schema 前缀问题）
 SELECT ok(
-    (SELECT count(*) >= 1 FROM pg_views WHERE viewname='v_role_list' AND schemaname='api_v1_sys'),
-    'api_v1_sys.v_role_list 视图存在');
+    (SELECT count(*) >= 1 FROM pg_views WHERE viewname='v_role_list' AND schemaname='api_v1_public'),
+    'api_v1_public.v_role_list 视图存在');
 
 SELECT ok(
-    (SELECT count(*) >= 1 FROM pg_views WHERE viewname='sys_user' AND schemaname='api_v1_sys'),
-    'api_v1_sys.sys_user 视图存在');
+    (SELECT count(*) >= 1 FROM pg_views WHERE viewname='users' AND schemaname='api_v1_public'),
+    'api_v1_public.users 视图存在');
 
 SELECT has_view('casbin_rule');
 

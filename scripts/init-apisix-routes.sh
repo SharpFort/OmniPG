@@ -131,7 +131,7 @@ put webhook_logto "$WEBHOOK_JSON"
 put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{}}}'
 
 # 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema）
-put api_v1_sys '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_sys/$1"]},"jwt-auth":{}}}'
+put api_v1_public '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_public/$1"]},"jwt-auth":{}}}'
 put api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/api_v1_sales/$1"]},"jwt-auth":{}}}'
 put api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/api_v1_inventory/$1"]},"jwt-auth":{}}}'
 

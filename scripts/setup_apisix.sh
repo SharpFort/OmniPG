@@ -78,7 +78,7 @@ put_route user_login_sso '{"uri":"/rpc/user_login_sso","upstream":{"type":"round
 put_route refresh_token_rtr '{"uri":"/rpc/refresh_token_rtr","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":90,"plugins":{"request-validation":{"body_schema":{"type":"object","required":["p_old_rt"],"properties":{"p_old_rt":{"type":"string","minLength":16}}}}}}'
 
 # 模块路由（jwt-auth 保护 + 路径重写）
-put_route api_v1_sys '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_sys/$1"]},"jwt-auth":{}}}'
+put_route api_v1_public '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_public/$1"]},"jwt-auth":{}}}'
 put_route api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/api_v1_sales/$1"]},"jwt-auth":{}}}'
 put_route api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/api_v1_inventory/$1"]},"jwt-auth":{}}}'
 
