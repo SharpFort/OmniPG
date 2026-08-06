@@ -13,6 +13,16 @@ all:
           - pgtap
           - pg_graphql
           - pg_cron
+          # ---- 2026-08-05 新增（24-扩展引入分析 决策）----
+          - safeupdate            # P0 防误删（需 shared_preload，装包后需 edit-config 加 preload + 重启）
+          - plpgsql_check         # P0 静态检查
+          - pg_jsonschema         # P0 update_config 校验
+          - omni_csv              # P0 export/import_csv 重写
+          - pgmemento             # P1 审计时间旅行（试点）
+          - pg_mockable           # P1 pgtap 配套单测
+          - jsquery               # P1 JSONB 查询语言
+          - index_advisor         # P1 索引建议工具
+          - pg_repack             # P1 膨胀治理
         pg_users:
           - name: app_owner
             password: dev_password_change_me
@@ -41,6 +51,16 @@ all:
               - { name: pgtap }
               - { name: pg_graphql }
               - { name: pg_cron }
+              # ---- 2026-08-05 新增（24-扩展引入分析 决策）----
+              - { name: plpgsql_check }
+              - { name: pg_jsonschema }
+              - { name: omni_csv }
+              - { name: pgmemento }
+              - { name: pg_mockable }
+              - { name: jsquery }
+              - { name: index_advisor }
+              - { name: pg_repack }
+              # 注: safeupdate 无需 CREATE EXTENSION（Load=是 Create=否），仅装包 + preload
           - name: casdoor
             owner: casdoor
             comment: 'Casdoor IAM database'
