@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v2.5（2026-08-04）— **021 迁移（pg_cron RPC + GeoLite2 兜底 + 登录日志视图）**：`rpc_list_cron_jobs`/`rpc_list_cron_job_runs`（超管只读，D-E 落地）；`ip_geolite2_city` + staging + `import_geolite2_city()`（P2-24 落地）+ import-geolite2.sh；`geo_locate()` 查询顺序 ip2region→GeoLite2（含 IPv6 兜底）；ip2region 加 `family(ip)=4` 过滤；`v_sys_login_log` 视图（Logto 推送日志 + 实时地理 join）；audit_log 完备性确认（table_name/operation/old_data/new_data 已覆盖变动来源表名）
 > - v2.4（2026-08-04）— **登录日志链路落地（020 迁移）**：PostSignIn 平铺 payload 分发（源码核实无 data 包装）+ sync_login_log_write + ip2region(inet) 函数 + import-ip2region.sh 导入脚本；sys_login_log RLS 加本人可见；约束形式按场景选用（PG ENUM 复用型 / TEXT+CHECK 频繁变化，05.1 D-B）
 > - v2.3（2026-08-04）— **admin 模块补全决策（05.1 分析定稿）**：命名采纳备选 B（无前缀=平台基础域）；新增 position/user_position（树形）、sys_dict_type/data、sys_login_log、ip_region_v4（019 迁移）；audit_log 扩展为统一审计流（log_type+jsonb，D-5）；日志策略（操作日志业务侧 + 访问日志 APISIX + 异常 PG 日志）；登录日志 = webhook PostSignIn + 失败对账（否决网关/前端独立获取）
 > - v2.2（2026-08-04）— **命名修正（E2 细化）**：role / user_role 同为 Logto 镜像表，与其他镜像表统一**无前缀**——命名规则定为"无前缀 = 镜像（Logto 权威，只读）/ `iam_` 前缀 = 自主（PG 权威，可写）"
@@ -590,7 +591,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 13. [ ] 角色名不可变更约束落地：管理端拒绝重命名或走"新建+迁移"流程（§6.4）
 14. [ ] 审计：登录/登出/角色变更审计（Logto audit logs + PG 既有审计表）
 15. [ ] **登录日志补全（D-C）**：ip2region 数据导入（ipv4_source.txt → ip_region_v4）+ sys_login_log 写时解析 region；失败登录对账（Management API `GET /logs` 低频增量拉失败事件 → sys_login_log result=fail）
-16. [ ] **pg_cron 只读 RPC**：`rpc_list_cron_jobs()` / `rpc_list_cron_job_runs()`（SECURITY DEFINER 包装 cron.job + cron.job_run_details，管理端查看已设置任务/运行历史，不建 sys_job 表，D-E）
+16. [ ] ~~**pg_cron 只读 RPC**~~ → ✅ **已实现（021）**：`rpc_list_cron_jobs()` / `rpc_list_cron_job_runs()`（SECURITY DEFINER + 超管门槛，包装 cron.job + cron.job_run_details，管理端查看已设置任务/运行历史，不建 sys_job 表，D-E）
 
 ### P2（加固与观测）
 17. [ ] 镜像对账任务：每日低频全量对账 users/tenants/user_tenants/role（增量事件为主、对账兜底）
@@ -600,7 +601,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 21. [ ] 性能基准：签发延迟、网关吞吐压测（千万级容量验证，§8）
 22. [ ] 小程序需求若出现：评估 Logto custom connector 自研桥（~60 行）
 23. [ ] 非 PostgREST 入口出现时（如内部定时任务需带身份）评估 pg_session_jwt（E1 备选，仅按需引入，不替代网关）
-24. [ ] 登录地点经纬度（D-4 延伸）：GeoLite2-City CSV 导入 PG（ip_geolite2_city 表，全球覆盖 + 经纬度 + 时区），查询顺序 ip2region 优先 → GeoLite2 兜底；或高德/腾讯 IP 定位 API 异步补充
+24. [ ] ~~登录地点经纬度~~ → ✅ **已实现基础版（021）**：`ip_geolite2_city`（GeoLite2-City CSV 导入：network/经纬度/时区/城市）+ `geo_locate()`（查询顺序 ip2region 优先 → GeoLite2 兜底，含 IPv6）+ `v_sys_login_log` 视图实时输出；数据更新经 `import-geolite2.sh`（MaxMind license key）；剩余：高德/腾讯 IP 定位 API 异步补充（按需评估）
 
 ---
 
