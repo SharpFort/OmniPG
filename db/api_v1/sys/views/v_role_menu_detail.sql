@@ -3,7 +3,7 @@
 -- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
 DROP VIEW IF EXISTS api_v1_sys.v_role_menu_detail CASCADE;
-CREATE VIEW api_v1_sys.v_role_menu_detail AS
+CREATE OR REPLACE VIEW api_v1_sys.v_role_menu_detail AS
 SELECT
     rm.id AS role_id,
     rm.menu_id,
@@ -17,5 +17,5 @@ SELECT
     m.parent_id AS menu_parent_id
 FROM iam_role_menu rm
 JOIN role r ON r.role_code = rm.role_code
-JOIN sys_menu m ON m.id = rm.menu_id;
+JOIN iam_menu m ON m.id = rm.menu_id;
 COMMENT ON VIEW api_v1_sys.v_role_menu_detail IS '角色-菜单明细视图（Logto 镜像：iam_role_menu）';

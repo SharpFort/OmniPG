@@ -4,8 +4,8 @@
 -- （app_db 未镜像角色绑定，成员关系即授权面）
 -- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
-DROP VIEW IF EXISTS api_v1_sys.sys_user_role CASCADE;
-CREATE VIEW api_v1_sys.sys_user_role AS
+DROP VIEW IF EXISTS api_v1_sys.user_role CASCADE;
+CREATE OR REPLACE VIEW api_v1_sys.user_role AS
 SELECT
     ut.user_id,
     ut.organization_id AS role_id,      -- 兼容列名：组织即"角色域"
@@ -13,4 +13,4 @@ SELECT
     ut.joined_at AS created_at,
     NULL::text AS created_by
 FROM user_tenants ut;
-COMMENT ON VIEW api_v1_sys.sys_user_role IS '用户-角色关联视图（Logto 镜像：user_tenants 成员关系投影）';
+COMMENT ON VIEW api_v1_sys.user_role IS '用户-角色关联视图（Logto 镜像：user_tenants 成员关系投影）';

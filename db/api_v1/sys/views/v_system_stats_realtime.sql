@@ -3,7 +3,7 @@
 -- 来源: 20260707000017_audit_session_monitoring.sql（T7 改造）
 
 DROP VIEW IF EXISTS api_v1_sys.v_system_stats_realtime CASCADE;
-CREATE VIEW api_v1_sys.v_system_stats_realtime AS
+CREATE OR REPLACE VIEW api_v1_sys.v_system_stats_realtime AS
 SELECT
     (SELECT COUNT(*) FROM public.sys_user_session WHERE is_used = FALSE AND expired_at > now()) AS online_users,
     (SELECT COUNT(*) FROM public.sys_token_blacklist WHERE expired_at > now()) AS blacklisted_tokens,

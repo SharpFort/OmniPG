@@ -2,8 +2,8 @@
 -- T7: 重建为 role 投影（Logto 全局角色目录），与 013 迁移一致
 -- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
-DROP VIEW IF EXISTS api_v1_sys.sys_role CASCADE;
-CREATE VIEW api_v1_sys.sys_role AS
+DROP VIEW IF EXISTS api_v1_sys.role CASCADE;
+CREATE OR REPLACE VIEW api_v1_sys.role AS
 SELECT
     r.id,
     r.role_code,
@@ -18,4 +18,4 @@ SELECT
     NULL::text                          AS updated_by,
     NULL::text                          AS deleted_by
 FROM role r;
-COMMENT ON VIEW api_v1_sys.sys_role IS '角色表视图（Logto 镜像：role 投影，全局角色）';
+COMMENT ON VIEW api_v1_sys.role IS '角色表视图（Logto 镜像：role 投影，全局角色）';

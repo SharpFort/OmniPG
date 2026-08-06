@@ -3,7 +3,7 @@
 -- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
 DROP VIEW IF EXISTS api_v1_sys.v_role_list CASCADE;
-CREATE VIEW api_v1_sys.v_role_list AS
+CREATE OR REPLACE VIEW api_v1_sys.v_role_list AS
 SELECT
     r.id,
     r.role_code,
