@@ -39,7 +39,8 @@ BEGIN
         WHEN 'User.Data.Updated' THEN
             PERFORM sync_user_upsert(v_data);
         WHEN 'User.Deleted' THEN
-            PERFORM sync_user_delete(v_data->>'id');
+            -- Management API hook：DELETE 204 无响应体 → data 缺失，id 在 params（/api/users/:id）
+            PERFORM sync_user_delete(COALESCE($1->'params'->>'id', v_data->>'id'));
 
         -- ═══ 组织（租户）事件 ═══
         WHEN 'Organization.Created' THEN
@@ -47,7 +48,7 @@ BEGIN
         WHEN 'Organization.Data.Updated' THEN
             PERFORM sync_tenant_upsert(v_data);
         WHEN 'Organization.Deleted' THEN
-            PERFORM sync_tenant_delete(v_data->>'id');
+            PERFORM sync_tenant_delete(COALESCE($1->'params'->>'id', v_data->>'id'));
 
         -- ═══ 成员关系事件（增量 diff）═══
         WHEN 'Organization.Membership.Updated' THEN
@@ -62,7 +63,8 @@ BEGIN
         WHEN 'Role.Data.Updated' THEN
             PERFORM sync_role_upsert(v_data);
         WHEN 'Role.Deleted' THEN
-            PERFORM sync_role_delete(v_data->>'id');
+            -- Management API hook：DELETE 204 无响应体 → data 缺失，id 在 params（/api/roles/:id）
+            PERFORM sync_role_delete(COALESCE($1->'params'->>'id', v_data->>'id'));
 
         -- ═══ 未知事件 — 静默忽略 ═══
         ELSE NULL;
