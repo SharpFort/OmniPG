@@ -11,3 +11,5 @@ __pycache__/
 
 # 临时分析缓存（工具生成，不入库）
 .admin_analysis/
+.hermes_tmp/
+scripts/verify-webhook/out/
