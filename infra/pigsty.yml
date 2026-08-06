@@ -35,10 +35,6 @@ all:
             password: authenticator_dev_pass
             pgbouncer: true
             comment: 'PostgREST auth role'
-          - name: casdoor
-            password: casdoor_dev_pass
-            pgbouncer: true
-            comment: 'Casdoor DB user'
           - name: web_anon
             comment: 'PostgREST anonymous role (NOLOGIN)'
         pg_databases:
@@ -63,9 +59,6 @@ all:
               - { name: index_advisor }
               - { name: pg_repack }
               # 注: safeupdate 无需 CREATE EXTENSION（Load=是 Create=否），仅装包 + preload
-          - name: casdoor
-            owner: casdoor
-            comment: 'Casdoor IAM database'
         pg_hba_builtin: []  # 禁用内置规则，使用自定义规则
         pg_hba_rules:
           - type: host

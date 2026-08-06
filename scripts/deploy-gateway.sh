@@ -66,13 +66,11 @@ check_service() {
 }
 
 check_service "APISIX" "http://localhost:7085/status"
-check_service "PostgREST" "http://localhost:3001/"
-check_service "Casdoor" "http://localhost:8000/api/health"
-# Syncer 无宿主端口映射，用容器状态检查
+check_service "PostgREST" "http://localhost:3100/"
+check_service "Logto" "http://localhost:3001/oidc/.well-known/openid-configuration"
+# Syncer 已退役（Logto 同步经 webhook；容器不再要求运行）
 if docker inspect --format='{{.State.Status}}' policy-syncer 2>/dev/null | grep -q running; then
-    echo "  ✅ Syncer"
-else
-    echo "  ❌ Syncer"
+    echo "  ✅ Syncer（遗留容器，忽略）"
 fi
 check_service "Swagger" "http://localhost:8082/"
 

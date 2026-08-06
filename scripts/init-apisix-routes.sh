@@ -10,9 +10,10 @@ AUTH="X-API-KEY: ${ADMIN_KEY}"
 
 # ---------------------------------------------------------------------------
 # [0] 预先清理 Casdoor 时代旧路由（幂等：DELETE 不存在路由 204）
+#     含 api_v1_sys（027 schema 重命名后的残留，指向已删 schema）
 # ---------------------------------------------------------------------------
 echo "[0] Cleanup Casdoor routes..."
-for rid in jwks user_login_sso refresh_token_rtr casdoor_proxy; do
+for rid in jwks user_login_sso refresh_token_rtr casdoor_proxy api_v1_sys; do
   curl -s -X DELETE "http://localhost:9180/apisix/admin/routes/${rid}" -H "$AUTH" || true
 done
 echo "  OK"
@@ -130,18 +131,18 @@ print(json.dumps(route))
 put webhook_logto "$WEBHOOK_JSON"
 
 # 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth）
-put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{}}}'
+put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
 
 # 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema）
-put api_v1_public '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/api_v1_public/$1"]},"jwt-auth":{}}}'
-put api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/api_v1_sales/$1"]},"jwt-auth":{}}}'
-put api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/api_v1_inventory/$1"]},"jwt-auth":{}}}'
+put api_v1_public '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
+put api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
+put api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
 
 # 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高）
-put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{}}}'
+put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
 
 # 4.7 Catch-all（AuthN 准入）
-put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{}}}'
+put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
 
 # ---------------------------------------------------------------------------
 # [5] 汇总

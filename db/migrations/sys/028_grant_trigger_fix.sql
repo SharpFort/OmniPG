@@ -36,6 +36,13 @@ GRANT ALL ON department, audit_log, app_config, cron_job_log, user_profile,
     ip_region_v4, ip_geolite2_city, user_role
     TO super_admin;
 
+-- 镜像表（009 只授 authenticated；super_admin/业务角色须可读——视图为 INVOKER 权限）
+GRANT ALL ON users, tenants, role, user_tenants TO super_admin;
+GRANT SELECT ON users, tenants, role, user_tenants TO role_admin, role_editor, role_guest;
+
+-- public schema USAGE（RLS 辅助函数 current_user_roles/is_super_admin 解析）
+GRANT USAGE ON SCHEMA public TO super_admin, role_admin, role_editor, role_guest, web_anon;
+
 -- ---------------------------------------------------------------------------
 -- §2 触发器名 sys_ 残留清理（与 023 命名对齐）
 -- ---------------------------------------------------------------------------

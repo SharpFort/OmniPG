@@ -15,7 +15,7 @@ CREATE EXTENSION IF NOT EXISTS "pgaudit";
 -- 透明列加密（敏感字段加密）
 CREATE EXTENSION IF NOT EXISTS "pgsodium";
 
--- 异步 HTTP 请求（Casdoor 集成、pg_notify 增强）
+-- 异步 HTTP 请求（webhook 回调、pg_notify 增强）
 CREATE EXTENSION IF NOT EXISTS "pg_net";
 
 -- pgTAP 单元测试框架

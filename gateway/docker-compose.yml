@@ -81,10 +81,10 @@ services:
       PGRST_DB_SCHEMAS: "api_v1_public,api_v1_sales,api_v1_inventory"
       PGRST_DB_ANON_ROLE: web_anon
       PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_public,api_v1_sales,api_v1_inventory,public,sales,inventory"
-      # Phase 1: Casdoor JWKS（公钥 JSON）作为 JWT 验签密钥；容器内同时暴露 JWKS_JSON 供 conf 引用
+      # Logto JWKS（ES384 公钥 JSON）作为 JWT 验签密钥；容器内同时暴露 JWKS_JSON 供 conf 引用
       JWKS_JSON: '${JWKS_JSON}'
       PGRST_JWT_SECRET: '${JWKS_JSON}'
-      # Phase 1 D10: Casdoor JWT roles 为角色对象数组（[{name:...}]），取首个角色名（JSPath 语法，. 开头）
+      # Logto customizer 注入 pg_role claim（. 开头 = JSPath 语法）
       PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
       PGRST_DB_PRE_REQUEST: ""
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"
