@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v3.1（2026-08-05）— **前端联调 P0 修复（030 迁移）**：① `current_user_roles()` 重建为 Logto 字符串数组语义（旧版按 Casdoor 对象数组解析 → is_super_admin 恒 false → RLS 超管豁免/has_permission 短路全线失效，**核心缺陷**）；② 删除 rpc_get_online_users（悬空引用 v_online_users，在线用户功能废弃）；③ seed `sys:login-log:list`（rpc_search_login_logs 门槛权限点，超管绑定）
 > - v3.0（2026-08-05）— **权限模型定稿（05.4）+ 029 门槛补齐 + 路线图状态更新**：三层模型（前端缓存 UX / has_permission 操作级 / RLS 数据级）与选择矩阵沉淀为 05.4 文档；4 个 DEFINER 写/管理 RPC 补 has_permission（update_config/import_csv/export_csv/cleanup_expired_tokens + 权限点 sys:config:write/sys:import/sys:export/sys:session:cleanup）；P0-3/P1-12/14/15 标记已实现，P1-13 约束定位于 Logto 侧
 > - v2.9（2026-08-05）— **schema 定稿：api_v1_sys → api_v1_public（027 迁移）**：系统管理 API 暴露层命名与 public 域对齐；02-schemas 兼容创建 + 027 条件 RENAME/双存清理（顺序无关、重放安全）；db/api_v1/sys → db/api_v1/public 目录 + 41 文件同步；视图名 = 底层表名规则延续
 > - v2.8（2026-08-04）— **P1 管理 CRUD 落地（024/025 迁移）**：CRUD RPC 21 个（部门/岗位/字典/菜单/绑定/用户资料，统一 has_permission + log_operate 审计模式）+ 权限点 seed ×20（iam_api.api_code，超管/租户管理员绑定）+ user_role 分配镜像表 + rpc_sync_user_roles（本人 JIT 防伪造）+ 租户列表/成员 RPC + rpc_get_position_tree + v_dict_list/v_user_roles/v_role_users 视图
