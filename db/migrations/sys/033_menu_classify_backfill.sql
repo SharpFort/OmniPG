@@ -9,7 +9,8 @@
 --     ② 存在子节点             → 'directory'（目录）
 --     ③ menu_name 动作词后缀   → 'button'（按钮：Add/Edit/Delete/Query/Export/
 --                                   Import/Reset/Assign/Status/Remove/Detail/Pwd
---                                   + 中文 新增/编辑/删除/导出/导入/重置/分配/查询）
+--                                   + 中文 新增/编辑/删除/查询/导出/导入/重置/
+--                                     分配/状态/移除/详情/密码，中英 12 对对齐）
 --     ④ 其余                   → 'menu'
 --   component 回填（仅 menu 类型，Vue 懒加载惯例）:
 --     path=/system/user → component=system/user/index
@@ -26,7 +27,7 @@ UPDATE iam_menu SET menu_type = CASE
     WHEN EXISTS (SELECT 1 FROM iam_menu c WHERE c.parent_id = iam_menu.id)
         THEN 'directory'::iam_menu_type
     WHEN menu_name ~ '(Add|Edit|Delete|Query|Export|Import|Reset|Assign|Status|Remove|Detail|Pwd)$'
-        OR menu_name ~ '(新增|编辑|删除|导出|导入|重置|分配|查询)$'
+        OR menu_name ~ '(新增|编辑|删除|查询|导出|导入|重置|分配|状态|移除|详情|密码)$'
         THEN 'button'::iam_menu_type
     ELSE 'menu'::iam_menu_type
 END
