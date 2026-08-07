@@ -491,7 +491,9 @@ GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_delete_dict_data(uuid) TO authenticated
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_create_menu(
     p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
     p_perms text DEFAULT NULL, p_path text DEFAULT NULL, p_component text DEFAULT NULL,
-    p_icon text DEFAULT NULL, p_order_num int DEFAULT 0)
+    p_icon text DEFAULT NULL, p_order_num int DEFAULT 0,
+    p_is_visible boolean DEFAULT true
+)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
@@ -506,16 +508,16 @@ BEGIN
         RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
     END IF;
     INSERT INTO iam_menu (parent_id, menu_name, menu_type, perms, path, component,
-                          icon, order_num, created_by)
+                          icon, order_num, is_visible, created_by)
     VALUES (p_parent_id, p_menu_name, p_menu_type, p_perms, p_path, p_component,
-            p_icon, p_order_num, current_user_id())
+            p_icon, p_order_num, p_is_visible, current_user_id())
     RETURNING id INTO v_id;
     PERFORM log_operate('menu', 'create', 'iam_menu', v_id::text,
                         'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button）';
-GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int) TO authenticated;
+COMMENT ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button；035 +p_is_visible 对齐 RuoYi 新增表单）';
+GRANT EXECUTE ON FUNCTION api_v1_sys.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean) TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_menu(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_menu_name text DEFAULT NULL,
@@ -760,9 +762,9 @@ CREATE VIEW api_v1_sys.v_role_users AS
 SELECT r.name AS role_code, r.id AS role_id, r.type AS role_type,
        ur.user_id, u.username
 FROM role r
-LEFT JOIN user_role ur ON ur.role_code = r.name
+LEFT JOIN user_role ur ON ur.role_code = r.role_code
 LEFT JOIN users u ON u.id = ur.user_id;
-COMMENT ON VIEW api_v1_sys.v_role_users IS '角色→用户镜像视图（管理端角色详情-成员标签页）';
+COMMENT ON VIEW api_v1_sys.v_role_users IS '角色→用户镜像视图（管理端角色详情-成员标签页；035: JOIN 键改 r.role_code 清晰化——生成列恒等于 name，原写法碰巧正确）';
 
 -- ---------------------------------------------------------------------------
 -- §8 验证

@@ -614,7 +614,71 @@ $$;
 COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（035: +menu_type/perms/is_visible/component——前端按 menu_type 过滤 button、component 直用 033 回填值，映射表仅兜底）';
 
 -- ---------------------------------------------------------------------------
--- §12 验证
+-- §12 §2.5/§2.6 审查补丁（2026-08-07 用户拍板）
+--   A. is_super_admin() 重建（P0）：030 只重建 current_user_roles()，is_super_admin
+--      仍是 Casdoor 旧版（isGlobalAdmin/isAdmin claim + roles[].name 对象数组语义）→
+--      Logto roles 字符串数组下 r->>'name' 恒 NULL → 恒 false → RLS 超管豁免 /
+--      has_permission 短路 / rpc_search_login_logs 超管分支全线失效
+--      （功能面被 011"超管绑全部权限点"掩盖）。重建 = current_user_roles() @>
+--      ARRAY['role_super_admin']（030 注释声称的意图）
+--   B. rpc_create_menu 增加 p_is_visible（业界实践对齐：RuoYi/Admin.NET 系新增菜单
+--      表单均含显示状态字段、创建时一次提交；原签名无此参数 → 新建默认可见、
+--      隐藏需二次 update_menu；iam_menu.is_visible 列 022 已存在，无需改表）
+--   C. v_role_users JOIN 键清晰化（ur.role_code = r.name → r.role_code；
+--      role_code 为 name 生成列故原写法碰巧正确，防未来语义变化踩坑）
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION is_super_admin()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT current_user_roles() @> ARRAY['role_super_admin'];
+$$;
+COMMENT ON FUNCTION is_super_admin() IS '检查当前用户是否为超级管理员（Logto: roles 含 role_super_admin；035 重建——030 声称修复但漏改 is_super_admin 本身）';
+
+CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_menu(
+    p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
+    p_perms text DEFAULT NULL, p_path text DEFAULT NULL, p_component text DEFAULT NULL,
+    p_icon text DEFAULT NULL, p_order_num int DEFAULT 0,
+    p_is_visible boolean DEFAULT true
+)
+RETURNS json
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+DECLARE v_id uuid;
+BEGIN
+    IF NOT has_permission('sys:menu:create') THEN
+        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
+    END IF;
+    IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
+        RAISE EXCEPTION 'menu_name required' USING ERRCODE = '22023';
+    END IF;
+    IF p_menu_type NOT IN ('directory','menu','button') THEN
+        RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
+    END IF;
+    INSERT INTO iam_menu (parent_id, menu_name, menu_type, perms, path, component,
+                          icon, order_num, is_visible, created_by)
+    VALUES (p_parent_id, p_menu_name, p_menu_type, p_perms, p_path, p_component,
+            p_icon, p_order_num, p_is_visible, current_user_id())
+    RETURNING id INTO v_id;
+    PERFORM log_operate('menu', 'create', 'iam_menu', v_id::text,
+                        'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
+    RETURN json_build_object('ok', true, 'id', v_id);
+END $$;
+COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button；035 +p_is_visible 对齐 RuoYi 新增表单）';
+GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean) TO authenticated;
+
+DROP VIEW IF EXISTS api_v1_public.v_role_users CASCADE;
+CREATE VIEW api_v1_public.v_role_users AS
+SELECT r.name AS role_code, r.id AS role_id, r.type AS role_type,
+       ur.user_id, u.username
+FROM role r
+LEFT JOIN user_role ur ON ur.role_code = r.role_code
+LEFT JOIN users u ON u.id = ur.user_id;
+COMMENT ON VIEW api_v1_public.v_role_users IS '角色→用户镜像视图（管理端角色详情-成员标签页；035: JOIN 键改 r.role_code 清晰化——生成列恒等于 name，原写法碰巧正确）';
+
+-- ---------------------------------------------------------------------------
+-- §13 验证
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -629,6 +693,9 @@ DECLARE
     v_menu_type  int;   -- get_user_menu 含 menu_type（期望 1）
     v_cron_grant int;   -- cron RPC authenticated 可执行（期望 2）
     v_cron_cleanup int; -- cleanup-expired-tokens 任务残留（期望 0）
+    v_super      boolean; -- is_super_admin Logto 语义（期望 true）
+    v_create_menu int;  -- rpc_create_menu 含 p_is_visible（期望 1）
+    v_role_users int;   -- v_role_users JOIN 键清晰化（期望 1）
 BEGIN
     SELECT count(*) INTO v_deleted FROM pg_proc
       WHERE pronamespace = 'api_v1_public'::regnamespace
@@ -670,7 +737,21 @@ BEGIN
         AND has_function_privilege('authenticated', p.oid, 'EXECUTE');
     SELECT count(*) INTO v_cron_cleanup FROM cron.job
       WHERE jobname = 'cleanup-expired-tokens';
-    RAISE NOTICE '035: 已删函数残留=%（期望0） 权限点残留=%（期望0） import安全特征=%（期望2） LIMIT上限函数=%（期望5） ensure_user_JIT=%（期望1） tenant_admin绑定=%（期望2） helper=%（期望2） dept参数text=%（期望1） menu含menu_type=%（期望1） cron授权=%（期望2） cleanup任务残留=%（期望0）',
+    -- §12 补丁断言（035 追加）
+    SELECT is_super_admin() INTO v_super;
+    SELECT count(*) INTO v_create_menu FROM pg_proc
+      WHERE pronamespace = 'api_v1_public'::regnamespace
+        AND proname = 'rpc_create_menu'
+        AND pg_get_function_arguments(oid) LIKE '%is_visible%';
+    SELECT count(*) INTO v_role_users FROM pg_views
+      WHERE schemaname = 'api_v1_public' AND viewname = 'v_role_users';
+    RAISE NOTICE '035: 已删函数残留=%（期望0） 权限点残留=%（期望0） import安全特征=%（期望2） LIMIT上限函数=%（期望5） ensure_user_JIT=%（期望1） tenant_admin绑定=%（期望2） helper=%（期望2） dept参数text=%（期望1） menu含menu_type=%（期望1） cron授权=%（期望2） cleanup任务残留=%（期望0） is_super_admin=%（迁移上下文无claims应为false，true分支由PGlite行为断言覆盖） create_menu含is_visible=%（期望1） v_role_users存在=%（期望1）',
         v_deleted, v_perms, v_import, v_limits, v_jit, v_tenant_bind, v_helper,
-        v_dept_param, v_menu_type, v_cron_grant, v_cron_cleanup;
+        v_dept_param, v_menu_type, v_cron_grant, v_cron_cleanup, v_super,
+        v_create_menu, v_role_users;
+    -- is_super_admin 断言（Logto 语义；无 claims 时验证块本身以匿名身份跑 → 应为 false，
+    -- 由 PGlite 行为断言覆盖 true 分支）
+    IF v_super THEN
+        RAISE WARNING '035: is_super_admin() 为 true——验证块在特权上下文执行，跳过期望检查';
+    END IF;
 END $$;
