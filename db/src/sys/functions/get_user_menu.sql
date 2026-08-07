@@ -23,7 +23,7 @@ BEGIN
     WITH RECURSIVE menu_cte AS (
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.order_num
+            m.menu_type, m.perms, m.is_visible, m.component, m.order_num
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         WHERE rm.role_code IN (SELECT jsonb_array_elements_text(v_roles))
@@ -33,7 +33,7 @@ BEGIN
 
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.order_num
+            m.menu_type, m.perms, m.is_visible, m.component, m.order_num
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         JOIN menu_cte c ON m.parent_id = c.id
@@ -44,7 +44,7 @@ BEGIN
     FROM (
         SELECT
             c.id, c.parent_id, c.name, c.path,
-            c.menu_type, c.perms, c.is_visible,
+            c.menu_type, c.perms, c.is_visible, c.component,
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
         ORDER BY c.order_num

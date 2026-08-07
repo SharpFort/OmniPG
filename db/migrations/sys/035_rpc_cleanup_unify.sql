@@ -554,9 +554,13 @@ COMMENT ON FUNCTION api_v1_public.get_dept_tree(text) IS '获取部门树形结�
 GRANT EXECUTE ON FUNCTION api_v1_public.get_dept_tree(text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- §11 §2.2 补丁：get_user_menu() 增加 menu_type/perms/is_visible 列
+-- §11 §2.2 补丁：get_user_menu() 增加 menu_type/perms/is_visible/component 列
 --     前端 §2.4 需按 menu_type 过滤 button 按钮项（033 回填的按钮项
---     若绑定进 iam_role_menu 会混入路由注册）；原返回无此列无法区分
+--     若绑定进 iam_role_menu 会混入路由注册）；原返回无此列无法区分。
+--     035 补丁（用户拍板 2026-08-07）：+component 列——033 已回填
+--     path→组件路径（regexp_replace(path,'^/','')||'/index'），但原返回
+--     不下发 → 前端只能靠 11 项硬编码映射表，新菜单必改前端代码；
+--     补列后前端映射表降级为兜底（component 为空时用）。
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION get_user_menu()
 RETURNS json
@@ -577,7 +581,7 @@ BEGIN
     WITH RECURSIVE menu_cte AS (
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.order_num
+            m.menu_type, m.perms, m.is_visible, m.component, m.order_num
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         WHERE rm.role_code IN (SELECT jsonb_array_elements_text(v_roles))
@@ -587,7 +591,7 @@ BEGIN
 
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.order_num
+            m.menu_type, m.perms, m.is_visible, m.component, m.order_num
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         JOIN menu_cte c ON m.parent_id = c.id
@@ -598,7 +602,7 @@ BEGIN
     FROM (
         SELECT
             c.id, c.parent_id, c.name, c.path,
-            c.menu_type, c.perms, c.is_visible,
+            c.menu_type, c.perms, c.is_visible, c.component,
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
         ORDER BY c.order_num
@@ -607,7 +611,7 @@ BEGIN
     RETURN v_menu_tree;
 END;
 $$;
-COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（035: +menu_type/perms/is_visible——前端按 menu_type 过滤 button）';
+COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（035: +menu_type/perms/is_visible/component——前端按 menu_type 过滤 button、component 直用 033 回填值，映射表仅兜底）';
 
 -- ---------------------------------------------------------------------------
 -- §12 验证
