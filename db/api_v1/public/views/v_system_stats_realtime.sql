@@ -8,7 +8,7 @@ CREATE OR REPLACE VIEW api_v1_public.v_system_stats_realtime AS
 SELECT
     NULL::bigint AS online_users,          -- D12: 会话管理交 Logto，无 DB 来源
     NULL::bigint AS blacklisted_tokens,    -- D12: 吊销交 Logto，无 DB 黑名单
-    (SELECT MAX(execution_time) FROM public.cron_job_log WHERE job_name = 'cleanup-expired-tokens') AS last_cleanup_time,
+    (SELECT MAX(execution_time) FROM public.cron_job_log WHERE job_name = 'cleanup-old-audit-logs') AS last_cleanup_time,  -- 035: cleanup-expired-tokens 任务已删（死链），改指审计日志清理任务
     (SELECT COUNT(*) FROM public.audit_log WHERE created_at > now() - interval '24 hours') AS audit_24h,
     now() AS stats_time;
-COMMENT ON VIEW api_v1_public.v_system_stats_realtime IS '实时系统统计视图（T9: 会话/黑名单计数置 NULL，Logto 接管）';
+COMMENT ON VIEW api_v1_public.v_system_stats_realtime IS '实时系统统计视图（T9: 会话/黑名单计数置 NULL，Logto 接管；035: last_cleanup_time 改指 cleanup-old-audit-logs）';

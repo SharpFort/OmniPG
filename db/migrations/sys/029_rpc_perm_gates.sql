@@ -5,9 +5,10 @@
 --   旧 DEFINER 写/管理 RPC（绕过 RLS + 无门槛）= 任何 authenticated 可执行：
 --     update_config / import_csv / export_csv / cleanup_expired_tokens
 --   补齐权限点 + 入口门槛（与 024/025 新 CRUD 统一模式）
--- 权限点: sys:config:write / sys:import / sys:session:cleanup（⚠️ 035 删 sys:export——
---   export_csv 已删除，导出走 GET /view 原生能力）
---   绑定: role_super_admin（tenant_admin 不授予——配置/导入/会话清理为平台级）
+-- 权限点: sys:config:write / sys:import（⚠️ 035 删 sys:export——export_csv 已删除，
+--   导出走 GET /view 原生能力；删 sys:session:cleanup——cleanup_expired_tokens
+--   整链死链删除，会话/吊销交 Logto 无可清理之物）
+--   绑定: role_super_admin（tenant_admin 不授予——配置/导入为平台级）
 -- 幂等: CREATE OR REPLACE（函数）+ ON CONFLICT（seed）；apply-src 重放安全
 -- =============================================================================
 
@@ -18,14 +19,13 @@ INSERT INTO iam_api (api_code, path, method, name, is_active)
 SELECT x.api_code, '/rpc/' || x.api_code, 'POST', x.name, true
 FROM (VALUES
     ('sys:config:write',     '配置-写入'),
-    ('sys:import',           '数据-导入'),
-    ('sys:session:cleanup',  '会话-清理')
+    ('sys:import',           '数据-导入')
 ) AS x(api_code, name)
 ON CONFLICT (path, method) DO NOTHING;
 
 INSERT INTO iam_role_api (role_code, api_id)
 SELECT 'role_super_admin', id FROM iam_api
-WHERE api_code IN ('sys:config:write','sys:import','sys:session:cleanup')
+WHERE api_code IN ('sys:config:write','sys:import')
 ON CONFLICT (role_code, api_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -148,23 +148,12 @@ GRANT EXECUTE ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) TO auth
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------------
--- §4 cleanup_expired_tokens — 补 sys:session:cleanup 门槛（sql → plpgsql）
+-- §4 cleanup_expired_tokens — ⚠️ 035 已整链删除（死链：public.cleanup_expired_tokens()
+--     全库无定义（本 wrapper 内部 PERFORM 目标不存在）；清理对象
+--     sys_token_blacklist/sys_user_session 014 已删（D12 会话/吊销交 Logto）；
+--     无可清理之物，cron 任务 cleanup-expired-tokens 一并删除（034 重调度作废，
+--     §2.2 审查发现）。源文件无（迁移内定义），已执行环境由 035 DROP 兜底）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.cleanup_expired_tokens()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-    IF NOT has_permission('sys:session:cleanup') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    PERFORM public.cleanup_expired_tokens();
-END;
-$$;
-COMMENT ON FUNCTION api_v1_public.cleanup_expired_tokens() IS '清理过期 Token（sys:session:cleanup；029 补门槛）';
-GRANT EXECUTE ON FUNCTION api_v1_public.cleanup_expired_tokens() TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- §5 验证
@@ -172,12 +161,12 @@ GRANT EXECUTE ON FUNCTION api_v1_public.cleanup_expired_tokens() TO authenticate
 DO $$
 DECLARE v_gates int; v_perms int;
 BEGIN
-    -- 3 个函数体均含 has_permission 门槛（035: export_csv 已删除）
+    -- 2 个函数体均含 has_permission 门槛（035: export_csv/cleanup_expired_tokens 已删除）
     SELECT count(*) INTO v_gates FROM pg_proc
       WHERE pronamespace = 'api_v1_public'::regnamespace
-        AND proname IN ('update_config','import_csv','cleanup_expired_tokens')
+        AND proname IN ('update_config','import_csv')
         AND prosrc LIKE '%has_permission%';
     SELECT count(*) INTO v_perms FROM iam_api
-      WHERE api_code IN ('sys:config:write','sys:import','sys:session:cleanup');
-    RAISE NOTICE '029: 门槛函数=%（期望3） 权限点=%（期望3）', v_gates, v_perms;
+      WHERE api_code IN ('sys:config:write','sys:import');
+    RAISE NOTICE '029: 门槛函数=%（期望2） 权限点=%（期望2）', v_gates, v_perms;
 END $$;

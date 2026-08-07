@@ -27,6 +27,7 @@ DECLARE
     v_item     jsonb;
     v_inserted int := 0;
     v_errors   text[] := '{}';
+    v_cols     text;
     v_sql      text;
 BEGIN
     PERFORM require_permission('sys:import');
@@ -41,16 +42,22 @@ BEGIN
         RAISE EXCEPTION 'Import data must be a non-empty JSON array' USING ERRCODE = 'P0005';
     END IF;
 
-    v_sql := format('INSERT INTO api_v1_public.%I ' ||
-                    'SELECT * FROM jsonb_populate_record(NULL::api_v1_public.%I, $1)',
-                    p_table_name, p_table_name);
-
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_data)
     LOOP
         BEGIN
-            IF jsonb_typeof(v_item) <> 'object' OR jsonb_object_length(v_item) = 0 THEN
+            IF jsonb_typeof(v_item) <> 'object'
+               OR NOT EXISTS (SELECT 1 FROM jsonb_object_keys(v_item)) THEN
                 RAISE EXCEPTION 'row must be a non-empty JSON object';
             END IF;
+
+            -- 列子集插入：仅 JSON 提供的键（quote_ident 防注入），
+            -- 缺失列（id/created_at 等）走表 DEFAULT——jsonb_populate_record
+            -- 全列填充会把 NULL 显式传入导致 NOT NULL 冲突（PGlite 验证发现）
+            v_cols := (SELECT string_agg(quote_ident(k), ', ')
+                       FROM jsonb_object_keys(v_item) AS k);
+            v_sql := format('INSERT INTO api_v1_public.%I (%s) ' ||
+                            'SELECT %s FROM jsonb_populate_record(NULL::api_v1_public.%I, $1)',
+                            p_table_name, v_cols, v_cols, p_table_name);
 
             IF NOT p_dry_run THEN
                 EXECUTE v_sql USING v_item;
@@ -71,5 +78,5 @@ BEGIN
                              'dry_run', p_dry_run);
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化；sys:import）';
+COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化列子集；sys:import）';
 GRANT EXECUTE ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) TO authenticated;

@@ -1,7 +1,7 @@
 -- =============================================================================
--- 035_rpc_cleanup_unify.sql — 前端对齐方案 §1.2 RPC 层修复
+-- 035_rpc_cleanup_unify.sql — 前端对齐方案 §1.2/§2.2 RPC 层修复
 -- =============================================================================
--- 背景: 2026-08-07 前端对齐后端方案审查（§1.2 RPC 清单逐项核对源码，B4-B7）
+-- 背景: 2026-08-07 前端对齐后端方案审查（§1.2 RPC 清单 B4-B7 + §2.2 API 层审查）
 --   P1-B5: health_check 删除（20260707000014_auth_rpc_functions 遗留，全库无引用；
 --           健康检查由 APISIX upstream / Pigsty 监控承担）
 --   P1-B5: export_csv 删除（半成品：返回提示文本而非数据；SECURITY DEFINER +
@@ -15,7 +15,7 @@
 --   P1-B5: import_csv 安全重写（原白名单 = api_v1_public 全部视图 - 3 个排除，
 --           含镜像投影视图 role/user_role（简单视图可更新，DEFINER 可写穿
 --           Logto 镜像表）；且值拼接无引号 = SQL 注入面 + JSON null 错位）
---           → 显式业务表白名单 + jsonb_populate_record 参数化单行插入
+--           → 显式业务表白名单 + jsonb_populate_record 参数化列子集插入
 --   P2-B4: search_users / search_audit_log 补 LIMIT 上限（原无上限）
 --   P2-B4: 分页上限统一 100（rpc_search_login_logs 1000 / rpc_list_tenants 200 /
 --           rpc_list_tenant_members 500 → 100；页面 10-50 条 + offset 翻页足够；
@@ -26,9 +26,25 @@
 --   统一门槛三档: 新增 src 层 require_permission(text) / require_super_admin()
 --           无门槛（INVOKER+RLS）/ 权限点（DEFINER+require_permission）/
 --           超管（DEFINER+require_super_admin）——本轮重写函数应用，其余渐进
+-- ⚠️ §2.2 审查补丁（同迁移追加）:
+--   P0: get_user_permissions 删除（uuid 变量接收 text nanoid 调用必炸 22P02；
+--       Casdoor 时代残留，三个输出均有替代：roles→get_current_user、
+--       权限码→v_role_api_detail、菜单→get_user_menu；casbin_rule 视图保留——
+--       pgTAP 测试引用，只读兼容视图无害）
+--   P1: cleanup_expired_tokens 整链删除（死链：public.cleanup_expired_tokens()
+--       全库无定义（029 wrapper 内部 PERFORM 目标不存在）；清理对象
+--       sys_token_blacklist/sys_user_session 014 已删（D12 会话/吊销交 Logto）——
+--       无可清理之物，cron 任务 cleanup-expired-tokens 一并删除（034 重调度作废）
+--   P1: get_dept_tree(p_tenant_id) uuid → text（017 department.tenant_id text 化后
+--       参数未同步；传值调用 text=uuid 无隐式 cast 必炸，传 NULL 短路不炸）
+--   P1: rpc_list_cron_jobs/runs 补 GRANT authenticated（021 只授 web_anon，
+--       与全库惯例不一致，authenticated 角色调用 42501）
+--   P2: get_user_menu() 增加 menu_type 列（前端 §2.4 需过滤 button 菜单项，
+--       原返回无此列无法区分；033 回填的按钮项会混入路由注册）
 -- 联动: 024 删 sys:user-role:sync seed、025 删 §1 rpc_sync_user_roles、
---       029 删 §3 export_csv + sys:export seed（源文件已改；已执行环境本迁移
---       DROP IF EXISTS 兜底，重放后不复活）
+--       029 删 §3 export_csv + §4 cleanup_expired_tokens + sys:export/sys:session:cleanup
+--       seed、034 删 cleanup-expired-tokens 重调度段（源文件已改；已执行环境本迁移
+--       DROP IF EXISTS / cron.unschedule 兜底，重放后不复活）
 -- 无 down 段: apply-src 全文件幂等重放；回滚走 pg_dump。
 -- =============================================================================
 
@@ -69,11 +85,25 @@ COMMENT ON FUNCTION require_super_admin() IS '超管门槛统一入口（035）�
 DROP FUNCTION IF EXISTS api_v1_public.health_check();
 DROP FUNCTION IF EXISTS api_v1_public.export_csv(text, text, text);
 DROP FUNCTION IF EXISTS api_v1_public.rpc_sync_user_roles(text);
+DROP FUNCTION IF EXISTS api_v1_public.get_user_permissions();          -- §2.2 补丁 P0
+DROP FUNCTION IF EXISTS api_v1_public.cleanup_expired_tokens();        -- §2.2 补丁 P1（死链）
+DROP FUNCTION IF EXISTS api_v1_sys.cleanup_expired_tokens();           -- §2.2 补丁 P1（重放兜底）
 
--- 权限点清理（sys:export 已无函数、sys:user-role:sync 已无函数）
+-- 权限点清理（sys:export/sys:user-role:sync 已无函数、sys:session:cleanup 已无函数）
 DELETE FROM iam_role_api
-WHERE api_id IN (SELECT id FROM iam_api WHERE api_code IN ('sys:export', 'sys:user-role:sync'));
-DELETE FROM iam_api WHERE api_code IN ('sys:export', 'sys:user-role:sync');
+WHERE api_id IN (SELECT id FROM iam_api
+                 WHERE api_code IN ('sys:export', 'sys:user-role:sync', 'sys:session:cleanup'));
+DELETE FROM iam_api
+WHERE api_code IN ('sys:export', 'sys:user-role:sync', 'sys:session:cleanup');
+
+-- §2.2 补丁 P1：删除 cleanup-expired-tokens 定时任务（死链：无底层函数、无清理对象；
+-- 034 重调度作废；cleanup-old-audit-logs 保留）
+DO $$
+BEGIN
+    PERFORM cron.unschedule('cleanup-expired-tokens');
+EXCEPTION WHEN OTHERS THEN
+    NULL; -- 任务不存在时忽略（pg_cron 扩展未装等）
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §3 import_csv 安全重写
@@ -97,6 +127,7 @@ DECLARE
     v_item     jsonb;
     v_inserted int := 0;
     v_errors   text[] := '{}';
+    v_cols     text;
     v_sql      text;
 BEGIN
     PERFORM require_permission('sys:import');
@@ -111,16 +142,22 @@ BEGIN
         RAISE EXCEPTION 'Import data must be a non-empty JSON array' USING ERRCODE = 'P0005';
     END IF;
 
-    v_sql := format('INSERT INTO api_v1_public.%I ' ||
-                    'SELECT * FROM jsonb_populate_record(NULL::api_v1_public.%I, $1)',
-                    p_table_name, p_table_name);
-
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_data)
     LOOP
         BEGIN
-            IF jsonb_typeof(v_item) <> 'object' OR jsonb_object_length(v_item) = 0 THEN
+            IF jsonb_typeof(v_item) <> 'object'
+               OR NOT EXISTS (SELECT 1 FROM jsonb_object_keys(v_item)) THEN
                 RAISE EXCEPTION 'row must be a non-empty JSON object';
             END IF;
+
+            -- 列子集插入：仅 JSON 提供的键（quote_ident 防注入），
+            -- 缺失列（id/created_at 等）走表 DEFAULT——jsonb_populate_record
+            -- 全列填充会把 NULL 显式传入导致 NOT NULL 冲突（PGlite 验证发现）
+            v_cols := (SELECT string_agg(quote_ident(k), ', ')
+                       FROM jsonb_object_keys(v_item) AS k);
+            v_sql := format('INSERT INTO api_v1_public.%I (%s) ' ||
+                            'SELECT %s FROM jsonb_populate_record(NULL::api_v1_public.%I, $1)',
+                            p_table_name, v_cols, v_cols, p_table_name);
 
             IF NOT p_dry_run THEN
                 EXECUTE v_sql USING v_item;
@@ -141,7 +178,7 @@ BEGIN
                              'dry_run', p_dry_run);
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化；sys:import）';
+COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化列子集；sys:import）';
 GRANT EXECUTE ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) TO authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -455,23 +492,146 @@ WHERE api_code IN ('sys:tenant:list', 'sys:tenant-member:list')
 ON CONFLICT (role_code, api_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- §9 验证
+-- §9 §2.2 补丁：rpc_list_cron_jobs/runs 补 GRANT authenticated
+--     021 只授 web_anon（全库孤例）；authenticated 角色调用 42501；
+--     超管门槛在函数内部（is_super_admin），此处只需执行权限
+-- ---------------------------------------------------------------------------
+GRANT EXECUTE ON FUNCTION api_v1_public.rpc_list_cron_jobs() TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_public.rpc_list_cron_job_runs(int) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- §10 §2.2 补丁：get_dept_tree 参数 uuid → text
+--     017 把 department.tenant_id 改 text 后参数未同步；传值调用
+--     text = uuid 无隐式 cast 必炸（传 NULL 时 OR 短路不炸，掩盖问题）
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION api_v1_public.get_dept_tree(p_tenant_id text DEFAULT NULL)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_result json;
+BEGIN
+    WITH RECURSIVE dept_tree AS (
+        SELECT
+            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            1 AS level,
+            ARRAY[d.id] AS path_ids,
+            ARRAY[d.dept_name] AS path_names
+        FROM public.department d
+        WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
+          AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
+
+        UNION ALL
+
+        SELECT
+            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            dt.level + 1,
+            dt.path_ids || d.id,
+            dt.path_names || d.dept_name
+        FROM public.department d
+        JOIN dept_tree dt ON d.parent_id = dt.id
+        WHERE d.deleted_at IS NULL AND dt.level < 10
+    )
+    SELECT COALESCE(json_agg(
+        json_build_object(
+            'id', dt.id,
+            'dept_name', dt.dept_name,
+            'parent_id', dt.parent_id,
+            'sort_order', dt.sort_order,
+            'is_active', dt.is_active,
+            'level', dt.level,
+            'path', array_to_string(dt.path_names, ' > ')
+        ) ORDER BY dt.path_ids
+    ), '[]'::json) INTO v_result
+    FROM dept_tree dt;
+
+    RETURN v_result;
+END;
+$$;
+COMMENT ON FUNCTION api_v1_public.get_dept_tree(text) IS '获取部门树形结构（035: p_tenant_id 改 text，对齐 department.tenant_id text 化）';
+GRANT EXECUTE ON FUNCTION api_v1_public.get_dept_tree(text) TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- §11 §2.2 补丁：get_user_menu() 增加 menu_type/perms/is_visible 列
+--     前端 §2.4 需按 menu_type 过滤 button 按钮项（033 回填的按钮项
+--     若绑定进 iam_role_menu 会混入路由注册）；原返回无此列无法区分
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION get_user_menu()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_roles jsonb;
+    v_menu_tree json;
+BEGIN
+    v_roles := current_setting('request.jwt.claims', true)::jsonb->'roles';
+
+    IF v_roles IS NULL OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_roles)) THEN
+        RETURN '[]'::json;
+    END IF;
+
+    WITH RECURSIVE menu_cte AS (
+        SELECT
+            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
+            m.menu_type, m.perms, m.is_visible, m.order_num
+        FROM iam_menu m
+        JOIN iam_role_menu rm ON m.id = rm.menu_id
+        WHERE rm.role_code IN (SELECT jsonb_array_elements_text(v_roles))
+          AND m.parent_id IS NULL AND m.is_active
+
+        UNION ALL
+
+        SELECT
+            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
+            m.menu_type, m.perms, m.is_visible, m.order_num
+        FROM iam_menu m
+        JOIN iam_role_menu rm ON m.id = rm.menu_id
+        JOIN menu_cte c ON m.parent_id = c.id
+        WHERE rm.role_code IN (SELECT jsonb_array_elements_text(v_roles))
+          AND m.is_active
+    )
+    SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO v_menu_tree
+    FROM (
+        SELECT
+            c.id, c.parent_id, c.name, c.path,
+            c.menu_type, c.perms, c.is_visible,
+            json_build_object('title', c.name, 'icon', c.icon) AS meta
+        FROM menu_cte c
+        ORDER BY c.order_num
+    ) t;
+
+    RETURN v_menu_tree;
+END;
+$$;
+COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（035: +menu_type/perms/is_visible——前端按 menu_type 过滤 button）';
+
+-- ---------------------------------------------------------------------------
+-- §12 验证
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
-    v_deleted    int;   -- 已删函数计数（期望 0 = 不存在）
+    v_deleted    int;   -- 已删函数残留（期望 0 = 不存在）
     v_perms      int;   -- 残留权限点（期望 0）
     v_import     int;   -- import_csv 安全特征（期望 2: require_permission + jsonb_populate_record）
-    v_limits     int;   -- LIMIT 上限函数数（期望 4: search_users/search_audit_log/login_logs/tenants/members=5）
+    v_limits     int;   -- LIMIT 上限函数数（期望 5: search_users/search_audit_log/login_logs/tenants/members）
     v_jit        int;   -- ensure_user JIT 特征（期望 1）
     v_tenant_bind int;  -- tenant_admin 租户权限点绑定数（期望 2）
     v_helper     int;   -- helper 函数数（期望 2）
+    v_dept_param int;   -- get_dept_tree 参数 text 化（期望 1）
+    v_menu_type  int;   -- get_user_menu 含 menu_type（期望 1）
+    v_cron_grant int;   -- cron RPC authenticated 可执行（期望 2）
+    v_cron_cleanup int; -- cleanup-expired-tokens 任务残留（期望 0）
 BEGIN
     SELECT count(*) INTO v_deleted FROM pg_proc
       WHERE pronamespace = 'api_v1_public'::regnamespace
-        AND proname IN ('health_check','export_csv','rpc_sync_user_roles');
+        AND proname IN ('health_check','export_csv','rpc_sync_user_roles',
+                        'get_user_permissions','cleanup_expired_tokens');
     SELECT count(*) INTO v_perms FROM iam_api
-      WHERE api_code IN ('sys:export','sys:user-role:sync');
+      WHERE api_code IN ('sys:export','sys:user-role:sync','sys:session:cleanup');
     SELECT count(*) INTO v_import FROM pg_proc
       WHERE pronamespace = 'api_v1_public'::regnamespace
         AND proname = 'import_csv'
@@ -492,6 +652,21 @@ BEGIN
         AND a.api_code IN ('sys:tenant:list','sys:tenant-member:list');
     SELECT count(*) INTO v_helper FROM pg_proc
       WHERE proname IN ('require_permission','require_super_admin');
-    RAISE NOTICE '035: 已删函数残留=%（期望0） 权限点残留=%（期望0） import安全特征=%（期望2） LIMIT上限函数=%（期望5） ensure_user_JIT=%（期望1） tenant_admin绑定=%（期望2） helper=%（期望2）',
-        v_deleted, v_perms, v_import, v_limits, v_jit, v_tenant_bind, v_helper;
+    SELECT count(*) INTO v_dept_param FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'api_v1_public' AND p.proname = 'get_dept_tree'
+        AND pg_get_function_arguments(p.oid) LIKE '%text%';
+    SELECT count(*) INTO v_menu_type FROM pg_proc
+      WHERE proname = 'get_user_menu'
+        AND prosrc LIKE '%menu_type%';
+    SELECT count(*) INTO v_cron_grant FROM pg_proc p
+      JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'api_v1_public'
+        AND p.proname IN ('rpc_list_cron_jobs','rpc_list_cron_job_runs')
+        AND has_function_privilege('authenticated', p.oid, 'EXECUTE');
+    SELECT count(*) INTO v_cron_cleanup FROM cron.job
+      WHERE jobname = 'cleanup-expired-tokens';
+    RAISE NOTICE '035: 已删函数残留=%（期望0） 权限点残留=%（期望0） import安全特征=%（期望2） LIMIT上限函数=%（期望5） ensure_user_JIT=%（期望1） tenant_admin绑定=%（期望2） helper=%（期望2） dept参数text=%（期望1） menu含menu_type=%（期望1） cron授权=%（期望2） cleanup任务残留=%（期望0）',
+        v_deleted, v_perms, v_import, v_limits, v_jit, v_tenant_bind, v_helper,
+        v_dept_param, v_menu_type, v_cron_grant, v_cron_cleanup;
 END $$;

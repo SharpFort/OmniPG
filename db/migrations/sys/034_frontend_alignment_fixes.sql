@@ -14,7 +14,9 @@
 --         → 视图按 026 定稿规则「视图名=底层表名」更名 user_tenants
 --   P1-4: pg_cron 任务引用失效路径
 --         （cleanup-expired-tokens → api_v1.cleanup_expired_tokens() 已删，
---           015 删除、029 新建 api_v1_public 版；
+--           015 删除、029 新建 api_v1_public 版——⚠️ 035 复核为整链死链：
+--           public 底层函数无定义 + 清理对象表 014 已删（D12 会话/吊销交 Logto），
+--           任务随 035 删除，不再重调度；
 --           cleanup-old-audit-logs → sys_audit_log 表已更名 audit_log）→ 重调度
 -- 联动: 027 双 schema 分支缺陷（DROP CASCADE 摧毁 023-026 迁移层对象）已在
 --       027 文件修复（搬迁替代）；本迁移的视图定义与源文件
@@ -100,18 +102,12 @@ END $$;
 -- §5 pg_cron 任务重调度（失效路径修复）
 --    cleanup-expired-tokens: api_v1.cleanup_expired_tokens()（015 已删）→
 --                             api_v1_public.cleanup_expired_tokens()（029 新 wrapper）
+--                             ⚠️ 035 作废：整链死链（public 版无定义 + 清理对象
+--                             sys_token_blacklist/sys_user_session 014 已删，
+--                             D12 会话/吊销交 Logto）→ 任务删除，由 035 unschedule 兜底
 --    cleanup-old-audit-logs: DELETE FROM sys_audit_log（014 已更名 audit_log）→
 --                            DELETE FROM audit_log（保留 90 天）
 -- ---------------------------------------------------------------------------
-DO $$
-BEGIN
-    PERFORM cron.unschedule('cleanup-expired-tokens');
-EXCEPTION WHEN OTHERS THEN
-    NULL; -- 任务不存在时忽略
-END $$;
-SELECT cron.schedule('cleanup-expired-tokens', '0 * * * *',
-    $$ SELECT api_v1_public.cleanup_expired_tokens() $$);
-
 DO $$
 BEGIN
     PERFORM cron.unschedule('cleanup-old-audit-logs');
@@ -146,7 +142,7 @@ BEGIN
         AND c.relname IN ('dict_type','dict_data','v_dict_list')
         AND has_table_privilege('authenticated', format('%I.%I', n.nspname, c.relname), 'SELECT');
     SELECT count(*) INTO v_cron FROM cron.job
-      WHERE jobname IN ('cleanup-expired-tokens','cleanup-old-audit-logs');
-    RAISE NOTICE '034: role.is_active=% users_count子查询=% user_tenants视图=% user_role残留=% authenticated可读视图数=% cron任务=%',
+      WHERE jobname IN ('cleanup-old-audit-logs');
+    RAISE NOTICE '034: role.is_active=% users_count子查询=% user_tenants视图=% user_role残留=% authenticated可读视图数=% cron任务=%（cleanup-expired-tokens 已由 035 删除）',
         v_role_active, v_users_count, v_ut_view, v_user_role_vw, v_grants, v_cron;
 END $$;

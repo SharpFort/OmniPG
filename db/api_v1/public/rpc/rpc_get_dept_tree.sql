@@ -1,8 +1,10 @@
--- db/api_v1/sys/rpc/rpc_get_dept_tree.sql
+-- db/api_v1/public/rpc/rpc_get_dept_tree.sql
 -- 获取部门树形结构 RPC（递归 CTE），按路径排序
--- 来源: 20260707000015_system_management_api.sql
+-- 来源: 20260707000015_system_management_api.sql → 035 参数 text 化
+-- 035: p_tenant_id uuid → text（017 department.tenant_id text 化后参数未同步；
+--      传值调用 text=uuid 无隐式 cast 必炸；传 NULL 短路不炸掩盖问题）
 
-CREATE OR REPLACE FUNCTION api_v1_public.get_dept_tree(p_tenant_id uuid DEFAULT NULL)
+CREATE OR REPLACE FUNCTION api_v1_public.get_dept_tree(p_tenant_id text DEFAULT NULL)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -12,7 +14,7 @@ DECLARE
     v_result json;
 BEGIN
     WITH RECURSIVE dept_tree AS (
-        SELECT 
+        SELECT
             d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
             1 AS level,
             ARRAY[d.id] AS path_ids,
@@ -20,10 +22,10 @@ BEGIN
         FROM public.department d
         WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
           AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
-        
+
         UNION ALL
-        
-        SELECT 
+
+        SELECT
             d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
             dt.level + 1,
             dt.path_ids || d.id,
@@ -44,9 +46,9 @@ BEGIN
         ) ORDER BY dt.path_ids
     ), '[]'::json) INTO v_result
     FROM dept_tree dt;
-    
+
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.get_dept_tree(uuid) IS '获取部门树形结构（递归 CTE），按路径排序';
-GRANT EXECUTE ON FUNCTION api_v1_public.get_dept_tree(uuid) TO authenticated;
+COMMENT ON FUNCTION api_v1_public.get_dept_tree(text) IS '获取部门树形结构（035: p_tenant_id 改 text，对齐 department.tenant_id text 化）';
+GRANT EXECUTE ON FUNCTION api_v1_public.get_dept_tree(text) TO authenticated;
