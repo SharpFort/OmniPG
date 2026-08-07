@@ -55,8 +55,10 @@ BEGIN
             END LOOP;
 
             -- ② 函数/过程（同名同参冲突 → 删 api_v1_sys 版，否则搬迁）
+            --    注: oidvectortypes 不加别名限定（pg_catalog 隐式 search_path；
+            --        限定形式在部分嵌入式 PG 兼容层解析为 schema 限定而失败）
             FOR v_obj IN
-                SELECT p.proname, p.oidvectortypes(p.proargtypes) AS args
+                SELECT p.proname, oidvectortypes(p.proargtypes) AS args
                 FROM pg_proc p
                 JOIN pg_namespace n ON n.oid = p.pronamespace
                 WHERE n.nspname = 'api_v1_sys'
@@ -66,7 +68,7 @@ BEGIN
                     JOIN pg_namespace n2 ON n2.oid = p2.pronamespace
                     WHERE n2.nspname = 'api_v1_public'
                       AND p2.proname = v_obj.proname
-                      AND p2.oidvectortypes(p2.proargtypes) = v_obj.args
+                      AND oidvectortypes(p2.proargtypes) = v_obj.args
                 ) THEN
                     EXECUTE format('DROP FUNCTION api_v1_sys.%I(%s) CASCADE',
                                    v_obj.proname, v_obj.args);
