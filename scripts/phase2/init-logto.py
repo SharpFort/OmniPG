@@ -278,10 +278,15 @@ def main():
         sys.exit(1)
     print("管理 token 获取成功\n")
 
+    # 步骤顺序（033 重排）：webhook 必须先于角色/组织创建——
+    # 否则 Role.Created / Organization.Created 事件在 webhook 配置前发生，
+    # PG role/tenants 镜像将缺失（如 role_super_admin 不在 role 镜像）。
+    # 重排后：① 配 webhook（订阅 Role.*/User.*/Org.*/Membership/PostSignIn）
+    #         ② 建角色 → 事件推送 → 镜像自动同步
+    step5_webhook(token)
     step2_global_role(token)
     step3_org_roles(token)
     step4_demo_org(token)
-    step5_webhook(token)
     step6_claims_script(token)
     print("\n全部完成 ✅")
 

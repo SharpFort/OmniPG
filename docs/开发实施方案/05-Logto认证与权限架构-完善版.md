@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v3.4（2026-08-05）— **前端联调 P1/P2 完成（033）**：菜单分类回填（menu_type 四类规则重算：link 优先→有子节点 directory→动作后缀 button→menu；component 按 Vue 惯例 path→组件路径；保护手工修改）；init-logto.py 步骤重排（webhook 先于角色/组织创建 → Role.Created 事件推送 → role 镜像自动补齐，修复 role_super_admin 缺失）
 > - v3.3（2026-08-05）— **menu_type 补 link 值（032 迁移）**：`iam_menu_type` 增加 'link'（统一外链/iframe：path=URL、component 留空）→ 四值封闭（directory/menu/button/link）未来不再变动；幂等 ADD VALUE（DO 块检查，规避无 IF NOT EXISTS + 同事务使用限制）；联动 rpc_create_menu/rpc_update_menu IN 校验 4 值
 > - v3.2（2026-08-05）— **menu_type PG ENUM 化（031 迁移）**：`iam_menu_type` ENUM('directory','menu','button')（05.1 D-B 实例：少变复用枚举→PG ENUM）；列转换 + 表级强约束；联动 rpc_create_menu/rpc_update_menu 显式 cast（函数内友好校验保留）
 > - v3.1（2026-08-05）— **前端联调 P0 修复（030 迁移）**：① `current_user_roles()` 重建为 Logto 字符串数组语义（旧版按 Casdoor 对象数组解析 → is_super_admin 恒 false → RLS 超管豁免/has_permission 短路全线失效，**核心缺陷**）；② 删除 rpc_get_online_users（悬空引用 v_online_users，在线用户功能废弃）；③ seed `sys:login-log:list`（rpc_search_login_logs 门槛权限点，超管绑定）
