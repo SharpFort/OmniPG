@@ -1,6 +1,7 @@
 # 24-扩展引入分析：public 模块（安全/性能/审计）15 扩展 × 现有代码映射
 
 > **状态**：✅ **用户已拍板（2026-08-05）**——最终决策见 §五；安装批次见 §六
+> ⚠️ **035 修订（2026-08-07）**：`omni_csv` 由「P0 必装」降级为「**暂不引入**」——原 P0 理由（修复 `export_csv` 半成品）随 `export_csv` 删除而消失（035：导出 = `GET /api_v1_public/{view}?select=...` 原生能力，前端拼 CSV；`import_csv` 保留 JSON 数组入口并安全重写，无需 SQL 内 CSV 解析）。官方能力已核实（`csv_info`/`parse`/`csv_agg` 三件套，`csv_agg` 即序列化），待「前端直传 CSV 文件」需求出现再装。
 > **范围**：用户圈定 15 个扩展（citext / pgjwt / pgauditlogtofile / pgmemento / temporal_tables / table_log / plpgsql_check / pg_mockable / safeupdate / pg_jsonschema / jsquery / index_advisor / pg_repack / omni_csv / count_distinct），对照 `05.4-权限校验三层模型.md`、`05.2-Admin管理模块函数视图补全分析.md` 与 public 模块现有代码，判定每个扩展**能替代/优化哪些现有实现**。
 > **代码勘察范围**：`db/api_v1/public/rpc/*`（16 个 RPC）、`db/src/sys/functions/*`、`db/migrations/sys/019/023/024/029`、`009_logto_mirror`、`010_logto_webhook`、`infra/pigsty.yml`。
 > **官方依据**：pigsty.cc/ext/e/{safeupdate,jsquery,pgaudit}/ 详情页 + 三个扩展官方 README（2026-08-05 抓取）。
@@ -185,7 +186,7 @@
 |:---|:---|:---|:---|
 | **safeupdate** | ✅ **全局安装** | **P0** | 用户拍板；官方 README 确认 CTE 阻止 + 专为 PostgREST 设计 + `SET safeupdate.enabled=0` 逃生 |
 | **pg_jsonschema** | ✅ 装 | **P0** | 补 update_config 校验缺口 |
-| **omni_csv** | ✅ **必装** | **P0** | 用户拍板；修复 export_csv 半成品 + 导入简化，优于手写 |
+| **omni_csv** | ⏸️ **暂不引入**（035 修订） | ~~P0~~ | ⚠️ 035：export_csv 已删除（半成品 + 注入面），导出走 GET /view 原生；import_csv 保留 JSON 入口 + 安全重写——原「必装」理由消失。官方能力已核实（csv_info/parse/csv_agg），待前端直传 CSV 需求再装 |
 | **plpgsql_check** | ✅ 装 | **P0** | 静态检查零风险，CI 门禁 |
 | **pgaudit** | ⏸️ **暂不启用** | P2 | 用户最终决策（2026-08-05）：现有 audit_log 已够用；扩展保持已装状态，不配 GUC 不生效 |
 | **pgauditlogtofile** | ❌ 暂不装 | P2 | 随 pgaudit 一起暂缓（用户决策：audit_log 已够用） |

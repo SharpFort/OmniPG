@@ -1,16 +1,15 @@
--- db/api_v1/sys/rpc/rpc_import_csv.sql
--- 通用导入 RPC：CSV/JSON 数据导入任意表
--- P1 修复：通用数据导入
+-- db/api_v1/public/rpc/rpc_import_csv.sql
+-- 通用导入 RPC（035 重写：显式业务表白名单 + jsonb_populate_record 参数化）
+-- 来源: 20260707000014_auth_rpc_functions.sql → T7 → 029 门槛 → 035 安全重写
 --
--- 安全约束：
---   1. 仅允许导入到可写的表（不在白名单的系统表禁止导入）
---   2. 支持 dry_run 模式（预览，不实际写入）
---   3. 逐条插入（触发器可审计每条记录）
---
--- 参数说明：
---   p_table_name: 目标表名（仅允许 api_v1_public 中可写的视图/表）
---   p_data: JSON 数组 [{col1: val1, col2: val2}, ...]
---   p_dry_run: 是否仅预览不写入
+-- 安全约束（035）:
+--   1. 显式白名单：仅业务自主表（department/position/user_position/
+--      dict_type/dict_data/iam_menu/iam_api）——镜像表（users/tenants/
+--      user_tenants/role/user_role）、审计/日志/绑定表一律禁止导入
+--   2. 参数化插入：jsonb_populate_record 单行插入（类型安全、列名安全、
+--      JSON null → NULL；原实现值拼接无引号 = 注入面 + null 错位）
+--   3. sys:import 权限点门槛（029 seed + 绑定超管）
+--   4. dry_run 预览 + per-row 错误收集 + log_operate 审计
 
 CREATE OR REPLACE FUNCTION api_v1_public.import_csv(
     p_table_name text,
@@ -23,65 +22,54 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    v_valid_tables text[];
-    v_item jsonb;
+    v_allow    text[] := ARRAY['department','position','user_position',
+                               'dict_type','dict_data','iam_menu','iam_api'];
+    v_item     jsonb;
     v_inserted int := 0;
-    v_errors text[] := '{}';
-    v_columns text[];
-    v_values text[];
-    v_sql text;
-    v_key text;
-    v_value text;
+    v_errors   text[] := '{}';
+    v_sql      text;
 BEGIN
-    -- 白名单校验
-    SELECT array_agg(table_name) INTO v_valid_tables
-    FROM information_schema.tables
-    WHERE table_schema = 'api_v1_public'
-      AND table_type IN ('VIEW', 'BASE TABLE')
-      AND table_name NOT IN ('app_config', 'audit_log', 'cron_job_log');
-    
-    IF NOT (p_table_name = ANY(v_valid_tables)) THEN
-        RAISE EXCEPTION 'Table % not found or not importable', p_table_name USING ERRCODE = 'P0001';
+    PERFORM require_permission('sys:import');
+
+    IF NOT (p_table_name = ANY(v_allow)) THEN
+        RAISE EXCEPTION 'Table % not importable. Allowed: %',
+            p_table_name, array_to_string(v_allow, ', ') USING ERRCODE = 'P0001';
     END IF;
-    
-    -- 验证数据
-    IF jsonb_array_length(p_data) = 0 THEN
-        RAISE EXCEPTION 'Import data is empty' USING ERRCODE = 'P0005';
+
+    IF p_data IS NULL OR jsonb_typeof(p_data) <> 'array'
+       OR jsonb_array_length(p_data) = 0 THEN
+        RAISE EXCEPTION 'Import data must be a non-empty JSON array' USING ERRCODE = 'P0005';
     END IF;
-    
-    -- 遍历每条记录
+
+    v_sql := format('INSERT INTO api_v1_public.%I ' ||
+                    'SELECT * FROM jsonb_populate_record(NULL::api_v1_public.%I, $1)',
+                    p_table_name, p_table_name);
+
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_data)
     LOOP
         BEGIN
-            -- 提取列名和值
-            SELECT array_agg(k), array_agg(v::text)
-            INTO v_columns, v_values
-            FROM jsonb_each_text(v_item) AS t(k, v);
-            
-            -- 构造 INSERT
-            v_sql := format('INSERT INTO api_v1_public.%I (%s) VALUES (%s)',
-                            p_table_name,
-                            array_to_string(v_columns, ', '),
-                            array_to_string(v_values, ', '));
-            
+            IF jsonb_typeof(v_item) <> 'object' OR jsonb_object_length(v_item) = 0 THEN
+                RAISE EXCEPTION 'row must be a non-empty JSON object';
+            END IF;
+
             IF NOT p_dry_run THEN
-                EXECUTE v_sql;
+                EXECUTE v_sql USING v_item;
                 v_inserted := v_inserted + 1;
             END IF;
-            
         EXCEPTION WHEN OTHERS THEN
             v_errors := array_append(v_errors, format('Row %s: %s', v_item::text, SQLERRM));
         END;
     END LOOP;
-    
-    RETURN json_build_object(
-        'table', p_table_name,
-        'total', jsonb_array_length(p_data),
-        'inserted', v_inserted,
-        'errors', v_errors,
-        'dry_run', p_dry_run
-    );
+
+    PERFORM log_operate('import', 'import', p_table_name, NULL::text, 'success',
+                        jsonb_build_object('total', jsonb_array_length(p_data),
+                                           'inserted', v_inserted));
+    RETURN json_build_object('table', p_table_name,
+                             'total', jsonb_array_length(p_data),
+                             'inserted', v_inserted,
+                             'errors', v_errors,
+                             'dry_run', p_dry_run);
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入：JSON 数组导入任意表（支持 dry_run 预览）';
+COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化；sys:import）';
 GRANT EXECUTE ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) TO authenticated;

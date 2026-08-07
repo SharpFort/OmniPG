@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v3.5（2026-08-07）— **前端对齐方案 §1.2 RPC 层修复（035 迁移）**：① 删除 `health_check`（Casdoor 遗留无引用）/ `export_csv`（半成品 + DEFINER 裸 SQL 拼接注入面；导出 = GET /view 原生）/ `rpc_sync_user_roles`（Logto 官方事件表核实无"用户-角色绑定"webhook 事件 → 无法推送；**JIT 覆盖并入 ensure_user**——登录时 claims 即 Logto 权威快照，前端零额外调用）；② `import_csv` 安全重写（显式业务表白名单 + jsonb_populate_record 参数化，原白名单含镜像投影视图可写穿 role/user_role）；③ 搜索类 RPC 分页上限统一 100（原 search_users/search_audit_log 无上限、login_logs 1000/tenants 200/members 500）；④ 统一权限门槛三档 helper（`require_permission` / `require_super_admin`，src 层）；⑤ `tenant_admin` 补绑 sys:tenant:list/sys:tenant-member:list；⑥ 删权限点 sys:export/sys:user-role:sync；024/025/029 源文件同步防重放复活
 > - v3.4（2026-08-05）— **前端联调 P1/P2 完成（033）**：菜单分类回填（menu_type 四类规则重算：link 优先→有子节点 directory→动作后缀 button→menu；component 按 Vue 惯例 path→组件路径；保护手工修改）；init-logto.py 步骤重排（webhook 先于角色/组织创建 → Role.Created 事件推送 → role 镜像自动补齐，修复 role_super_admin 缺失）
 > - v3.3（2026-08-05）— **menu_type 补 link 值（032 迁移）**：`iam_menu_type` 增加 'link'（统一外链/iframe：path=URL、component 留空）→ 四值封闭（directory/menu/button/link）未来不再变动；幂等 ADD VALUE（DO 块检查，规避无 IF NOT EXISTS + 同事务使用限制）；联动 rpc_create_menu/rpc_update_menu IN 校验 4 值
 > - v3.2（2026-08-05）— **menu_type PG ENUM 化（031 迁移）**：`iam_menu_type` ENUM('directory','menu','button')（05.1 D-B 实例：少变复用枚举→PG ENUM）；列转换 + 表级强约束；联动 rpc_create_menu/rpc_update_menu 显式 cast（函数内友好校验保留）
@@ -416,13 +417,14 @@ Logto organization_roles 表（组织模板）    → 租户角色（如 tenant_
 ```text
 Logto（权威：Console / Management API 分配）        PG user_role（镜像）
   │ 分配变更
-  ├─ ① 管理操作主动同步：业务管理端调 Management API 成功后
-  │      → 立即调 rpc_sync_user_roles(user_id, roles[]) 更新 PG 镜像
-  ├─ ② JIT 覆盖：用户携带新 token 访问管理端查询时，
-  │      → 按 claims roles 全量覆盖该用户镜像（幂等 upsert + 删除不在列表的）
-  ├─ ③ 每日对账：低频全量对账（活跃组织范围），兜底 Console 直改/webhook 丢失
-  └─ ④ JWT 层永远准确：授权判定读 claims，不依赖镜像
-       → 镜像延迟分钟级可接受（仅管理端查询/报表消费）
+  ├─ ① JIT 覆盖（035 定稿唯一路径）：用户登录 Logto → JWT claims roles 即当前权威快照
+  │      → 登录回调 ensure_user() 顺带全量覆盖该用户镜像（DELETE + INSERT，幂等）
+  │      ⚠️ rpc_sync_user_roles 已删除（035）：Logto 官方 webhook 事件表核实
+  │        无"用户-角色绑定"事件（PUT /users/:id/roles 不触发任何 hook），
+  │        无法靠 Logto 主动推送；JWT 登录链路 = Logto 唯一的"推送"通道
+  ├─ ② 每日对账（P2，可选）：低频全量对账（活跃组织范围），兜底 Console 直改/webhook 丢失
+  └─ ③ JWT 层永远准确：授权判定读 claims，不依赖镜像
+       → 镜像延迟 = 用户最近一次登录至今（管理端仅展示消费，可接受）
 ```
 
 - **P0 阶段可不建 user_role 镜像**：授权不依赖它；管理端"查某用户角色/某角色用户"先走 Logto Management API（`GET /api/users/:id/roles`、`GET /api/roles/:id/users`）
@@ -596,7 +598,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 ### P1（管理面与加固）
 10. [ ] ~~管理端建号/禁用/角色分配走 Logto Management API~~ → ✅ **改决策（v2.6）**：**Logto Console 管理**（建号/禁用/角色分配直接在 Logto 操作，业务端 webhook 同步镜像）；③ 绑定表管理（iam_role_api/iam_menu）自研 UI 直接写 PG（带 has_permission 检查）；原 Management API 路径 P2 备选（05.2 §4.1）
 11. [ ] 组织（租户）生命周期：Console 或 Management API（`POST /api/organizations`）+ 邀请流程（Organization.Membership.Updated 自动同步）
-12. [ ] ~~**user_role 分配镜像**~~ → ✅ **已实现（024 §6.5/025）**：`user_role` 镜像表（RLS 本人可见/超管）+ `rpc_sync_user_roles()`（本人 JIT 覆盖读 claims 防伪造；他人同步走 P2 对账任务）+ v_user_roles/v_role_users 视图；每日对账脚本（P2）
+12. [ ] ~~**user_role 分配镜像**~~ → ✅ **已实现（024 §6.5/025，035 简化）**：`user_role` 镜像表（RLS 本人可见/超管）+ **035 起由 `ensure_user()` 登录 JIT 覆盖**（claims roles 全量覆盖，替代已删的 rpc_sync_user_roles——Logto 无角色绑定 webhook 事件，登录 JWT 是唯一推送通道；管理端同步他人不再支持，对账任务 P2）+ v_user_roles/v_role_users 视图
 13. [ ] 角色名不可变更约束落地：**约束在 Logto 侧**（F20 唯一性 + §6.4 约定：重命名=新建+迁移绑定）；管理端绑定表按 role_code 引用，无重命名入口（天然遵守）
 14. [ ] ~~审计：登录/登出/角色变更审计~~ → ✅ **已实现（023 §4/028）**：审计触发器 11 个（系统管理 8 + 授权 3，data_change 差异日志）+ audit_log 统一审计流（log_type=operate 经 log_operate 统一写入）+ 登录审计（PostSignIn → login_log）；Logto audit logs 侧运维查看
 15. [ ] **登录日志补全（D-C）**：~~ip2region 数据导入 + region 解析~~ → ✅ **已实现（020/021/023，见 05.3）**：ip_region_v4 + ip_geolite2_city 双表 + import 脚本 + geo_locate 兜底 + v_login_log 视图 + rpc_search_login_logs（租户维度）；**剩余**：失败登录对账（Management API `GET /logs` 低频增量拉失败事件 → login_log result=fail，P2 对账任务一并）

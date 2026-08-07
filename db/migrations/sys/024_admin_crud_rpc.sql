@@ -35,8 +35,7 @@ FROM (VALUES
     ('sys:role-menu:bind',    '角色菜单绑定'),
     ('sys:profile:update',    '用户资料-修改'),
     ('sys:tenant:list',       '租户-查询'),
-    ('sys:tenant-member:list','租户成员-查询'),
-    ('sys:user-role:sync',    '角色镜像-同步')
+    ('sys:tenant-member:list','租户成员-查询')
 ) AS x(api_code, name)
 ON CONFLICT (path, method) DO NOTHING;
 
