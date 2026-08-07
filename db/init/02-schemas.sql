@@ -64,6 +64,16 @@ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_guest') THEN
         CREATE ROLE role_guest NOLOGIN NOINHERIT;
     END IF;
+    -- 034: Logto 角色名补齐（postgrest.conf jwt-role-claim-key=roles[0] 的映射目标；
+    --      与 iam_role_api.role_code / role 镜像 role_code 对齐）
+    --      role_super_admin = Logto 全局超管 → 继承 super_admin 全部权限
+    --      tenant_admin      = Logto 租户管理员 → 继承 role_admin（SELECT ALL + 业务表写）
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_super_admin') THEN
+        CREATE ROLE role_super_admin NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tenant_admin') THEN
+        CREATE ROLE tenant_admin NOLOGIN;
+    END IF;
 END
 $$;
 
@@ -72,6 +82,11 @@ GRANT super_admin TO authenticator;
 GRANT role_admin TO authenticator;
 GRANT role_editor TO authenticator;
 GRANT role_guest TO authenticator;
+-- 034: 继承既有授权角色（避免复制授权清单）+ 允许切换
+GRANT super_admin TO role_super_admin;
+GRANT role_admin TO tenant_admin;
+GRANT role_super_admin TO authenticator;
+GRANT tenant_admin TO authenticator;
 
 -- ==============================================================================
 -- 角色权限授予

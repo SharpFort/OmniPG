@@ -11,7 +11,7 @@ GRANT SELECT ON api_v1_public.users TO authenticated;
 GRANT SELECT ON api_v1_public.role TO authenticated;
 GRANT SELECT ON api_v1_public.iam_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_menu TO authenticated;
-GRANT SELECT ON api_v1_public.user_role TO authenticated;
+GRANT SELECT ON api_v1_public.user_tenants TO authenticated;  -- 034: 原 user_role 更名
 GRANT SELECT ON api_v1_public.iam_role_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_role_menu TO authenticated;
 GRANT SELECT ON api_v1_public.audit_log TO authenticated;
@@ -30,6 +30,12 @@ GRANT SELECT ON api_v1_public.v_role_menu_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_audit_log_timeline TO authenticated;
 GRANT SELECT ON api_v1_public.v_audit_log_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_system_stats_realtime TO authenticated;
+
+-- 034 补齐（023/024 建视图时漏授；login_log/v_user_roles/v_role_users 有意不授——
+-- login_log 租户管理员走 rpc_search_login_logs；v_user_roles/v_role_users RLS=超管OR本人，仅超管可用）
+GRANT SELECT ON api_v1_public.dict_type TO authenticated;
+GRANT SELECT ON api_v1_public.dict_data TO authenticated;
+GRANT SELECT ON api_v1_public.v_dict_list TO authenticated;
 
 -- =============================================================================
 -- 3.3 role_guest: 只读访问（同 authenticated）
