@@ -170,12 +170,12 @@ BEGIN
     END IF;
     WITH RECURSIVE tree AS (
         SELECT id, parent_id, pos_name, pos_code, sort_no, status,
-               1 AS depth, pos_name AS path_name
+               1 AS depth, pos_name::text AS path_name
         FROM position
         WHERE parent_id IS NULL AND tenant_id = current_tenant_id()
         UNION ALL
         SELECT p.id, p.parent_id, p.pos_name, p.pos_code, p.sort_no, p.status,
-               t.depth + 1, t.path_name || ' / ' || p.pos_name
+               t.depth + 1, t.path_name::text || ' / ' || p.pos_name::text
         FROM position p JOIN tree t ON p.parent_id = t.id
         WHERE p.tenant_id = current_tenant_id()
     )
