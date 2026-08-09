@@ -67,6 +67,11 @@ SELECT
 FROM role r;
 COMMENT ON VIEW api_v1_public.v_role_list IS '角色列表视图（Logto 镜像：role + 绑定计数；034 users_count 改真实计数）';
 
+-- 034 补：DROP+CREATE 重建视图会清空授权（grant_all.sql 为 apply-src 重放源，此处兜底幂等）
+GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO authenticated;
+GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO role_admin, role_editor, role_guest;
+GRANT ALL ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO super_admin;
+
 -- ---------------------------------------------------------------------------
 -- §3 user_role 视图 → user_tenants 更名（消除与 public.user_role 表同名冲突）
 --    列 = 表列（user_id / organization_id / joined_at）——与 views/user_tenants.sql 一致

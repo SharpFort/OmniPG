@@ -32,7 +32,7 @@ END $$;
 -- §1 联动重建：rpc_create_menu / rpc_update_menu（IN 校验 4 值）
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_menu(
-    p_parent_id uuid DEFAULT NULL, p_menu_name text, p_menu_type text DEFAULT 'menu',
+    p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
     p_perms text DEFAULT NULL, p_path text DEFAULT NULL, p_component text DEFAULT NULL,
     p_icon text DEFAULT NULL, p_order_num int DEFAULT 0)
 RETURNS json
@@ -57,8 +57,8 @@ BEGIN
                         'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_create_menu(uuid, text, text, text, text, text, text, int) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button/link，032 link 化）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(uuid, text, text, text, text, text, text, int) TO authenticated;
+COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int) IS '菜单新增（sys:menu:create；menu_type: directory/menu/button/link，032 link 化）';
+GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int) TO authenticated;
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_menu(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_menu_name text DEFAULT NULL,
