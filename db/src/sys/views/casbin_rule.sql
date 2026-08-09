@@ -21,7 +21,7 @@ SELECT
     NULL::integer AS id,
     'p'::varchar AS ptype,
     rm.role_code::varchar AS v0,
-    m.path::varchar AS v1,
+    m.router::varchar AS v1,
     'menu'::varchar AS v2,
     NULL::varchar AS v3,
     NULL::varchar AS v4,

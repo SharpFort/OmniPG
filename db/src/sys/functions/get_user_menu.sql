@@ -24,8 +24,8 @@ BEGIN
 
     WITH RECURSIVE menu_cte AS (
         SELECT
-            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.component, m.order_num,
+            m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
+            m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
             m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
@@ -35,8 +35,8 @@ BEGIN
         UNION ALL
 
         SELECT
-            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
-            m.menu_type, m.perms, m.is_visible, m.component, m.order_num,
+            m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
+            m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
             m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id

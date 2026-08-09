@@ -13,7 +13,7 @@ DECLARE
 BEGIN
     WITH RECURSIVE menu_tree AS (
         SELECT
-            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
+            m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.order_num AS sort_order, m.is_active,
             1 AS level
         FROM public.iam_menu m
@@ -22,7 +22,7 @@ BEGIN
         UNION ALL
 
         SELECT
-            m.id, m.parent_id, m.menu_name AS name, m.path, m.icon,
+            m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.order_num AS sort_order, m.is_active,
             mt.level + 1
         FROM public.iam_menu m

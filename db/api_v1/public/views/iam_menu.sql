@@ -2,7 +2,7 @@
 -- 来源: 20260707000013_postgrest_api_v1.sql（T9 改造）
 
 CREATE OR REPLACE VIEW api_v1_public.iam_menu AS
-SELECT id, parent_id, menu_name, menu_type, perms, path, component, icon,
+SELECT id, parent_id, menu_name, menu_type, api_code, router, component, icon,
        order_num, is_visible, is_active,
        remark, route_name, query, is_link, is_iframe, redirect, keep_alive,
        created_at, updated_at, created_by, updated_by

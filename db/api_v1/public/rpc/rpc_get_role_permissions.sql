@@ -31,7 +31,7 @@ BEGIN
 
     SELECT COALESCE(json_agg(
         json_build_object('id', m.id, 'name', m.menu_name, 'parent_id', m.parent_id,
-                          'path', m.path, 'icon', m.icon)
+                          'path', m.router, 'icon', m.icon)
         ORDER BY m.order_num
     ), '[]'::json) INTO v_menus
     FROM iam_role_menu rm

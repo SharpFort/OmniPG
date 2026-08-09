@@ -12,8 +12,8 @@ SELECT
     COALESCE(r.name, rm.role_code) AS role_name,
     m.menu_name AS menu_name,
     m.menu_type AS menu_type,
-    m.perms AS permission_code,
-    m.path AS menu_path,
+    m.api_code AS permission_code,
+    m.router AS menu_path,
     m.icon AS menu_icon,
     m.parent_id AS menu_parent_id
 FROM iam_role_menu rm
