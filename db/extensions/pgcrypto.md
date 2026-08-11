@@ -11,7 +11,7 @@
 ## 版本信息
 
 - **Pigsty 预装版本**: 随 PostgreSQL 18 自带
-- **迁移文件启用**: `db/migrations/sys/001_init_tables.sql` 中 `CREATE EXTENSION IF NOT EXISTS pgcrypto;`
+- **迁移文件启用**: `db/migrations/public/001_init_tables.sql` 中 `CREATE EXTENSION IF NOT EXISTS pgcrypto;`
 
 ## 主要功能
 
@@ -27,5 +27,5 @@
 
 ## 相关文件
 
-- 迁移启用: `db/migrations/sys/001_init_tables.sql`
-- sha256 包装函数: `db/src/sys/functions/sha256.sql`
+- 迁移启用: `db/migrations/public/001_init_tables.sql`
+- sha256 包装函数: `db/src/public/functions/sha256.sql`

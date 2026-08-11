@@ -197,7 +197,7 @@ CREATE FUNCTION sales.create_order() ...  → 明确、可读、无歧义
 **sys 模块示例（仅权限设置）：**
 
 ```sql
--- db/src/sys/_init_schema.sql
+-- db/src/public/_init_schema.sql
 -- 注意：sys 模块保持在 public Schema，不创建新 Schema
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO app_owner;

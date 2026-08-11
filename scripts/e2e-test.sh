@@ -199,7 +199,27 @@ run_test "SYNC" "users 镜像有数据" "Logto 用户已同步" \
     "curl -sf '$BASE_URL/api/v1/sys/users?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 run_test "SYNC" "role 镜像有数据" "Logto 角色已同步" \
-    "curl -sf '$BASE_URL/api/v1/sys/role?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/sys/role?select=id&limit=1' -H \"Authorization: Bearer ***\" | jq -e 'length >= 1'"
+
+# N17（2026-08-11）: 补齐 Phase 6 用例——验签失败 / 删除与封禁同步 / 对账 dry-run
+#   前置: gateway/.env 已配置 LOGTO_WEBHOOK_SIGNING_KEY（init-apisix-routes.sh fail-closed）
+run_test "SYNC" "Webhook 无签名头被拒" "APISIX 验签 401（N15 fail-closed）" \
+    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/rpc/webhook_logto' \
+      -H 'Content-Type: application/json' -d '{\"event\":\"User.Created\",\"data\":{}}' | grep -q '401'"
+
+run_test "SYNC" "Webhook 错误签名被拒" "错误 HMAC 401" \
+    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/rpc/webhook_logto' \
+      -H 'Content-Type: application/json' -H 'logto-signature-sha-256: ZmFrZXNpZw==' \
+      -d '{\"event\":\"User.Created\",\"data\":{}}' | grep -q '401'"
+
+# 真实 Logto 操作 → 镜像断言（需 Logto Console 权限；失败可跳过——手工执行段）
+echo "  ── N17 手工段（可选）: 在 Logto Console 删除/封禁一名用户后执行以下断言 ──"
+echo "     curl -sf '$BASE_URL/api/v1/sys/users?select=id,is_suspended&limit=5' -H \"Authorization: Bearer ***\" | jq -r '.[] | [.id,.is_suspended] | @tsv'"
+
+run_test "SYNC" "对账 dry-run 可执行" "reconcile-logto.py --dry-run 正常退出" \
+    "cd $(pwd) && python3 scripts/phase2/reconcile-logto.py --dry-run \
+      --m2m-id \"\${LOGTO_M2M_APP_ID:-}\" --m2m-secret \"\${LOGTO_M2M_SECRET:-}\" \
+      --pg-dsn 'postgresql://app_owner@127.0.0.1:5432/app_db' >/dev/null 2>&1 && echo ok | grep -q ok"
 
 # ==============================================================================
 # Phase 7: 异常恢复

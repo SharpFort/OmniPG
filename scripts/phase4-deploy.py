@@ -50,11 +50,11 @@ def main():
     # Step 2: 执行迁移文件
     print("\n[2/7] 执行迁移文件...")
     migrations = [
-        f"{PROJECT_DIR}/db/migrations/sys/001_init_tables.sql",
-        f"{PROJECT_DIR}/db/migrations/sys/002_create_relation_sessions_blacklist.sql",
-        f"{PROJECT_DIR}/db/migrations/sys/003_seed_data.sql",
-        f"{PROJECT_DIR}/db/migrations/sys/004_cleanup_cron.sql",
-        f"{PROJECT_DIR}/db/migrations/sys/005_audit_log_table.sql",
+        f"{PROJECT_DIR}/db/migrations/public/001_init_tables.sql",
+        f"{PROJECT_DIR}/db/migrations/public/002_create_relation_sessions_blacklist.sql",
+        f"{PROJECT_DIR}/db/migrations/public/003_seed_data.sql",
+        f"{PROJECT_DIR}/db/migrations/public/004_cleanup_cron.sql",
+        f"{PROJECT_DIR}/db/migrations/public/005_audit_log_table.sql",
     ]
     
     for migration in migrations:

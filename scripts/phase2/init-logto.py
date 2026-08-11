@@ -8,7 +8,7 @@ init-logto.py — Logto OSS 配置自动化（T3，06-开发路线 §3 T3）
   2. 创建全局角色 role_super_admin（type=User）
   3. 创建组织模板 default：组织角色 tenant_admin/editor/viewer
   4. 创建演示组织（租户）+ 关联模板
-  5. 创建 webhook（订阅 User.*/Organization.*/Membership/Role.* 事件）
+  5. 创建/更新 webhook（订阅 User.*/Organization.*/Membership/OrganizationRole.*/Role.*/PostSignIn 事件；已存在时 diff 补订阅）
   6. 配置 access-token Custom Token Claims 脚本（D19：roles + pg_role 注入）
   7. --verify 模式：核对全部配置并输出
 
@@ -20,6 +20,7 @@ init-logto.py — Logto OSS 配置自动化（T3，06-开发路线 §3 T3）
 """
 import argparse
 import json
+import os
 import secrets
 import sys
 import urllib.parse
@@ -54,9 +55,11 @@ const getCustomJwtClaims = async ({ token, context }) => {
         .filter((r) => r.organizationId === orgId)
         .map((r) => r.roleName)
     : [];
-  // ③ 并集注入（全局角色 + 当前组织组织角色）
+  // ③ 并集注入（网关/current_user_roles 判定用）
   const roles = [...new Set([...globalRoles, ...orgRoles])];
-  // ④ D19: pg_role 映射（最高优先级 → PostgREST DB 角色）
+  // ④ D5（2026-08-11）: 拆分注入 global_roles / org_roles——user_role 镜像
+  //    JIT 精确对齐用（全局段 organization_id=''，组织段 = 当前 organization_id）
+  // ⑤ D19: pg_role 映射（最高优先级 → PostgREST DB 角色）
   const priority = ['role_super_admin', 'role_admin', 'role_editor'];
   const pgRoleMap = {
     role_super_admin: 'super_admin',
@@ -65,7 +68,7 @@ const getCustomJwtClaims = async ({ token, context }) => {
     role_guest: 'role_guest'
   };
   const pgRole = priority.find((r) => roles.includes(r)) ?? 'role_guest';
-  return { roles, pg_role: pgRoleMap[pgRole] };
+  return { roles, global_roles: globalRoles, org_roles: orgRoles, pg_role: pgRoleMap[pgRole] };
 };
 """
 
@@ -205,18 +208,43 @@ def step4_demo_org(token, _template_id=None):
 
 
 def step5_webhook(token):
-    """创建 webhook（订阅 User.*/Organization.*/Membership/Role.*）"""
+    """创建/更新 webhook（订阅 User.*/Organization.*/Membership/OrganizationRole.*/Role.*/PostSignIn）"""
     print("[5] Webhook...")
+    # 事件清单（2026-08-11 决策定稿，与 020 webhook_logto 分发分支对齐）:
+    #   用户 4 项（含 SuspensionStatus.Updated）+ 组织 4 项（含 Membership.Updated）
+    #   + 组织角色 3 项（独立 organization_role 镜像，D4）+ 全局角色 3 项
+    #   + 登录交互 1 项（PostSignIn，登录日志链路 D-C）
+    # 不订阅: Role.Scopes.Updated / OrganizationRole.Scopes.Updated
+    #   （PG 侧 iam_role_api 自管绑定，与 §4 表设计核对一致）
+    # （官方事件注册表 hooks.ts 核实: 用户↔角色分配无事件 → user_role 走 JIT+对账）
     events = [
         "User.Created", "User.Data.Updated", "User.Deleted",
+        "User.SuspensionStatus.Updated",
         "Organization.Created", "Organization.Data.Updated", "Organization.Deleted",
         "Organization.Membership.Updated",
+        "OrganizationRole.Created", "OrganizationRole.Data.Updated",
+        "OrganizationRole.Deleted",
         "Role.Created", "Role.Data.Updated", "Role.Deleted",
+        "PostSignIn",
     ]
     _, hooks = http("GET", "/api/hooks", token)
     for h in (hooks or []):
         if h.get("name") == WEBHOOK_NAME:
-            print(f"  已存在: {WEBHOOK_NAME} (id={h['id']})")
+            existing = set(h.get("events") or [])
+            want = set(events)
+            if existing == want:
+                print(f"  已存在且事件齐全: {WEBHOOK_NAME} (id={h['id']})")
+                return h["id"]
+            # N3 修复: hook 已存在但订阅有差异 → PATCH 补齐（历史环境升级路径，
+            # 不再直接 return——否则 PostSignIn/SuspensionStatus/OrgRole 永不补订阅）
+            missing = sorted(want - existing)
+            extra = sorted(existing - want)
+            print(f"  已存在但订阅差异: 缺 {missing} 多 {extra} → PATCH /api/hooks/{h['id']}")
+            status, _ = http("PATCH", f"/api/hooks/{h['id']}", token, {"events": events})
+            if status in (200, 201, 204):
+                print(f"  已更新订阅: {WEBHOOK_NAME} (id={h['id']})")
+            else:
+                print(f"  !! 订阅更新失败: {status}")
             return h["id"]
     _, hook = http("POST", "/api/hooks", token, {
         "name": WEBHOOK_NAME,
@@ -270,7 +298,12 @@ def main():
         return
 
     app_id = args.m2m_app_id or "omnipg_management_m2m"
-    app_secret = args.m2m_secret or "omnipg_m2m_secret_2026_0123456789abcdef"
+    # N23（2026-08-11）: 移除硬编码默认 secret——参数或环境变量提供，缺失即拒绝（防泄露）
+    app_secret = args.m2m_secret or os.environ.get("LOGTO_M2M_SECRET", "")
+    if not app_secret:
+        print("缺少 M2M Secret：请用 --m2m-secret 参数或环境变量 LOGTO_M2M_SECRET 提供（N23：不再使用硬编码默认值）",
+              file=sys.stderr)
+        sys.exit(1)
 
     token = get_m2m_token(app_id, app_secret)
     if not token:
@@ -281,7 +314,8 @@ def main():
     # 步骤顺序（033 重排）：webhook 必须先于角色/组织创建——
     # 否则 Role.Created / Organization.Created 事件在 webhook 配置前发生，
     # PG role/tenants 镜像将缺失（如 role_super_admin 不在 role 镜像）。
-    # 重排后：① 配 webhook（订阅 Role.*/User.*/Org.*/Membership/PostSignIn）
+    # 重排后：① 配 webhook（订阅 User.*/Organization.*/Membership/
+    #         OrganizationRole.*/Role.*/PostSignIn —— 2026-08-11 决策补齐 15 项）
     #         ② 建角色 → 事件推送 → 镜像自动同步
     step5_webhook(token)
     step2_global_role(token)

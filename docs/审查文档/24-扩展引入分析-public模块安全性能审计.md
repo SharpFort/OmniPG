@@ -3,7 +3,7 @@
 > **状态**：✅ **用户已拍板（2026-08-05）**——最终决策见 §五；安装批次见 §六
 > ⚠️ **035 修订（2026-08-07）**：`omni_csv` 由「P0 必装」降级为「**暂不引入**」——原 P0 理由（修复 `export_csv` 半成品）随 `export_csv` 删除而消失（035：导出 = `GET /api_v1_public/{view}?select=...` 原生能力，前端拼 CSV；`import_csv` 保留 JSON 数组入口并安全重写，无需 SQL 内 CSV 解析）。官方能力已核实（`csv_info`/`parse`/`csv_agg` 三件套，`csv_agg` 即序列化），待「前端直传 CSV 文件」需求出现再装。
 > **范围**：用户圈定 15 个扩展（citext / pgjwt / pgauditlogtofile / pgmemento / temporal_tables / table_log / plpgsql_check / pg_mockable / safeupdate / pg_jsonschema / jsquery / index_advisor / pg_repack / omni_csv / count_distinct），对照 `05.4-权限校验三层模型.md`、`05.2-Admin管理模块函数视图补全分析.md` 与 public 模块现有代码，判定每个扩展**能替代/优化哪些现有实现**。
-> **代码勘察范围**：`db/api_v1/public/rpc/*`（16 个 RPC）、`db/src/sys/functions/*`、`db/migrations/sys/019/023/024/029`、`009_logto_mirror`、`010_logto_webhook`、`infra/pigsty.yml`。
+> **代码勘察范围**：`db/api_v1/public/rpc/*`（16 个 RPC）、`db/src/public/functions/*`、`db/migrations/public/019/023/024/029`、`009_logto_mirror`、`010_logto_webhook`、`infra/pigsty.yml`。
 > **官方依据**：pigsty.cc/ext/e/{safeupdate,jsquery,pgaudit}/ 详情页 + 三个扩展官方 README（2026-08-05 抓取）。
 
 ---
@@ -15,7 +15,7 @@
 | 操作级权限 | `has_permission(code)`：超管短路 + claims roles ∩ iam_role_api→iam_api.api_code | 023 §3 |
 | 权限门槛 | 29 个 RPC 均带 has_permission（029 补 4 个旧 DEFINER 写/管理 RPC） | 024/025/029 |
 | 数据级隔离 | RLS 全表策略（租户/全局/超管豁免） | 017/019/023/024 |
-| 审计（差异） | `audit_trigger_func()` + `write_audit_log()` → audit_log 单表，**11 个触发器** | src/sys + 023 §4 |
+| 审计（差异） | `audit_trigger_func()` + `write_audit_log()` → audit_log 单表，**11 个触发器** | src/public + 023 §4 |
 | 审计（操作） | `log_operate()` → audit_log（log_type='operate'） | 024 §1 |
 | 审计查询 | `search_audit_log`（old_data/new_data::text ILIKE 全文匹配）、`get_audit_log_timeline` | rpc/*.sql |
 | CSV 导入 | `import_csv(p_table_name, p_data jsonb, p_dry_run)`——接收 JSON 数组，逐条动态 INSERT | rpc_import_csv.sql（029 已补 sys:import） |

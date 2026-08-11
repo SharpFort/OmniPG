@@ -75,7 +75,7 @@ END IF;
 
 **问题**：原审计触发器直接 `INSERT INTO sys_audit_log`，缺少标准化的写入接口，业务 RPC 无法方便地记录审计。
 
-**新增文件**：`db/src/sys/functions/write_audit_log.sql`
+**新增文件**：`db/src/public/functions/write_audit_log.sql`
 
 **函数签名**：
 ```sql
@@ -99,7 +99,7 @@ public.write_audit_log(
 
 ### 2.5 审计日志表结构更新
 
-**修改文件**：`db/migrations/sys/005_audit_log_table.sql`
+**修改文件**：`db/migrations/public/005_audit_log_table.sql`
 
 **新增字段**：
 
@@ -112,7 +112,7 @@ public.write_audit_log(
 
 ### 2.6 审计触发器函数更新
 
-**修改文件**：`db/src/sys/functions/audit_trigger_func.sql`
+**修改文件**：`db/src/public/functions/audit_trigger_func.sql`
 
 **变更**：从直接 `INSERT INTO sys_audit_log` 改为调用 `public.write_audit_log()`
 
@@ -179,7 +179,7 @@ PERFORM public.write_audit_log(
 
 | 文件 | 说明 |
 |:---|:---|
-| `db/migrations/sys/006_create_sys_config.sql` | 创建表 + 默认配置数据 |
+| `db/migrations/public/006_create_sys_config.sql` | 创建表 + 默认配置数据 |
 | `db/api_v1/sys/views/sys_config.sql` | 公开配置视图（仅 key/value） |
 | `db/api_v1/sys/views/sys_config_admin.sql` | 管理员视图（含描述） |
 | `db/api_v1/sys/rpc/rpc_get_config.sql` | 获取单个公开配置 |
@@ -256,7 +256,7 @@ GRANT EXECUTE ON FUNCTION api_v1_sys.import_csv(text, jsonb, boolean) TO authent
 db/api_v1/sys/rpc/rpc_batch_assign_role_to_users.sql
 db/api_v1/sys/rpc/rpc_batch_remove_role_from_users.sql
 db/api_v1/sys/rpc/rpc_batch_update_user_status.sql
-db/src/sys/functions/write_audit_log.sql
+db/src/public/functions/write_audit_log.sql
 ```
 
 ### P1 新增文件（17 个）
@@ -269,15 +269,15 @@ db/api_v1/sys/rpc/rpc_import_csv.sql
 db/api_v1/sys/rpc/rpc_update_config.sql
 db/api_v1/sys/views/sys_config.sql
 db/api_v1/sys/views/sys_config_admin.sql
-db/migrations/sys/006_create_sys_config.sql
-db/src/sys/triggers/trg_audit_sys_api.sql
-db/src/sys/triggers/trg_audit_sys_menu.sql
-db/src/sys/triggers/trg_audit_sys_role_api.sql
-db/src/sys/triggers/trg_audit_sys_role_menu.sql
-db/src/sys/triggers/trg_audit_sys_tenant.sql
-db/src/sys/triggers/trg_audit_sys_token_blacklist.sql
-db/src/sys/triggers/trg_audit_sys_user_role_request.sql
-db/src/sys/triggers/trg_audit_sys_user_session.sql
+db/migrations/public/006_create_sys_config.sql
+db/src/public/triggers/trg_audit_sys_api.sql
+db/src/public/triggers/trg_audit_sys_menu.sql
+db/src/public/triggers/trg_audit_sys_role_api.sql
+db/src/public/triggers/trg_audit_sys_role_menu.sql
+db/src/public/triggers/trg_audit_sys_tenant.sql
+db/src/public/triggers/trg_audit_sys_token_blacklist.sql
+db/src/public/triggers/trg_audit_sys_user_role_request.sql
+db/src/public/triggers/trg_audit_sys_user_session.sql
 ```
 
 ### 修改文件清单（13 个）
@@ -293,8 +293,8 @@ db/api_v1/sys/rpc/rpc_get_user_menu.sql
 db/api_v1/sys/rpc/rpc_kick_user.sql
 db/api_v1/sys/rpc/rpc_refresh_token.sql
 db/api_v1/sys/rpc/rpc_reset_user_password.sql
-db/migrations/sys/005_audit_log_table.sql
-db/src/sys/functions/audit_trigger_func.sql
+db/migrations/public/005_audit_log_table.sql
+db/src/public/functions/audit_trigger_func.sql
 scripts/apply-src.sh
 ```
 

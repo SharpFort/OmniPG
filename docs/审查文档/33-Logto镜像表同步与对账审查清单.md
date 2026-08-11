@@ -48,7 +48,7 @@ flowchart LR
 
 **根因（3 处叠加）**：
 
-1. **权限点残留**：`db/migrations/sys/040_iam_single_code_perms.sql`（§1）给历史 `/sys_user` 端点回填了 `sys:user:add` / `sys:user:delete` 权限码；`003_seed_data.sql` 中 `/sys_user` 的 `POST`/`DELETE` 行也仍在 `iam_api`。`044` 又显式把按钮 `UserAdd/UserDelete` 与接口 `sys:user:add/delete` 绑定。**OmniPG 当前根本没有对应的后端 RPC（`create_user` 已在 015 删除、权限已在 010 §4.2 REVOKE）**，形成了"有按钮、有权限码、无接口"的死权限点。
+1. **权限点残留**：`db/migrations/public/040_iam_single_code_perms.sql`（§1）给历史 `/sys_user` 端点回填了 `sys:user:add` / `sys:user:delete` 权限码；`003_seed_data.sql` 中 `/sys_user` 的 `POST`/`DELETE` 行也仍在 `iam_api`。`044` 又显式把按钮 `UserAdd/UserDelete` 与接口 `sys:user:add/delete` 绑定。**OmniPG 当前根本没有对应的后端 RPC（`create_user` 已在 015 删除、权限已在 010 §4.2 REVOKE）**，形成了"有按钮、有权限码、无接口"的死权限点。
 2. **镜像表视图被 PostgREST 自动暴露写方法**：`api_v1_public.role` 是单表简单视图（自动可更新），PostgREST OpenAPI 中会出现 `POST/PATCH/DELETE /api/v1/sys/role`；`api_v1_public.users` 虽为 JOIN 视图不可更新，但 OpenAPI 仍会展示该方法（调用报错）。同时 `grant_all.sql` §3.5 对 `role_admin` 授予了 `INSERT,UPDATE ON api_v1_public.users / role`，`028` 对 `super_admin` 授予 `ALL ON users, tenants, role, user_tenants`——与"镜像只读"原则直接冲突（目前写被 RLS 无写策略挡住，属"侥幸安全"，是地雷）。
 3. **历史 `import_csv` 写路径**：015 版 `import_csv` 的允许表清单是"除 app_config/audit_log/cron_job_log 外全部视图"，**包含 users/role 等镜像视图**，且 `SECURITY DEFINER` 绕过 RLS，任何持 `sys:import`（超管）者可绕过 Logto 直接向镜像表插数据；035 已改为显式业务表白名单修复，但证明"镜像只读"在历史上曾被破坏。
 
@@ -104,11 +104,11 @@ flowchart LR
 
 | # | 问题 | 根因 / 证据 | 影响 | 修复建议 |
 |---|---|---|---|---|
-| N1 | **删除类 webhook 全部失效**：`User.Deleted` / `Role.Deleted` / `Organization.Deleted` 的 `data` 为 `null`，删除 ID 在 `params` 中（如 `params.userId`），但 020 重定义 `webhook_logto` 时把 010 的 `COALESCE($1->'params'->>'id', v_data->>'id')` 兜底删掉了，改为 `v_data->>'id'`（恒为 NULL） | `db/migrations/sys/020_login_log_webhook.sql` §3：`sync_user_delete(v_data->>'id')` 等三处 | 用户/组织被 Logto 删除后镜像永不软删：`users.deleted_at` 恒 NULL，RLS 仍可见、仍占用 `user_tenants`/业务关联；角色硬删永不执行，孤儿绑定永久累积 | 恢复 `COALESCE($1->'params'->>'id', $1->'data'->>'id')`；补一条验证：构造删除 payload（data=null, params={id}）确认软删生效 |
+| N1 | **删除类 webhook 全部失效**：`User.Deleted` / `Role.Deleted` / `Organization.Deleted` 的 `data` 为 `null`，删除 ID 在 `params` 中（如 `params.userId`），但 020 重定义 `webhook_logto` 时把 010 的 `COALESCE($1->'params'->>'id', v_data->>'id')` 兜底删掉了，改为 `v_data->>'id'`（恒为 NULL） | `db/migrations/public/020_login_log_webhook.sql` §3：`sync_user_delete(v_data->>'id')` 等三处 | 用户/组织被 Logto 删除后镜像永不软删：`users.deleted_at` 恒 NULL，RLS 仍可见、仍占用 `user_tenants`/业务关联；角色硬删永不执行，孤儿绑定永久累积 | 恢复 `COALESCE($1->'params'->>'id', $1->'data'->>'id')`；补一条验证：构造删除 payload（data=null, params={id}）确认软删生效 |
 | N2 | **完全没有任何与 Logto 的对账/回填机制**：webhook 事件丢失（Logto 只重试 3 次、fire-and-forget）、重复投递、乱序均无兜底 | 全库搜索无 `GET /api/users|roles|organizations` 拉取逻辑；`reconciliation.pending_org` 标记只写不消费；035 注释"P2 对账任务可选兜底"至今未实现 | 一旦事件丢失/失败，数据永久漂移；当前已存在 `role` 缺 `role_super_admin`、`user_role` 缺数据的存量污染 | 见 §5 对账方案 |
-| N3 | **webhook 订阅事件不完整**：`init-logto.py` step5 events 缺 `PostSignIn`（020 已写分支但未订阅）、`User.SuspensionStatus.Updated`、`OrganizationRole.*`、`Role.Scopes.Updated`；且 hook 已存在时脚本直接 return，**不会补订阅** | `scripts/phase2/init-logto.py` §step5（events 列表 10 项）vs `db/migrations/sys/020_login_log_webhook.sql`（含 PostSignIn 分支） | 登录日志表永远为空（PostSignIn 未订阅）；用户封禁/解封不同步（`PATCH /users/:id/is-suspended` 走独立事件，`User.Data.Updated` 不触发）；组织角色不进镜像 | 补全订阅；脚本加"订阅事件 diff 更新"逻辑；`webhook_logto` 增加 `User.SuspensionStatus.Updated` 分支 |
-| N4 | **镜像表写授权与"只读"原则矛盾（地雷）**：`grant_all.sql` 对 `role_admin` 授 `INSERT,UPDATE ON api_v1_public.users/role`；`028` 对 `super_admin` 授 `ALL ON users,tenants,role,user_tenants`；`api_v1_public.role` 为自动可更新视图，PostgREST 暴露 POST/PATCH/DELETE | `db/api_v1/public/privileges/grant_all.sql` §3.5；`db/migrations/sys/028_grant_trigger_fix.sql` §1 | 当前写被 RLS（镜像表只有 SELECT 策略）挡住属于侥幸；一旦有人给镜像表加写策略/关 RLS，立即变成绕过 Logto 的直写通道；OpenAPI 也向消费方暴露了这些"假接口" | 撤销镜像表全部写授权；视图保持不可更新或显式 REVOKE；e2e 增加"以 role_admin 身份 POST /role 返回 403"用例 |
-| N5 | **`rpc_list_tenant_members` 引用不存在的列 `ut.created_at`**：`user_tenants` 表只有 `joined_at`（009 §1.3），025 与 035 两版函数均写 `ut.created_at AS joined_at` 且 `ORDER BY ut.created_at` | `db/migrations/sys/025_admin_sync_tenant_rpc.sql` §2；`035` §6 重写版同样存在 | 租户成员列表接口一调用即报错 `column ut.created_at does not exist`；e2e 未覆盖该函数，问题未暴露 | 改为 `ut.joined_at`；补 e2e 用例 |
+| N3 | **webhook 订阅事件不完整**：`init-logto.py` step5 events 缺 `PostSignIn`（020 已写分支但未订阅）、`User.SuspensionStatus.Updated`、`OrganizationRole.*`、`Role.Scopes.Updated`；且 hook 已存在时脚本直接 return，**不会补订阅** | `scripts/phase2/init-logto.py` §step5（events 列表 10 项）vs `db/migrations/public/020_login_log_webhook.sql`（含 PostSignIn 分支） | 登录日志表永远为空（PostSignIn 未订阅）；用户封禁/解封不同步（`PATCH /users/:id/is-suspended` 走独立事件，`User.Data.Updated` 不触发）；组织角色不进镜像 | 补全订阅；脚本加"订阅事件 diff 更新"逻辑；`webhook_logto` 增加 `User.SuspensionStatus.Updated` 分支 |
+| N4 | **镜像表写授权与"只读"原则矛盾（地雷）**：`grant_all.sql` 对 `role_admin` 授 `INSERT,UPDATE ON api_v1_public.users/role`；`028` 对 `super_admin` 授 `ALL ON users,tenants,role,user_tenants`；`api_v1_public.role` 为自动可更新视图，PostgREST 暴露 POST/PATCH/DELETE | `db/api_v1/public/privileges/grant_all.sql` §3.5；`db/migrations/public/028_grant_trigger_fix.sql` §1 | 当前写被 RLS（镜像表只有 SELECT 策略）挡住属于侥幸；一旦有人给镜像表加写策略/关 RLS，立即变成绕过 Logto 的直写通道；OpenAPI 也向消费方暴露了这些"假接口" | 撤销镜像表全部写授权；视图保持不可更新或显式 REVOKE；e2e 增加"以 role_admin 身份 POST /role 返回 403"用例 |
+| N5 | **`rpc_list_tenant_members` 引用不存在的列 `ut.created_at`**：`user_tenants` 表只有 `joined_at`（009 §1.3），025 与 035 两版函数均写 `ut.created_at AS joined_at` 且 `ORDER BY ut.created_at` | `db/migrations/public/025_admin_sync_tenant_rpc.sql` §2；`035` §6 重写版同样存在 | 租户成员列表接口一调用即报错 `column ut.created_at does not exist`；e2e 未覆盖该函数，问题未暴露 | 改为 `ut.joined_at`；补 e2e 用例 |
 | N6 | **webhook 失败静默吞掉**：`webhook_logto` EXCEPTION 分支返回 `{ok:true, warn:SQLERRM}`，Logto 视作 2xx 成功 → 不重试、无告警；无 webhook 事件落库/审计，同步失败不可观测 | `020` §3 异常分支；`010` §1 注释"失败静默返回 ok" | 单条同步失败（如 FK 不满足、类型错误）永久丢失，且无人知晓 | 引入 `webhook_event_log` 表（hookId/event/createdAt/payload/result/error）；失败返回非 2xx 让 Logto 重试；对 `warn` 分支挂告警/监控 |
 | N7 | **`ensure_user` JIT 会覆盖 webhook 写入的权威字段**：JWT 无 `username/name/avatar`（claims 脚本只注入 roles+pg_role），`ensure_user` 用空串覆盖真实值；`is_suspended` 恒写 false，**可"解封"被 Logto 封禁的用户**；`user_profile.tenant_id` 随当前组织 token 覆盖，多组织用户归属漂移 | `db/api_v1/public/rpc/rpc_ensure_user.sql`；`init-logto.py` CLAIMS_SCRIPT | 登录后镜像用户名/头像被清空；封禁用户仍可正常登录 JIT（Logto 侧登录其实会拒绝，但镜像状态错误）；多组织用户 home tenant 错乱 | `ensure_user` 仅做缺失补建，不覆盖已有值（`ON CONFLICT DO UPDATE SET ... WHERE users.username=''` 之类）；移除 `is_suspended=false` 写回；profile 只在无记录时插入 |
 
@@ -212,13 +212,13 @@ flowchart LR
 
 | 文件 | 关键问题 |
 |---|---|
-| `db/migrations/sys/009_logto_mirror.sql` | 表设计：role_code 生成列、joined_at=now()、缺 profile/ssoIdentities |
-| `db/migrations/sys/010_logto_webhook_rpc.sql` | sync_* 初版；删除事件正确兜底（被 020 破坏）；5000 截断标记 |
-| `db/migrations/sys/020_login_log_webhook.sql` | **删除事件兜底丢失（N1）**；PostSignIn 分支（未订阅）；失败静默 |
-| `db/migrations/sys/024_admin_crud_rpc.sql` | user_role 表/RLS；v_user_roles/v_role_users |
-| `db/migrations/sys/025_admin_sync_tenant_rpc.sql` | rpc_list_tenant_members `ut.created_at`（N5） |
-| `db/migrations/sys/035_rpc_cleanup_unify.sql` | 删除 rpc_sync_user_roles；ensure_user JIT 覆盖；重写版仍带 N5 |
-| `db/migrations/sys/028_grant_trigger_fix.sql` | super_admin ALL 镜像表授权（N4） |
+| `db/migrations/public/009_logto_mirror.sql` | 表设计：role_code 生成列、joined_at=now()、缺 profile/ssoIdentities |
+| `db/migrations/public/010_logto_webhook_rpc.sql` | sync_* 初版；删除事件正确兜底（被 020 破坏）；5000 截断标记 |
+| `db/migrations/public/020_login_log_webhook.sql` | **删除事件兜底丢失（N1）**；PostSignIn 分支（未订阅）；失败静默 |
+| `db/migrations/public/024_admin_crud_rpc.sql` | user_role 表/RLS；v_user_roles/v_role_users |
+| `db/migrations/public/025_admin_sync_tenant_rpc.sql` | rpc_list_tenant_members `ut.created_at`（N5） |
+| `db/migrations/public/035_rpc_cleanup_unify.sql` | 删除 rpc_sync_user_roles；ensure_user JIT 覆盖；重写版仍带 N5 |
+| `db/migrations/public/028_grant_trigger_fix.sql` | super_admin ALL 镜像表授权（N4） |
 | `db/api_v1/public/privileges/grant_all.sql` | role_admin INSERT/UPDATE 镜像视图授权（N4） |
 | `db/api_v1/public/rpc/rpc_ensure_user.sql` | JIT 覆盖权威字段（N7）、空 roles 不清理（N22） |
 | `db/api_v1/public/views/role.sql` / `users.sql` | 自动可更新视图暴露写方法（N4） |
@@ -237,3 +237,117 @@ flowchart LR
 3. **组织角色是否进 `role` 镜像**：合并同一张表（type 区分）vs 独立 `organization_role` 表？
 4. **对账频率与执行方式**：pg_cron 每日默认 + 手动触发入口，是否满足？
 5. **`webhook_event_log` 保留周期**：建议保留 90 天，与 `audit_log` 清理策略一致？
+
+---
+
+## 9. 决策定稿（2026-08-11 用户拍板，追加于"当前同步链路"分段阅读之后）
+
+> §8 待拍板事项已全部拍板（见 §9.2）；§3 审查结论（N1-N24）、§5 对账方案同步确认纳入实施。
+> 本节每项决策含：**结论 / 依据（官方核实来源）/ 分级（P0-P1-P2）/ 代码实施位置**。DDL 与代码直接修改项目文件实施，本节不贴码（见 §9.5 实施清单）。
+
+### 9.1 核心原则（用户补充）：五张镜像表 = 项目基础数据唯一来源
+
+`users` / `tenants` / `user_tenants` / `role` / `user_role` 五张镜像表将作为**整个项目的基础数据**：多个业务模块共享的用户 / 角色 / 租户数据来源唯一（Logto 权威 → webhook 镜像投影 → 各模块消费）。
+
+由此推论（影响分级）：
+- 镜像数据完整性要求从"管理端报表展示"升级为**业务基础数据**级别；
+- 对账机制（§5）从"P2 可选兜底"提升为 **P1 必做**（覆盖 webhook 丢失、存量污染、user_role 无事件缺口）；
+- webhook 订阅完整性（N3）与删除事件兜底（N1）为 **P0**。
+
+### 9.2 决策明细
+
+| # | 决策点 | 拍板结论 | 依据（官方核实） | 分级 |
+|---|---|---|---|---|
+| D1 | 镜像表写入模型（Q1） | 仅接受 Logto webhook 推送（+ 登录 JIT + 对账），不向 Logto 提交/修改；五表对 sync_* 可写、对管理员/用户只读，不开发任何写/更新接口 | 05 文档 v2.0；webhook 官方触发表（Management API 调用同样触发，M2M 写入可被镜像感知） | P0 |
+| D2 | 表结构补齐（Q1） | role 补 `description` 列；users 补 `profile` / `ssoIdentities` 列；webhook 推送字段入库阶段全部接收；`updated_at` 映射进 sync_* | webhook UserEntity 13 字段（webhooks-request 页）；Management API UserInfo 14 字段含 profile（源码 `userInfoSelectFields`）；Role 实体含 description。⚠️ **profile/ssoIdentities webhook 不提供**（仅 Management API 返回），列可建但唯一数据来源是对账补拉（§9.5 对账任务） | P1 |
+| D3 | 用户管理入口收敛（Q2） | 后端彻底移除用户增/删/改残留（死权限点、按钮、写授权）；前端页面自行加 Logto Console 跳转链接 | §3 问题 1 根因（040/003/044/grant_all/028 残留核实） | P0 |
+| D4 | 组织角色存储（Q3） | 独立 `organization_role` 表（不合并进 role）；订阅 `OrganizationRole.Created/Data.Updated/Deleted`；新增展示 RPC | OrganizationRole 实体 `{id,name,description}` 无 type/isDefault（webhooks-request 页）；与全局角色独立命名空间，避免 role.name 唯一索引冲突 | P1 |
+| D5 | user_role 精确镜像（Q4） | 方案 A：加 `organization_id` 维度（NULL=全局角色）；claims 脚本拆 `global_roles` / `org_roles` 注入；结构对齐 Logto `users_roles`（user_id/role_id 形状），复合主键 | 官方事件表无"用户↔角色分配"事件（hooks.ts 注册表 + webhooks-events 页双确认）；Logto users_roles 为 (user_id, role_id) 关系；超管用户同时持全局+组织角色 → 一用户多行，**不加 user_id 唯一约束** | P1 |
+| D6 | JIT 写入（Q4） | 改增量对齐：角色不变零写入、保留 `created_at` 首次分配时间；空角色清空 | 官方"权限变更只进新 token"指南（authorization/global-api-resources §Handle user permission change）；当前 DELETE+INSERT 会刷新 created_at 导致"分配时间"报表失真 | P1 |
+| D7 | 封禁策略（Q6） | 封禁操作在 Logto 侧完成（OmniPG 不实现、不依赖封禁逻辑）；镜像仅同步 `is_suspended` 供展示；实时生效依赖 Logto 会话撤销 + 短 token；**确认有事件**：订阅 `User.SuspensionStatus.Updated` | 官方触发表：`PATCH /users/:id/is-suspended → User.SuspensionStatus.Updated`（webhooks-events）；封禁语义"不能登录/不能获得新 token"（manage-users §Suspend user）；PostgREST 无状态 JWT 验证 → 存量 token 到过期为止，残留窗口 = token TTL | P1 |
+| D8 | N25 新缺陷修复（本轮新发现） | `sync_login_log_write` 函数体仍引用旧表名 `sys_login_log`（023 已 RENAME 为 `login_log`）→ PostSignIn 一触发即报错且被 020 异常分支静默吞掉，**登录日志链路实际是断的** | 020 §2 与 023 RENAME 交叉核实（本次审查新发现，§3 未列） | P0 |
+| D9 | 对账定位（用户提问答复） | 五张镜像表全部纳入 Management API 对账（§5 方案确认，频率维持"每日默认 + 手动触发"）；webhook 实时事件覆盖仅 4 类表（user_role 无事件） | 官方事件表 vs Management API 端点对照（见 §9.3） | P1 |
+
+**未单独拍板、维持默认的事项**（如需调整另行决策）：
+- **角色重命名策略**：维持 §3 N13 建议——禁止重命名（Logto 侧约定 + 文档），role_code 生成列与绑定表（iam_role_api/iam_role_menu）依赖名字稳定；
+- **webhook_event_log 保留周期**：维持 §8 建议 90 天，与 audit_log 清理策略一致；
+- **user_tenants.joined_at**：维持 §3 N11 建议——接受 `now()` 近似值并注释说明（Logto 成员 API 不返回加入时间）。
+
+### 9.3 对账 / 事件覆盖对照（用户提问答复）
+
+官方没有"对账"产品功能——对账 = 自建任务（§5：M2M token + Management API 拉全量 + diff upsert，pg_cron 每日 + 手动触发）。webhook 事件（实时）与对账（兜底）是两条互补链路：
+
+| 镜像表 | webhook 实时事件 | Management API 对账端点 |
+|---|---|---|
+| users | ✔ User.Created / Data.Updated / Deleted / SuspensionStatus.Updated | `GET /api/users`（分页） |
+| tenants | ✔ Organization.Created / Data.Updated / Deleted / Membership.Updated | `GET /api/organizations` |
+| user_tenants | ✔ 经 Membership.Updated 增量（added/removedUserIds） | `GET /api/organizations/:id/users`（分页） |
+| role | ✔ Role.Created / Data.Updated / Deleted | `GET /api/roles` |
+| user_role | ✘ **无任何事件**（官方注册表核实，唯一实时通道 = 登录 JIT） | `GET /api/users/:id/roles` 或 `/api/roles/:id/users` |
+| organization_role（新） | ✔ OrganizationRole.Created / Data.Updated / Deleted（本轮已补订阅） | `GET /api/organization-roles` |
+
+**结论：5 张镜像表全都有对账途径；webhook 实时事件唯独缺 user_role 一张**，其兜底 = JIT 增量对齐 + 对账任务。
+
+### 9.4 已完成（2026-08-11）
+
+- **init-logto.py 订阅补齐（N3/N23）**：step5 events 增加 `PostSignIn`、`User.SuspensionStatus.Updated`、`OrganizationRole.Created/Data.Updated/Deleted` 共 5 项（现为 15 项）；hook 已存在时改为 **diff 对比 + PATCH 补订阅**（历史环境升级路径，不再直接 return）；033 重排注释与文件头 docstring 同步对齐。
+- **020 重写（P0：N1 + N25）**：
+  - N1：删除类事件兜底恢复——`User.Deleted`（params.userId）、`Organization.Deleted` / `Role.Deleted`（params.id）统一 `COALESCE(params->>'userId', params->>'id', data->>'id')` 三键兜底（010 旧写法对 User.Deleted 取 params.id 同样取不到，一并修正）；
+  - N25：`sync_login_log_write` 表名 `sys_login_log` → `login_log`，并做 020→023 顺序双表兼容（to_regclass 运行时判断）；§4 RLS 策略同样按 to_regclass 分支（DDL 立即执行，避免新环境 020 时点表名不存在的错误）；
+  - §5 验证块增强：新增 N1/N25 防复发断言（pg_get_functiondef 检查 `params` 兜底与 `INSERT INTO login_log`）；
+  - 验证：PGlite 桩环境 20 项断言全部通过（含删除事件四种 payload 传参、PostSignIn 落库 + ip2region 解析、非法 IP 容错、双表兼容分支、幂等重放）。
+- **N4 + D3 镜像只读授权与死权限点清理（P0，028 / grant_all.sql / 040 / 044 / 新迁移 045）**：
+  - **028**：`super_admin` 对五张镜像表的 `GRANT ALL` 撤销（`REVOKE ALL ON users,tenants,role,user_tenants / user_role` → 仅 SELECT）——写入通道收敛到 sync_*/JIT/对账（均 SECURITY DEFINER）；
+  - **grant_all.sql**：`role_admin` 对 `api_v1_public.users/role` 视图的 `INSERT,UPDATE` 撤销（REVOKE，仅保留 SELECT）；
+  - **040 §1**：不再回填 UserAdd/UserEdit/UserDelete 按钮码与 `/sys_user` POST/PATCH/DELETE、`/rpc/kick_user` 赋码（死端点，RPC 已删）；仅保留 `/sys_user GET → sys:user:list`；§5 验证块改用保留码 `sys:user:list`（清理后无按钮码载体）；
+  - **044 §6**：验证块环境自适应（UserAdd/sys:user:add 存在才校验归位，否则跳过——否则清理后环境重放 044 必炸）；
+  - **045（新迁移）**：集中清理——删除死按钮 UserAdd/UserEdit/UserDelete、死端点 `/sys_user` POST/PATCH/DELETE + `/rpc/kick_user`、死码 `sys:user:add/edit/delete/kick`；角色绑定经 FK ON DELETE CASCADE 自动清理；保留 `sys:user:list`；
+  - 验证：PGlite 桩环境 24 项断言全部通过（含角色级写拒绝/读放行、级联清理、清理后重放 044/045 不炸回归、文件级交付物断言）。
+- **P2 治理批次（2026-08-11，N18-N24 + N14/N16 遗留）**：
+  - **N18 乱序守护（051）**：users/tenants/role/organization_role 加 `logto_updated_at`；sync_user_upsert / sync_role_upsert / sync_tenant_upsert / sync_organization_role_upsert / sync_user_suspension 重写——`ON CONFLICT UPDATE ... WHERE 存量 NULL 兼容 OR EXCLUDED.logto_updated_at >= 旧值`（旧事件不覆盖新状态；同时间戳允许覆盖不误伤）；
+  - **N21（051）**：sync_membership_delta 空 delta/NULL 字段早退（无变更不空转）；5000 截断的 sys_config 标记**移除**——D9 对账每日全量成员对账兜底（标记冗余）；
+  - **N14（051）**：`rpc_get_user_roles(p_user_id, p_org_id)`——SECURITY DEFINER + `sys:tenant-member:list` 门槛 + 同租户约束（跨租户仅超管），返回 global 段 + 当前 org 段，替代裸视图供管理端角色-成员页；
+  - **N11/N12（051 注释固化）**：user_tenants.joined_at 本地近似说明；role 硬删 + FK CASCADE 级联清理策略说明；
+  - **N15（init-apisix-routes.sh）**：缺 `LOGTO_WEBHOOK_SIGNING_KEY` 时 **exit 1 拒绝部署**（fail-closed，原仅警告 fail-open）；
+  - **N16（035）**：rpc_import_csv 白名单移除 `iam_menu/iam_api`（收窄为纯业务表 department/position/dict_*）；
+  - **N17（e2e-test.sh）**：Phase 6 补用例——webhook 无签名头 401、错误 HMAC 401、删除/封禁同步手工断言段、reconcile-logto.py --dry-run 可执行；
+  - **N23（init-logto.py）**：移除硬编码默认 M2M secret → `--m2m-secret` 或环境变量 `LOGTO_M2M_SECRET`，缺失即拒绝（防泄露）；
+  - **N24（p1_apply.sh）**：重写为废弃指引（exit 1 + 提示使用 `apply-src.sh`），避免误用已删文件（rpc_create_user 等 Casdoor 时代残留）；
+  - 验证：PGlite 桩 16 项断言（乱序守护 8 场景/空 delta 早退/权限门槛）+ 三个 shell 脚本 `bash -n` + Python `py_compile` 全部通过。
+- **P1 批次（2026-08-11，按 §9.5 规划顺序）**：
+  - **D2 表结构（047）**：role 补 `description`；users 补 `profile` / `sso_identities`（jsonb）；sync_user_upsert / sync_role_upsert / sync_tenant_upsert 重写——新增列映射 + `updatedAt → updated_at`（webhook 无 updatedAt 时落本地时间，对账 payload 携带时落权威时间）；**profile/ssoIdentities 仅 Management API 返回 → 唯一数据来源 = 对账任务注入**（webhook 推送阶段恒空，与 D2 决策依据一致）；
+  - **D4 organization_role（048）**：独立镜像表（id/name/description，与全局角色独立命名空间）+ 唯一索引 + RLS 只读 + `api_v1_public.organization_role` 展示视图；`sync_organization_role_upsert/delete`；webhook_logto 追加 `OrganizationRole.Created/Data.Updated/Deleted` 分支（删除 ID 取 params.id——N1 同款）；
+  - **D5+D6 user_role 精确镜像（049 + init-logto.py CLAIMS_SCRIPT）**：加 `organization_id`（''=全局）与 `role_id`（对齐 Logto users_roles；FK → role(id) ON DELETE CASCADE）；PK 重建 `(user_id, organization_id, role_code)`；claims 脚本拆分注入 `global_roles` / `org_roles`；ensure_user 改**分段增量对齐**——角色不变零写入、created_at 保留首次分配时间、全局 token 登录不清组织段（防多组织用户丢镜像）、旧 claims（无 global_roles）跳过更新（防误清空）、role_id 按名回填（镜像缺失为 NULL 等对账）；
+  - **D7 封禁同步（050）**：`sync_user_suspension`（幂等仅改 is_suspended，0 行更新无害）；webhook_logto 追加 `User.SuspensionStatus.Updated` 分支；
+  - **N5**：035 `rpc_list_tenant_members` 两处 `ut.created_at` → `ut.joined_at`（列不存在调用即炸，P0 级已修）；
+  - **D9 对账任务（scripts/phase2/reconcile-logto.py）**：M2M token → Management API 全量拉取（users/roles/organization-roles/organizations/成员/逐用户角色分配）→ sync_* 幂等写入；user_role 全局段全量重建（对账 = 唯一权威通道）；**profile 注入**（D2 列唯一来源）；删除检测（差集 → sync_delete）；`--dry-run` / `--sso` / `--org-roles` 选项；单事务 + 统计输出；部署机 crontab 每日调度（脚本头含示例）；
+  - 验证：PGlite 桩环境 27 项断言（D2 字段映射/D4 增删改/ D5+D6 七场景增量对齐/ D7 封禁/ N5 文件级）+ reconcile 脚本 mock 测试 4 项（调用序列、全量重建、dry-run 零 PG 调用、token 失败路径），全部通过。
+- **N6 webhook 事件落库 + 失败可观测（P0，新迁移 046）**：
+  - `webhook_event_log` 表：每次调用落一行（hookId/event/logto_created/原始 payload/result/error），result = received/success/error/ignored；RLS 仅超管可读（payload 含 PII）；保留 90 天（P2 挂 pg_cron 清理）；
+  - `webhook_logto` 重写：正常→success；同步失败→error 落库 + 返回 `{ok:false, error}`（**取舍**：不 RAISE 触发 Logto 重试——函数体异常会回滚事件日志写入（PL/pgSQL 子事务回滚 DECLARE 变量），可观测优先；丢失推送由 Logto Console 手动 Replay + 本迁移重放 RPC 双兜底，P2 可选 APISIX 改写 503 触发自动重试）；PostSignIn 失败独立容错（落 error 不阻断，避免重试双写登录日志）；未知事件落 ignored（测试负载/订阅缺口可观测）；
+  - 管理端 RPC（超管专属）：`rpc_list_webhook_events`（result 过滤 + 分页上限 100）、`rpc_replay_webhook_event`（payload 重喂 webhook_logto，sync_* 幂等，重放结果新落一行，log_operate 审计）；
+  - ⚠️ 实施中发现的 PL/pgSQL 陷阱：函数体级异常触发子事务回滚，**DECLARE 变量回滚为 NULL**——失败落库不得依赖变量，改用参数 $1 匹配 received 行定位（参数不回滚），代码内已注释；
+  - 验证：PGlite 桩环境 23 项断言全部通过（成功/失败/容忍/忽略/RLS/RPC 门槛/重放恢复/幂等重放/防复发）。
+- **N7 ensure_user 修复（P0，035 §7 重写 + `rpc_ensure_user.sql` 同步）**：
+  - users 镜像完全由 webhook 维护，JIT **仅缺失补建**（`ON CONFLICT (id) DO NOTHING`），不再以空串覆盖 username/name/avatar；`is_suspended` 不再由 JIT 写入（补建行依赖默认 false，封禁状态经 `User.SuspensionStatus.Updated` 同步——P1 D7）；
+  - user_profile **仅在无记录时补建**（tenant 归属 = 首次观察到的组织上下文），不再随组织 token 漂移；
+  - user_role JIT 全量覆盖语义保持不变（增量对齐保护 created_at 为 P1 D6 项）；
+  - 验证：PGlite 桩环境 11 项断言全部通过（先复现旧版 bug——空串覆盖确认为真，再断言修复后的不覆盖/补建/不漂移/异常/角色清理语义）。
+- 未订阅 `Role.Scopes.Updated` / `OrganizationRole.Scopes.Updated`（决策：PG 侧 iam_role_api 自管绑定，与 §4 表设计核对一致）。
+
+### 9.5 遗留代码实施清单（下一步，按优先级；DDL/代码直接在项目文件中实施）
+
+| 优先级 | 任务 | 涉及文件 | 状态 |
+|---|---|---|---|
+| P0 | N1 删除事件兜底恢复（三处 `COALESCE(params->>'id', data->>'id')`） | 020 重写 | ✅ 已完成（§9.4） |
+| P0 | N25 `sync_login_log_write` 表名修正（sys_login_log → login_log） | 020 重写 | ✅ 已完成（§9.4） |
+| P0 | N7 `ensure_user` 不再覆盖权威字段（username/name/avatar 空串、is_suspended=false 写回） | 035 重写 / 新迁移 | ✅ 已完成（§9.4） |
+| P0 | N4 REVOKE 镜像表写授权（grant_all §3.5、028）+ D3 死权限点/按钮清理（040/003/044） | grant_all.sql、028、040、044、045（新） | ✅ 已完成（§9.4） |
+| P0 | N6 `webhook_event_log` 落库 + 失败可观测（warn 分支挂告警） | 新迁移 046 | ✅ 已完成（§9.4） |
+| P1 | D2 表结构：role.description、users.profile/ssoIdentities、sync_* 映射 updated_at | 047 | ✅ 已完成（§9.4） |
+| P1 | D4 organization_role 表 + sync_organization_role_* + webhook_logto 分支 + 展示 RPC | 048 | ✅ 已完成（§9.4） |
+| P1 | D5 user_role 加 organization_id + role_id 对齐 + claims 脚本拆 global_roles/org_roles + ensure_user 增量对齐（D6） | 049 + init-logto.py CLAIMS_SCRIPT | ✅ 已完成（§9.4） |
+| P1 | D7 `User.SuspensionStatus.Updated` 分支 + sync_user_suspension（幂等仅改 is_suspended） | 050 | ✅ 已完成（§9.4） |
+| P1 | N5 `rpc_list_tenant_members` ut.created_at → joined_at | 035 重写 | ✅ 已完成（§9.4） |
+| P1 | D9 对账任务：一次性回填（§5.1）+ pg_cron 每日（§5.2），**含 profile/ssoIdentities 补拉**（D2 列的唯一数据来源） | scripts/phase2/reconcile-logto.py（crontab 调度） | ✅ 已完成（§9.4） |
+| P2 | N10-N24 其余治理项（§3/§7 索引） | 051 + 035 + init-apisix-routes.sh + e2e-test.sh + init-logto.py + p1_apply.sh | ✅ 已完成（§9.4） |

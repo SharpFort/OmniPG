@@ -75,10 +75,11 @@ put logto_proxy '{"uri":"/logto/*","upstream":{"type":"roundrobin","nodes":{"app
 #     注意：不可叠加 request-validation（其 JSON 重排会破坏 rawBody 签名）
 #     注意：大 body（>client_body_buffer_size）会落临时文件，须 get_body_file() 回退读取
 WEBHOOK_SIGNING_KEY="${LOGTO_WEBHOOK_SIGNING_KEY:-}"
-export WEBHOOK_SIGNING_KEY
 if [ -z "$WEBHOOK_SIGNING_KEY" ]; then
-  echo "  !! 缺少 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env），webhook 验签将被禁用"
+  echo "  ✗✗ 缺少 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env）——webhook 验签 fail-closed（N15）：拒绝部署" >&2
+  exit 1
 fi
+export WEBHOOK_SIGNING_KEY
 # 用 python 生成路由 JSON（避免 bash 内嵌 Lua 转义地狱）
 cat > .webhook_verify.lua <<'LUA'
 return function(conf, ctx)

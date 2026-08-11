@@ -82,7 +82,7 @@ curl http://localhost:3001/
 ```
 
 **原因**: 
-1. `db/src/sys/functions/check_token_blacklist.sql` 文件存在
+1. `db/src/public/functions/check_token_blacklist.sql` 文件存在
 2. `apply-src.sh` 脚本使用 `psql "$DB_URL"` 方式连接，密码中的特殊字符导致认证失败
 3. 幂等源码未被刷入数据库
 
@@ -98,7 +98,7 @@ docker restart app-postgrest
 
 **手动修复函数**:
 ```bash
-psql -h 127.0.0.1 -U app_owner -d app_db -f db/src/sys/functions/check_token_blacklist.sql
+psql -h 127.0.0.1 -U app_owner -d app_db -f db/src/public/functions/check_token_blacklist.sql
 psql -h 127.0.0.1 -U app_owner -d app_db -c "ALTER FUNCTION check_token_blacklist() SET SCHEMA api_v1_sys;"
 psql -h 127.0.0.1 -U app_owner -d app_db -c "GRANT EXECUTE ON FUNCTION api_v1_sys.check_token_blacklist() TO authenticator;"
 ```
