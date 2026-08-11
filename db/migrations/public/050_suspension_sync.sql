@@ -29,8 +29,8 @@ COMMENT ON FUNCTION sync_user_suspension(text, boolean) IS '封禁状态镜像�
 -- ---------------------------------------------------------------------------
 -- §2 webhook_logto 重写（048 版 + User.SuspensionStatus.Updated 分支）
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS api_v1_sys.webhook_logto(jsonb);
-CREATE FUNCTION api_v1_sys.webhook_logto(jsonb)
+DROP FUNCTION IF EXISTS api_v1_public.webhook_logto(jsonb);
+CREATE FUNCTION api_v1_public.webhook_logto(jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -151,8 +151,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-COMMENT ON FUNCTION api_v1_sys.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 事件落库；N1 删除 ID 三键兜底；D4 OrganizationRole.*；D7 SuspensionStatus.Updated；PostSignIn 失败容忍';
-GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_logto(jsonb) TO web_anon;
+COMMENT ON FUNCTION api_v1_public.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 事件落库；N1 删除 ID 三键兜底；D4 OrganizationRole.*；D7 SuspensionStatus.Updated；PostSignIn 失败容忍';
+GRANT EXECUTE ON FUNCTION api_v1_public.webhook_logto(jsonb) TO web_anon;
 
 -- ---------------------------------------------------------------------------
 -- §3 验证

@@ -56,8 +56,8 @@ USING (is_super_admin());
 -- ---------------------------------------------------------------------------
 -- §2 webhook_logto 重写（N6 落库；N1 删除兜底/N25 表名修复保持）
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS api_v1_sys.webhook_logto(jsonb);
-CREATE FUNCTION api_v1_sys.webhook_logto(jsonb)
+DROP FUNCTION IF EXISTS api_v1_public.webhook_logto(jsonb);
+CREATE FUNCTION api_v1_public.webhook_logto(jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -167,8 +167,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-COMMENT ON FUNCTION api_v1_sys.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 每次调用落 webhook_event_log（success/error/ignored）；N1 删除 ID 取 params 三键兜底；PostSignIn 失败容忍不阻断';
-GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_logto(jsonb) TO web_anon;
+COMMENT ON FUNCTION api_v1_public.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 每次调用落 webhook_event_log（success/error/ignored）；N1 删除 ID 取 params 三键兜底；PostSignIn 失败容忍不阻断';
+GRANT EXECUTE ON FUNCTION api_v1_public.webhook_logto(jsonb) TO web_anon;
 
 -- ---------------------------------------------------------------------------
 -- §3 管理端 RPC（超管专属；payload 含 PII）
@@ -232,7 +232,7 @@ BEGIN
         RAISE EXCEPTION 'event not found' USING ERRCODE = 'P0002';
     END IF;
 
-    v_res := api_v1_sys.webhook_logto(v_payload);
+    v_res := api_v1_public.webhook_logto(v_payload);
     PERFORM log_operate('webhook', 'replay', 'webhook_event_log', p_event_id::text,
                         'success', jsonb_build_object('event', v_event, 'result', v_res));
     RETURN json_build_object('ok', true, 'event', v_event, 'replay', v_res);

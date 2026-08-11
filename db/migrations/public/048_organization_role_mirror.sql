@@ -76,8 +76,8 @@ COMMENT ON FUNCTION sync_organization_role_delete(text) IS '组织角色镜像�
 -- ---------------------------------------------------------------------------
 -- §3 webhook_logto 重写（046 版 + OrganizationRole.* 分支；N1/N6 语义保持）
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS api_v1_sys.webhook_logto(jsonb);
-CREATE FUNCTION api_v1_sys.webhook_logto(jsonb)
+DROP FUNCTION IF EXISTS api_v1_public.webhook_logto(jsonb);
+CREATE FUNCTION api_v1_public.webhook_logto(jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -193,8 +193,8 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
-COMMENT ON FUNCTION api_v1_sys.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 事件落库；N1 删除 ID 三键兜底；D4 OrganizationRole.* 分支；PostSignIn 失败容忍';
-GRANT EXECUTE ON FUNCTION api_v1_sys.webhook_logto(jsonb) TO web_anon;
+COMMENT ON FUNCTION api_v1_public.webhook_logto(jsonb) IS 'Logto webhook 接收入口（验签由网关完成）；N6 事件落库；N1 删除 ID 三键兜底；D4 OrganizationRole.* 分支；PostSignIn 失败容忍';
+GRANT EXECUTE ON FUNCTION api_v1_public.webhook_logto(jsonb) TO web_anon;
 
 -- ---------------------------------------------------------------------------
 -- §4 验证
