@@ -146,8 +146,3 @@ services:
       LOGTO_EXTRA_FRAME_ANCESTOR: "http://localhost:3006"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  # ===========================================================================
-  # Policy Syncer（已迁移至 WSL2 本地 systemd 服务，不再通过 Docker 运行）
-  # 详见: db/casbin-syncer/ + scripts/casbin-syncer.service
-  # ===========================================================================
