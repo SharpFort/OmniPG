@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-08-12
 > **文档类型：** 架构决策记录（ADR）/ 待执行任务清单
-> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0：T1/T2/T3）完成（2026-08-12，verify-055.js 84 断言全绿）→ ⏳ 阶段二（P1）待指令
+> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0）完成 → ✅ 阶段二（P1：T4/T5/T6/T7 + T8 本机部分）完成（2026-08-12，全链 253 断言全绿）→ ⏳ 阶段三（P2）待指令（T8 存量库 apply-src 两遍演练待 WSL 环境）
 > **关联文档：** 05-Logto认证与权限架构-完善版.md、05.2-Admin管理模块函数视图补全分析.md、15-数据库迁移文件治理与合并策略.md、casbin-rbac-best-practices-中文版.md
 > **借鉴来源：** SharpFort.Net（GitHub，最终采纳）、Yi.Abp（gitee，对比）、Admin.NET（gitee，对比）
 > **执行工具：** apply-src.sh（psql 全量幂等重放）+ PGlite 验证链（~/.hermes_tmp/pglite-verify/）
@@ -225,13 +225,13 @@
   - 同批源文件（全链重放约束——055 删表后 src/api_v1 阶段不得残留 iam_api/iam_role_api 引用，否则 42P01 全链失败）：git rm `views/iam_api.sql`、`views/iam_role_api.sql`、`views/v_role_api_detail.sql`；改写 `src/public/views/casbin_rule.sql`（API 段 menu 口径）、`views/v_system_stats.sql`（total_apis 口径）、`rpc/rpc_get_role_permissions.sql`（apis 段菜单口径）、`privileges/grant_all.sql`（移除 5 处 GRANT）
 - [x] ✅ **T3. rpc_create_menu / rpc_update_menu 重建**（随 055 §7.4/7.5 交付）：新签名 +p_api_url/p_api_method/p_is_affix（DROP 旧签名防 PGRST203）；**D8 校验**（button 时强制 router/component 置空——RPC 友好报错 22023 + 表级 CHECK 兜底）；**D6 校验**（api_url 与 api_method 成对 + 值域）；非 button 行权限字段强制 NULL；api_code 格式软校验（含 ':'，P2 可选）；verify-055.js 覆盖全部拒绝/成功路径（12 项 ⑧ 断言）
 
-### 阶段二：联动改造（P1）
+### 阶段二：联动改造（P1）✅ 已完成（2026-08-12）
 
-- [ ] ⬜ **T4. 视图与 RPC 联动**：iam_menu 视图（+3 列）、v_role_menu_detail（+3 列）、get_menu_tree_admin（+5 列）、casbin_rule（API 段改 menu 口径 + 菜单段保留）、get_user_menu（+is_affix）、get_role_permissions（apis 段改"角色菜单下挂接口"）、v_system_stats（total_apis 口径改 button 行 api_url 非空）、rpc_import_csv（白名单移除 iam_api）、grant_all（清理）按 §6 清单更新——**源文件与 055 迁移同批提交（git rm iam_api/iam_role_api/v_role_api_detail 视图源文件）**
-- [ ] ⬜ **T5. 清理类删除**：046 rpc_set_menu_apis、043 API CRUD RPC、024 rpc_set_role_apis、041 两个子树授权 RPC、045 rpc_create_menu_with_api、trg_audit_role_api 置 .deprecated / DROP；**权限点 sys:api:create/update/delete、sys:role-api:bind 清理（含 iam_role_api 绑定行）**
-- [ ] ⬜ **T6. 验证链**：verify-n4-d3.js **保持原样**（历史链回归）；verify-055.js 新建，断言覆盖：① 加列/约束/索引存在性（4 项新约束 + api_code 非唯一索引）② 数据迁移完整性（有码行一一对应：api_url+api_method 差集 = 0；无码/死端点行清除后无残留）③ role_api→role_menu 绑定转换（逐角色抽查，有码行绑定不缩水）④ has_permission 单通道行为（超管短路 / role_menu 绑定 / 未绑拒绝 / 一码多行 EXISTS 语义）⑤ casbin_rule 双段语义（API 段 menu 口径 + 菜单段保留）⑥ information_schema 无 iam_api/iam_role_api + 无依赖残留 ⑦ 幂等重放两遍；test_casbin_view.sql 更新（第 5 条断言 JOIN iam_menu）
-- [ ] ⬜ **T7. 全链验证**：`npm run test` 全绿（断言数 ≥ 152 + verify-055 新增断言数）
-- [ ] ⬜ **T8. 存量库演练**：WSL Pigsty 执行 apply-src 全量重放两遍（第一遍验证历史链 040/044/045 + 055，第二遍验证幂等）；grep 全仓确认无 `FROM public.iam_api` / `FROM iam_role_api` / `ON iam_role_api` 残留（.deprecated 除外）
+- [x] ✅ **T4. 视图与 RPC 联动**：`views/iam_menu.sql`（+api_url/api_method/is_affix）、`v_role_menu_detail.sql`（+3 列）、`rpc_get_menu_tree_admin.sql`（+menu_type/api_code/api_url/api_method/is_affix——授权弹窗数据源）、`get_user_menu.sql`（+is_affix）、`rpc_import_csv.sql`（白名单移除 iam_api）按 §6 清单更新；casbin_rule/v_system_stats/get_role_permissions/grant_all 已在 P0 同批完成；**审查遗漏 2 处当场发现并修复**：`v_role_list.sql`（api_count 子查询引用 iam_role_api——api_v1 阶段重放 42P01，改为"角色绑定的带端点按钮数"）、`src/public/privileges/rls_policies.sql`（iam_api/iam_role_api RLS 策略段——src 阶段重放 42P01，删除并留 055 注释）；verify-t4-src.js（11 断言）覆盖 7 个联动源文件重放
+- [x] ✅ **T5. 清理类删除**：`trg_audit_role_api.sql` → `.deprecated`（git mv，引用已删表）；046 rpc_set_menu_apis / 043 API CRUD RPC / 024 rpc_set_role_apis / 041×2 / 045 rpc_create_menu_with_api 均无源文件（函数仅迁移层定义），055 §1 已 DROP；权限点 sys:api:create/update/delete、sys:role-api:bind 及绑定行已随 055 §4.1 清理
+- [x] ✅ **T6. 验证链**：verify-n4-d3.js 保持原样（历史链回归）；verify-055.js（84 断言）+ verify-t4-src.js（11 断言）已入链；`test_casbin_view.sql` §5 改 JOIN iam_menu 口径；**pgTAP 测试同步更新**（make test-db 依赖）：`01_schema_test.sql`（plan 67→62：iam_api/iam_role_api → hasnt_table，+iam_menu 端点/固定标签列断言，索引断言改 iam_menu 口径，删 role_api FK 断言）、`05_rls_test.sql`（plan 12：iam_api/iam_role_api RLS 断言 → "已删除"断言，iam_api 激活项可读 → iam_menu 端点行可读）
+- [x] ✅ **T7. 全链验证**：`npm run test` 全绿 **253 断言 / 0 失败**（verify-020/ensure-user/n4-d3/n6/p1/p2/052/053/054/t1-precheck/055/t4-src + test_step5 + test_reconcile），含 verify-055 幂等两遍
+- [ ] ⬜ **T8. 存量库演练**（本机部分完成）：grep 全仓复查无 `FROM public.iam_api` / `FROM iam_role_api` / `ON iam_role_api` 代码引用残留（.deprecated 除外；仅历史迁移 009-054 保留——apply-src 重放循环设计内）；**WSL Pigsty apply-src 全量重放两遍 + pgTAP（make test-db）待用户环境执行**（本机无 psql/存量库）
 
 ### 阶段三：前端与收尾（P2）
 
@@ -263,6 +263,7 @@
 | v1.0 | 2026-08-12 | 初稿：SharpFort 单表模型决策（D1-D7）+ 实施清单 |
 | v1.1 | 2026-08-12 | **独立审查吸收（docs/审查文档/16-审查-菜单权限单表化SharpFort模型.md）**：① 用户拍板 D8（按钮行导航置空 CHECK，借鉴 Admin.NET CheckMenuParam 服务端强制 → 表级化）、D9（遗留无码行/死端点行直接清除，彻底重构不兼容遗留）、D10（删除 041 子树授权 RPC）；② D6 强化（api_method 非空 + 值域约束含 '*'）；③ 删除对象清单补全（024 rpc_set_role_apis、041×2、045 rpc_create_menu_with_api、三个暴露视图源文件、权限点 sys:api:*/sys:role-api:bind）；④ casbin_rule 双段语义明确（菜单段保留）；⑤ T2 DROP 顺序显式化（FK 依赖）；⑥ verify-n4-d3.js 处置修正（保持原样，新建 verify-055.js）；⑦ get_role_permissions 源文件状态查明；⑧ 影响面补 v_role_menu_detail / get_menu_tree_admin；⑨ 验收标准 2/4/6 修正 + 新增 9/10 |
 | v1.2 | 2026-08-12 | **阶段一（P0）实施完成记录**：① T1 冻结（precheck 脚本 + 静态基线文档 + verify-t1-precheck.js 8/8 入链；存量库实测回填留待 T8）；② 055 迁移交付（结构 §1-§10，verify-055.js 84 断言两遍幂等全绿，已入验证链）；③ 实施细化两项——非 button 行 api_code 强制 NULL（Admin.NET CheckMenuParam 语义扩展，D8 镜像）、D8 约束前置清理存量 button 导航字段（§2.5，否则 CHECK 创建失败）；④ **全链重放约束 → 4 个源文件提前至 P0 同批**（casbin_rule / v_system_stats / rpc_get_role_permissions / grant_all——055 删表后 src/api_v1 阶段残留 iam_api 引用会 42P01，v1.1 中标注 P1 的这几项实际必须随 055 同批提交）；⑤ 验收标准 7 提前达成（npm run test 全链绿，断言数 152+84） |
+| v1.3 | 2026-08-12 | **阶段二（P1）实施完成记录**：① T4 五源文件联动（iam_menu 视图/v_role_menu_detail/get_menu_tree_admin/get_user_menu/rpc_import_csv）；② **审查遗漏 2 处当场发现修复**——v_role_list.sql（api_count 引用 iam_role_api）、rls_policies.sql（iam_api/iam_role_api RLS 段），均为 src/api_v1 阶段重放 42P01 炸弹；③ T5 trg_audit_role_api.sql → .deprecated；④ T6 pgTAP 同步更新（01_schema_test plan 62 / 05_rls_test plan 12 到 055 语义）+ verify-t4-src.js（11 断言）入链；⑤ T7 全链 253 断言全绿；⑥ T8 本机部分完成（grep 全仓干净），WSL apply-src 两遍演练待用户环境 |
 
 ---
 

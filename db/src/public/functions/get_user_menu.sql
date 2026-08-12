@@ -5,6 +5,7 @@
 --      button 按钮项（033 回填的按钮项若绑定进 iam_role_menu 会混入路由注册）
 -- 038: +is_link/is_iframe/keep_alive/redirect/query/route_name——前端 MenuProcessor
 --      外链判改用 is_link 直判（不再靠 path LIKE http% hack），keep_alive→meta.keepAlive
+-- 055: +is_affix——前端多页签布局固定标签（可选消费）
 
 CREATE OR REPLACE FUNCTION get_user_menu()
 RETURNS json
@@ -26,7 +27,8 @@ BEGIN
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
-            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name
+            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name,
+            m.is_affix
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         WHERE rm.role_code IN (SELECT jsonb_array_elements_text(v_roles))
@@ -37,7 +39,8 @@ BEGIN
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
-            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name
+            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.query, m.route_name,
+            m.is_affix
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
         JOIN menu_cte c ON m.parent_id = c.id
@@ -50,6 +53,7 @@ BEGIN
             c.id, c.parent_id, c.name, c.path,
             c.menu_type, c.perms, c.is_visible, c.component,
             c.is_link, c.is_iframe, c.keep_alive, c.redirect, c.query, c.route_name,
+            c.is_affix,
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
         ORDER BY c.order_num
@@ -58,4 +62,4 @@ BEGIN
     RETURN v_menu_tree;
 END;
 $$;
-COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（038: +is_link/is_iframe/keep_alive/redirect/query/route_name——前端外链判改用 is_link 直判，keep_alive→meta.keepAlive）';
+COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（055: +is_affix——多页签固定标签，前端可选消费）';

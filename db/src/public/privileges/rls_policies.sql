@@ -88,17 +88,8 @@ USING (tenant_id = current_tenant_id())
 WITH CHECK (tenant_id = current_tenant_id());
 
 -- =============================================================================
--- iam_api 自主表：系统级共享，所有认证用户可读
--- =============================================================================
-ALTER TABLE iam_api ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS api_read_policy ON iam_api;
-CREATE POLICY api_read_policy ON iam_api
-FOR SELECT
-USING (is_active = TRUE);
-
--- =============================================================================
 -- iam_menu 自主表：系统级共享，所有认证用户可读
+-- （055 单表化：iam_api/iam_role_api 已删除，其 RLS 策略随表删除，此处移除）
 -- =============================================================================
 ALTER TABLE iam_menu ENABLE ROW LEVEL SECURITY;
 
@@ -108,15 +99,9 @@ FOR SELECT
 USING (is_active = TRUE);
 
 -- =============================================================================
--- iam_role_api / iam_role_menu 自主表：系统级共享读（绑定数据）
+-- iam_role_menu 自主表：系统级共享读（绑定数据）
+-- （055 单表化：iam_role_api 已删除，其 RLS 策略随表删除，此处移除）
 -- =============================================================================
-ALTER TABLE iam_role_api ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS role_api_read_policy ON iam_role_api;
-CREATE POLICY role_api_read_policy ON iam_role_api
-FOR SELECT
-USING (true);
-
 ALTER TABLE iam_role_menu ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS role_menu_read_policy ON iam_role_menu;

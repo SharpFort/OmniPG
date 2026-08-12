@@ -1,11 +1,12 @@
 -- db/api_v1/public/rpc/rpc_import_csv.sql
 -- 通用导入 RPC（035 重写：显式业务表白名单 + jsonb_populate_record 参数化）
--- 来源: 20260707000014_auth_rpc_functions.sql → T7 → 029 门槛 → 035 安全重写
+-- 来源: 20260707000014_auth_rpc_functions.sql → T7 → 029 门槛 → 035 安全重写 → 055 白名单调整
 --
 -- 安全约束（035）:
 --   1. 显式白名单：仅业务自主表（department/position/user_position/
---      dict_type/dict_data/iam_menu/iam_api）——镜像表（users/tenants/
---      user_tenants/role/user_role）、审计/日志/绑定表一律禁止导入
+--      dict_type/dict_data/iam_menu）——镜像表（users/tenants/
+--      user_tenants/role/user_role）、审计/日志/绑定表一律禁止导入；
+--      055 单表化：iam_api 已删除，白名单移除（端点信息并入 iam_menu）
 --   2. 参数化插入：jsonb_populate_record 单行插入（类型安全、列名安全、
 --      JSON null → NULL；原实现值拼接无引号 = 注入面 + null 错位）
 --   3. sys:import 权限点门槛（029 seed + 绑定超管）
@@ -23,7 +24,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_allow    text[] := ARRAY['department','position','user_position',
-                               'dict_type','dict_data','iam_menu','iam_api'];
+                               'dict_type','dict_data','iam_menu'];
     v_item     jsonb;
     v_inserted int := 0;
     v_errors   text[] := '{}';

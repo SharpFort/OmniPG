@@ -51,8 +51,9 @@ SELECT results_eq(
 -- 5. 非 activate API 过滤
 -- ============================================================
 -- 验证 is_active = false 的 API 不会出现在视图中
+-- 055 单表化：API 段数据源 = iam_role_menu → iam_menu（button 行 api_url/api_method）
 SELECT results_eq(
-    $$ SELECT count(*) FROM casbin_rule c JOIN iam_api a ON c.v1 = a.path AND c.v2 = a.method WHERE a.is_active = false $$,
+    $$ SELECT count(*) FROM casbin_rule c JOIN iam_menu m ON c.v1 = m.api_url AND c.v2 = m.api_method WHERE m.is_active = false $$,
     ARRAY[0::bigint],
     '禁用的 API 不会出现在 casbin_rule 视图中'
 );

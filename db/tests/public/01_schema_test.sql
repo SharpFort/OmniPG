@@ -1,15 +1,15 @@
--- 01_schema_test.sql：表/列/约束存在性验证（T7 重写：Logto 镜像表 + 自主表）
+-- 01_schema_test.sql：表/列/约束存在性验证（T7 重写：Logto 镜像表 + 自主表；055 单表化调整）
 BEGIN;
-SELECT plan(67);
+SELECT plan(62);
 
--- 1. 表存在性（13 张：镜像表 + 自主表 + 业务表）
+-- 1. 表存在性（12 张：镜像表 + 自主表 + 业务表；055: iam_api/iam_role_api 已删除 → hasnt_table）
 SELECT has_table('users');
 SELECT has_table('tenants');
 SELECT has_table('user_tenants');
 SELECT has_table('role');
-SELECT has_table('iam_api');
+SELECT hasnt_table('iam_api');
 SELECT has_table('iam_menu');
-SELECT has_table('iam_role_api');
+SELECT hasnt_table('iam_role_api');
 SELECT has_table('iam_role_menu');
 SELECT has_table('user_profile');
 SELECT has_table('department');
@@ -17,7 +17,7 @@ SELECT has_table('app_config');
 SELECT has_table('audit_log');
 SELECT has_table('cron_job_log');
 
--- 2. 关键列存在性（镜像表 + 自主表）
+-- 2. 关键列存在性（镜像表 + 自主表；055: +iam_menu 端点/固定标签列）
 SELECT has_column('users', 'id');
 SELECT has_column('users', 'username');
 SELECT has_column('users', 'is_suspended');
@@ -29,13 +29,11 @@ SELECT has_column('role', 'id');
 SELECT has_column('role', 'name');
 SELECT has_column('role', 'role_code');
 SELECT has_column('role', 'type');
-SELECT has_column('iam_api', 'path');
-SELECT has_column('iam_api', 'method');
-SELECT has_column('iam_api', 'name');
 SELECT has_column('iam_menu', 'menu_name');
 SELECT has_column('iam_menu', 'parent_id');
-SELECT has_column('iam_role_api', 'role_code');
-SELECT has_column('iam_role_api', 'api_id');
+SELECT has_column('iam_menu', 'api_url');
+SELECT has_column('iam_menu', 'api_method');
+SELECT has_column('iam_menu', 'is_affix');
 SELECT has_column('iam_role_menu', 'role_code');
 SELECT has_column('iam_role_menu', 'menu_id');
 
@@ -60,12 +58,12 @@ SELECT ok(
     'role.name 有唯一索引');
 
 SELECT ok(
-    (SELECT count(*) >= 1 FROM pg_indexes WHERE tablename='iam_api' AND indexdef ILIKE '%UNIQUE%path%method%'),
-    'iam_api(path,method) 有唯一索引');
+    (SELECT count(*) >= 1 FROM pg_indexes WHERE tablename='iam_menu' AND indexdef ILIKE '%idx_iam_menu_api_url_method%'),
+    'iam_menu(api_url,api_method) 有部分唯一索引（055）');
 
 SELECT ok(
-    (SELECT count(*) >= 1 FROM pg_indexes WHERE tablename='iam_role_api' AND indexdef ILIKE '%UNIQUE%role_code%api_id%'),
-    'iam_role_api(role_code,api_id) 有唯一索引');
+    (SELECT count(*) >= 1 FROM pg_indexes WHERE tablename='iam_menu' AND indexdef ILIKE '%idx_iam_menu_api_code%'),
+    'iam_menu(api_code) 有索引（一码多端点，055）');
 
 SELECT ok(
     (SELECT count(*) >= 1 FROM pg_indexes WHERE tablename='iam_role_menu' AND indexdef ILIKE '%UNIQUE%role_code%menu_id%'),
@@ -76,7 +74,6 @@ SELECT fk_ok('user_tenants', 'user_id', 'users', 'id');
 SELECT fk_ok('user_tenants', 'organization_id', 'tenants', 'id');
 SELECT fk_ok('user_profile', 'user_id', 'users', 'id');
 SELECT fk_ok('user_profile', 'tenant_id', 'tenants', 'id');
-SELECT fk_ok('iam_role_api', 'api_id', 'iam_api', 'id');
 SELECT fk_ok('iam_role_menu', 'menu_id', 'iam_menu', 'id');
 
 -- 6. Casdoor 时代表已移除
