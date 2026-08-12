@@ -12,6 +12,7 @@
 > - N4：**空白业务、无历史数据** → 业务侧授权数据（iam_api / iam_menu / iam_role_api / iam_role_menu）全新设计，**无任何兼容/迁移考虑**；Casdoor 时代资产一律不迁移（§10.2）
 >
 > **修订记录**：
+> - v3.11（2026-08-12）— **055 菜单权限单表化（SharpFort 模型）变更标注**：`iam_api` / `iam_role_api` 两表已删除，权限点与 API 端点**内嵌 `iam_menu` 按钮行**（+api_url/api_method/is_affix 三列，SharpFort Menu.cs 单表模型）；授权绑定单表化（仅 `iam_role_menu`，has_permission 单通道）；`casbin_rule` 视图 API 段数据源改为 role_menu→button 行；API 管理页并入菜单管理（前端 OmniAdmin 同步）。**本文件正文中 `iam_api` / `iam_role_api` / `v_role_api_detail` 引用均已过时**，以 16-菜单权限单表化-SharpFort模型-决策与实施清单.md 为准（关键段落已就地标注 ⚠️）
 > - v3.10（2026-08-07）— **前端对齐方案 §2.7 验证计划定稿（v1.7）**：分层验证结构（前置条件 P-1~P-7 → 静态检查 → 认证流 A → 权限矩阵 B → 页面数据 C → 边界 D）；与全托管认证/按钮矩阵/JIT 首登/token 静默刷新对齐；拍板项：tenant_admin 账号用户 Console 创建、Resend/SMTP connector 配置（完整验证认证流）、Playwright chromium 安装；§四 风险修订（删除"v_user_roles 仅超管完整"过时条目——v1.5 确认视图全量可见；补充视图全量可见性既定模型、organization_id claim 核对、connector 依赖、密码策略存量账号不受限）
 > - v3.9（2026-08-07）— **前端对齐方案 §2.1 认证流程定稿（Logto 全托管）**：① 忘记密码改 Logto 托管（原"联系管理员"错误方案——官方 end-user-flows/reset-password 确认：Console 配置 Email/SMS connector + Password 登录方式 + Forgot password 验证方式后，托管登录页自动显示忘记密码链接，全流程托管）；② `signIn(redirectUri, 'signUp')` 字符串枚举签名（@logto/vue 3.0.13 实包核实，原对象格式会 TS 报错）；③ 前端注册页/忘记密码页删除，登录页仅两按钮（登录/注册模式）；④ 密码策略 = Logto Console > Security > Password policy 配置（NIST：最小长度 8、最小字符类型 1/4 不强制组合、HIBP 泄露检查、重复/用户信息检查、不强制定期改密；登录限速与改密清会话为内置）；⑤ scopes 补 Email/Phone（roles/organizations 默认在 ID token）；⑥ organization_id custom claim 核对项（后端 current_tenant_id 依赖单值 claim）
 > - v3.8（2026-08-07）— **前端对齐方案 §2.5/§2.6 审查修复（035 补丁）**：① **is_super_admin P0 重建**——030 声称修复但漏改（只重建 current_user_roles），Casdoor 旧版（isGlobalAdmin/isAdmin + roles[].name 对象数组）在 Logto 字符串数组下恒 false → RLS 超管豁免/has_permission 短路全线失效（被 011 全量绑定掩盖）；新定义 = current_user_roles() @> ARRAY['role_super_admin']；② **rpc_create_menu +p_is_visible**（业界实践：RuoYi/Admin.NET 新增表单含显示状态，创建时一次提交；iam_menu.is_visible 022 已存在无需改表）；③ v_role_users JOIN 键清晰化（r.name → r.role_code，生成列恒等原写法碰巧正确）；④ 视图全量可见性确认 = owner 权限模型（绕过 012 RLS）为既定设计，invoker 化修复记入遗留 P1
@@ -40,6 +41,8 @@
 ## 1. 决策摘要
 
 **一句话**：Logto（自部署 OSS）承担认证（AuthN）+ 组织（租户）容器 + **角色目录与角色分配管理**；授权（AuthZ）判定在 PG。JWT 由 Logto 直接签发，**Custom Token Claims 脚本从 context 提取该用户在当前组织的角色注入 `roles` claim（零 fetch，JWT 一步生成）**；网关 `jwt-auth`（Logto JWKS）+ 自定义 Lua 插件 `authz-role-check` 做路由级角色检查；PG RLS 直接消费 `sub / organization_id / roles` claims；角色→业务权限绑定（iam_role_api / iam_menu）为业务侧**全新自主数据**（N4）。**无自建 token-exchange 服务、无脚本 fetch、无角色同步管道**，用户数彻底退出授权路径。
+
+> ⚠️ **[055 单表化（2026-08-12）]** 角色→业务权限绑定已改为**单表 `iam_role_menu`**（iam_role_api 删除；权限点/API 端点内嵌 iam_menu 按钮行）——详见 16 号文档
 
 ### 1.1 决策点总表
 
@@ -173,7 +176,7 @@
 | Logto（自部署 OSS v1.42） | 认证（密码/验证码/微信/第三方）、组织（租户）与成员管理、**角色目录 CRUD / 用户↔角色分配**、签发 JWT | Application（clientId/secret、redirectUri）、社交连接器（wechat-web/native）、webhook 指向 PostgREST RPC、组织模板角色（tenant_admin/editor/viewer 等）、全局角色、access-token Custom Token Claims 脚本（context 版）、access token 寿命 15 分钟 |
 | APISIX | jwt-auth（Logto JWKS 验签）+ authz-role-check（required_roles） | Logto `/.well-known/jwks`；路由级 `required_roles`（静态配置） |
 | PostgREST | 业务 API 层 | JWKS 指向 Logto；`request.jwt.claims` 注入（组织 token 的 organization_id） |
-| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 + admin 系统管理表 | 镜像：users/tenants/user_tenants/role/user_role；授权：iam_api/iam_menu/iam_role_api/iam_role_menu；系统管理：app_config/audit_log/cron_job_log/department/user_profile/position/user_position/dict_type/dict_data/login_log/ip_region_v4（019 迁移，05.1 定稿）；RLS 策略 |
+| PostgreSQL | 业务数据 + 授权判定（RLS/has_permission）+ 镜像表 + 业务自主绑定表 + admin 系统管理表 | 镜像：users/tenants/user_tenants/role/user_role；授权：iam_menu（权限点/端点内嵌按钮行，055 单表化）/ iam_role_menu；系统管理：app_config/audit_log/cron_job_log/department/user_profile/position/user_position/dict_type/dict_data/login_log/ip_region_v4（019 迁移，05.1 定稿）；RLS 策略 |
 | 前端 | Logto SDK 登录 + token 管理 + 菜单缓存 | SDK（react/vue）、axios 拦截器、`rpc_get_user_permissions` 登录时查一次 |
 
 ---
@@ -301,6 +304,8 @@ USING (
 - 全程读 claims，字符串比较微秒级，无角色/用户表查询（04.6 §5.7 同款）
 - `has_permission(code)`：RPC 内显式调用，claims roles + iam_role_api 小表索引查询（角色数×权限数 ≤ 5 万行，与用户数无关）
 
+> ⚠️ **[055 单表化（2026-08-12）]** `has_permission` 已改单通道：claims roles ∩ iam_role_menu → iam_menu.api_code（button 行）；iam_role_api 查询路径删除——详见 16 号文档
+
 ### 机制 4：实体数据同步（Logto Webhooks，v1 事件表修正版）
 
 #### 4.1 禁止使用 `CREATE ROLE`（保留 v1 要点）
@@ -382,6 +387,8 @@ END $$;
 | **① Logto 权威** | 用户、组织（租户）、组织成员、**角色目录**、**用户↔角色分配**、组织成员↔组织角色分配 | Logto | — | 经 webhook / JIT / Management API 投影到 ② |
 | **② PG 镜像**（只读投影） | users、tenants、user_tenants、role（角色目录）、user_role（分配） | Logto | 镜像表（业务只读） | User.* / Organization.* / Membership / Role.* webhook + JIT 建档 + 分配 JIT 覆盖 + 对账（§4.5、§6.5） |
 | **③ PG 自主**（业务真相源，**全新建**） | iam_api（权限点目录）、iam_menu（菜单树）、iam_role_api（角色→API 绑定）、iam_role_menu（角色→菜单绑定） | **业务 PG** | 业务直接写 | 无（不依赖 Logto） |
+
+> ⚠️ **[055 单表化（2026-08-12）]** ③ 已收敛为两表：`iam_menu`（权限点+端点内嵌按钮行）+ `iam_role_menu`（唯一绑定表）——详见 16 号文档
 | **④ 授权判定** | 网关 required_roles / RLS / has_permission | PG 执行 | 读 claims + ③ 小表 | 零查询（claims）+ 小表索引 |
 
 **关键原则**：
@@ -448,7 +455,7 @@ Logto（权威：Console / Management API 分配）        PG user_role（镜像
 |:---|:---|:---|:---|
 | E1 | pg_session_jwt 替代网关 jwt-auth + authz-role-check | ❌ **不采纳** | PG 端解析已由 PostgREST 完成（验签 + 注入 `request.jwt.claims`），pg_session_jwt（Supabase 扩展）功能重复且面向"无 PostgREST 直连"场景；网关是分层防御（未授权请求不占 PG 连接、保护 PostgREST 表级暴露端点、统一 401/限流/审计）。**P2 备选**：仅当出现非 PostgREST 入口（如内部任务需带身份）时按需引入 |
 | E2 | 表前缀（v2.3 定稿：备选方案 B） | ✅ **无前缀 = 平台基础域（Logto 镜像只读 + 系统管理可写），`iam_` = 授权域** | `public_` 与 PG 保留概念冲突。**命名规则：无前缀 = 平台基础域：`users` / `tenants` / `user_tenants` / `role` / `user_role`（Logto 镜像，只读）+ `app_config` / `audit_log` / `cron_job_log` / `department` / `user_profile` / `position` / `dict_type` / `dict_data` / `login_log` / `ip_region_v4`（系统管理，可写）；`iam_` 前缀 = 授权域（可写）：`iam_api` / `iam_menu` / `iam_role_api` / `iam_role_menu`**（v2.2 修正镜像统一无前缀；v2.3 采纳备选 B，系统表保持无前缀） |
-| E3 | casbin_rule 视图 vs 直接自主表；Redis 缓存 | ✅ **视图并存（表真相源 + 视图投影）；❌ Redis 不采纳** | 视图查询时内联 = 底层表查询，**性能等价**；`casbin_rule` 视图（v0=role_code, v1=资源, v2=action，排除用户维度）作为 iam_role_api/iam_role_menu 的只读投影供 rpc_get_user_permissions 消费。Redis 收益 ≈ 0.1ms 小表索引查询，成本 = 缓存失效管道 + 一致性负担，违背无状态原则；**正确演进方向 = perms-in-JWT**（P2-16，Logto scope claim 原生，授权判定零查询且无缓存一致性问题） |
+| E3 | casbin_rule 视图 vs 直接自主表；Redis 缓存 | ✅ **视图并存（表真相源 + 视图投影）；❌ Redis 不采纳** | 视图查询时内联 = 底层表查询，**性能等价**；`casbin_rule` 视图（v0=role_code, v1=资源, v2=action，排除用户维度）作为 iam_role_api/iam_role_menu 的只读投影供 rpc_get_user_permissions 消费。Redis 收益 ≈ 0.1ms 小表索引查询，成本 = 缓存失效管道 + 一致性负担，违背无状态原则；**正确演进方向 = perms-in-JWT**（P2-16，Logto scope claim 原生，授权判定零查询且无缓存一致性问题）⚠️ **[055 单表化（2026-08-12）]** casbin_rule 视图保留但改为**双段投影**：API 段 = role_menu→button 行（v1=api_url/v2=api_method），菜单段 = role_menu→菜单行（v1=router/v2='menu'）——详见 16 号文档 |
 | E5 | role 镜像加 role_code 列 | ⚠️ **部分采纳（生成列，勿独立映射）** | role_code = Logto 角色名（F20 唯一），绑定表（iam_role_api/iam_role_menu）直接以 role_code 为 join key（已是现状）；镜像表如需语义化列名用**生成列** `role_code text GENERATED ALWAYS AS (name) STORED`，单一真相源，不引入独立映射 |
 
 ---

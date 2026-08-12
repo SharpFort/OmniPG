@@ -237,7 +237,7 @@
 
 - [x] ✅ **T9. 前端菜单管理**（OmniAdmin 仓库，main 分支）：`menu-dialog.vue` 表单 +api_url/api_method/is_affix（api_method 下拉值域对齐 D6 八值：GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/*）；**menu_type=button 时导航字段（router/component/redirect/query/route_name）watch 清空 + 提交时强制 NULL**（对齐 D8 服务端语义）；接口管理页并入菜单管理（git rm `views/system/api/` 三文件 + 路由 Api 块 + locales key）；`MenuAdminNode` +3 字段；删除 046 绑定接口选择器（setMenuApis 已删）与 040 权限码软校验（055 后权限点=按钮行自身，一码多端点合法）；`menu/index.vue` 改纯菜单树（按钮行 api_method 徽标 + 接口列 api_url）；`system-manage.ts` createMenu/updateMenu +3 参数
 - [x] ✅ **T10. 授权弹窗**（`role-permission-dialog.vue` 重写）：菜单树勾选 = **唯一授权通道**（删除 API 权限 tab / 041 一键授权联动 / setRoleApis 保存通道——保存只走 rpc_set_role_menus 全量覆盖）；按钮叶子行内展示 api_code + api_url/api_method；父子联动保留（checked + halfChecked 合并）；保存按钮 v-perm 改 `sys:role-menu:bind`；数据源 = GET /iam_menu 视图全列 + 前端组树（get_role_permissions.menus 回显）
-- [ ] ⬜ **T11. 文档同步**（进行中）：本文档状态勾选 + 修订记录 v1.4 ✅；05-Logto认证与权限架构 关联段落标注变更 ⬜；15 号文档 M4 验证链重构条目同步 ⬜（055 后验证链文件清单变化）
+- [x] ✅ **T11. 文档同步**：本文档状态勾选 + 修订记录 v1.4 ✅；05-Logto认证与权限架构 关联段落标注 ✅（修订记录 v3.11 + 5 处核心段落就地标注：一句话概述/表清单/has_permission/③ PG 自主/E3 casbin_rule）；15 号文档 M4 验证链重构条目同步 ✅（验证链 12 JS + 2 PY 共 253 断言基线、验收标准 3 更新、涉及范围 55 文件）
 - [x] ✅ **实施中发现（审查清单外）**：`usePermission.ts` 通道1 数据源 v_role_api_detail → **v_role_menu_detail**（该视图随 055 删除，不改则前端 v-perm 权限码收集 404 全哑）——RoleApiPerm 类型同步改为 RoleMenuPerm；`useAuth.ts` 注释同步
 - [x] ✅ **构建验证**：pnpm build（vue-tsc + vite）全绿；auto-imports.d.ts 由 vite 生成（gitignore 约定，clean clone 首次需先跑 vite）
 - [ ] ⬜ **前端提交**：commit 被 commitlint body-max-line-length 拦截（body 行 >100 字符），短 body 重提后 push 待执行
