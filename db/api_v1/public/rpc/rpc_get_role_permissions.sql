@@ -1,7 +1,9 @@
--- db/api_v1/sys/rpc/rpc_get_role_permissions.sql
+-- db/api_v1/public/rpc/rpc_get_role_permissions.sql
 -- 获取角色权限 RPC（T7 重写: Logto 语义 role 镜像 + iam_role_api→iam_api + iam_role_menu→iam_menu）
+-- 055 重写: 单表化后 apis 段 = 角色菜单下挂接口（role_menu → button 行 api_url 非空），
+--           输出键 path/method/api_name 保持——前端授权弹窗契约不变
 -- 入参: p_role_code text（Logto 角色名 = role_code）
--- 来源: 20260707000015_system_management_api.sql → T7 适配
+-- 来源: 20260707000015_system_management_api.sql → T7 适配 → 055 单表化
 
 DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(uuid);
 DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(text);
@@ -21,13 +23,14 @@ BEGIN
         RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
     END IF;
 
+    -- 055 单表化：API 授权 = 角色绑定按钮行中带端点的行
     SELECT COALESCE(json_agg(
-        json_build_object('id', a.id, 'path', a.path, 'method', a.method, 'api_name', a.name)
-        ORDER BY a.path
+        json_build_object('id', m.id, 'path', m.api_url, 'method', m.api_method, 'api_name', m.menu_name)
+        ORDER BY m.api_url
     ), '[]'::json) INTO v_apis
-    FROM iam_role_api ra
-    JOIN iam_api a ON ra.api_id = a.id
-    WHERE ra.role_code = p_role_code AND a.is_active;
+    FROM iam_role_menu rm
+    JOIN iam_menu m ON rm.menu_id = m.id
+    WHERE rm.role_code = p_role_code AND m.is_active AND m.api_url IS NOT NULL;
 
     SELECT COALESCE(json_agg(
         json_build_object('id', m.id, 'name', m.menu_name, 'parent_id', m.parent_id,
@@ -50,4 +53,5 @@ BEGIN
     );
 END;
 $$;
+COMMENT ON FUNCTION api_v1_public.get_role_permissions(text) IS '获取角色权限（055 单表化: apis 段 = 角色菜单下挂接口，输出键 path/method/api_name 保持）';
 GRANT EXECUTE ON FUNCTION api_v1_public.get_role_permissions(text) TO authenticated;

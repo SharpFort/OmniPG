@@ -9,10 +9,8 @@
 GRANT SELECT ON api_v1_public.department TO authenticated;
 GRANT SELECT ON api_v1_public.users TO authenticated;
 GRANT SELECT ON api_v1_public.role TO authenticated;
-GRANT SELECT ON api_v1_public.iam_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_menu TO authenticated;
 GRANT SELECT ON api_v1_public.user_tenants TO authenticated;  -- 034: 原 user_role 更名
-GRANT SELECT ON api_v1_public.iam_role_api TO authenticated;
 GRANT SELECT ON api_v1_public.iam_role_menu TO authenticated;
 GRANT SELECT ON api_v1_public.audit_log TO authenticated;
 GRANT SELECT ON api_v1_public.cron_job_log TO authenticated;
@@ -25,7 +23,6 @@ GRANT SELECT ON api_v1_public.v_role_list TO authenticated;
 GRANT SELECT ON api_v1_public.v_dept_list TO authenticated;
 GRANT SELECT ON api_v1_public.v_system_stats TO authenticated;
 GRANT SELECT ON api_v1_public.v_user_role_detail TO authenticated;
-GRANT SELECT ON api_v1_public.v_role_api_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_role_menu_detail TO authenticated;
 GRANT SELECT ON api_v1_public.v_audit_log_timeline TO authenticated;
 GRANT SELECT ON api_v1_public.v_audit_log_detail TO authenticated;
@@ -56,9 +53,7 @@ GRANT INSERT, UPDATE ON api_v1_public.department TO role_admin;
 -- N4（2026-08-11）: 镜像表视图写授权撤销（镜像只读原则；写入通道仅 sync_*/JIT/对账）
 REVOKE INSERT, UPDATE ON api_v1_public.users FROM role_admin;
 REVOKE INSERT, UPDATE ON api_v1_public.role FROM role_admin;
-GRANT INSERT, UPDATE ON api_v1_public.iam_api TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_public.iam_menu TO role_admin;
-GRANT INSERT, UPDATE ON api_v1_public.iam_role_api TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_public.iam_role_menu TO role_admin;
 GRANT INSERT, UPDATE ON api_v1_public.app_config TO role_admin;
 GRANT USAGE ON SCHEMA api_v1_public TO role_admin;

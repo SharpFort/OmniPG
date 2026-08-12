@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-08-12
 > **文档类型：** 架构决策记录（ADR）/ 待执行任务清单
-> **状态：** ✅ 决策已拍板 → ⏳ 待实施（按 P0 → P1 → P2 逐项推进，每项等用户指令）
+> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0：T1/T2/T3）完成（2026-08-12，verify-055.js 84 断言全绿）→ ⏳ 阶段二（P1）待指令
 > **关联文档：** 05-Logto认证与权限架构-完善版.md、05.2-Admin管理模块函数视图补全分析.md、15-数据库迁移文件治理与合并策略.md、casbin-rbac-best-practices-中文版.md
 > **借鉴来源：** SharpFort.Net（GitHub，最终采纳）、Yi.Abp（gitee，对比）、Admin.NET（gitee，对比）
 > **执行工具：** apply-src.sh（psql 全量幂等重放）+ PGlite 验证链（~/.hermes_tmp/pglite-verify/）
@@ -212,15 +212,18 @@
 
 > 状态列：⬜ 待办 / ✅ 完成。按 P0 → P1 → P2 逐项实施，**每项完成等用户指令再进下一步**。
 
-### 阶段一：迁移核心（P0）
+### 阶段一：迁移核心（P0）✅ 已完成（2026-08-12）
 
-- [ ] ⬜ **T1. 数据迁移策略冻结（v1.1 按 D9 简化）**
+- [x] ✅ **T1. 数据迁移策略冻结（v1.1 按 D9 简化）**
   - 前置核查（存量库执行，输出清单供核对）：① 有码行清单（api_code IS NOT NULL，预期 ≈26 行：024×19 + 029×2 + 040×1 + 042×1 + 043×3）与无码行/死端点行清单（预期 ≈14 行级，D9 清除对象）；② 每 button 行挂接 api 行数核查（>1 冲突清单，044 仅 3 个用户按钮有 1:1 先例）；③ iam_api.menu_id IS NULL 孤儿行数（D9 一并清除）
   - 转换规则（仅对有码行）：同 api_code 已有 button 行 → 回填 api_url/api_method（044 的 1:1 实例直接并入）；无 button 的按原 menu_id 归属新建 button 行（menu_name=api.name，api_code/api_url/api_method 迁移，描述→remark）；**一码多行时逐行映射不合并**（每行一个端点，D4）
   - 授权转换：iam_role_api 绑定 → 对应 button 行补绑 iam_role_menu（逐行映射；无码/死端点行上的绑定随行清除，超管短路兜底）
   - ⚠️ 无码行赋码**不做**（D9 拍板：直接清除，不赋码）
-- [ ] ⬜ **T2. 055 迁移编写（顺序显式化）**：① DROP 依赖视图/函数（§5.3 清单：api_v1_public.iam_api/iam_role_api/v_role_api_detail 视图、has_permission、casbin_rule、get_role_permissions、rpc_set_role_apis、041×2、rpc_create_menu_with_api、rpc_set_menu_apis、rpc_create_api/update_api/delete_api）→ ② iam_menu +3 列（幂等）→ ③ 新约束/索引（成对 CHECK + api_method 值域 CHECK + 部分唯一索引 + **D8 按钮导航置空 CHECK** + api_code 非唯一索引）→ ④ 数据迁移（T1 规则；无码/死端点行 DELETE）→ ⑤ DROP TABLE iam_role_api → ⑥ DROP TABLE iam_api（FK 依赖：先删 iam_role_api 再删 iam_api，或显式 CASCADE 并列出连带对象）→ ⑦ 重建 has_permission（单通道）/casbin_rule（双段）/get_role_permissions → ⑧ 权限点清理（sys:api:create/update/delete、sys:role-api:bind + 绑定行）→ ⑨ grant_all 同步 → ⑩ 验证 DO 块（删表断言 + 迁移完整性断言 + 单通道行为断言）
-- [ ] ⬜ **T3. rpc_create_menu / rpc_update_menu 重建**：新签名 +p_api_url/p_api_method/p_is_affix（DROP 旧签名防 PGRST203）；**D8 校验**（button 时强制 router/component 置空——RPC 友好报错 22023 + 表级 CHECK 兜底）；**D6 校验**（api_url 与 api_method 成对——RPC 友好报错）；api_code 格式软校验（含 ':'，借鉴 Admin.NET CheckMenuParam，P2 可选）；确认前端无 rpc_create_menu_with_api 调用后删除
+  - 交付：`scripts/055-t1-precheck.sql`（只读 11 段）+ `docs/开发实施方案/16-055-T1前置核查-存量数据清单.md`（静态基线：有码 27 行/无码 ≈14 行）+ PGlite 桩验证 verify-t1-precheck.js（8/8）已入链；**存量库实测回填待 T8 演练时执行**（本机无 WSL/存量库）
+- [x] ✅ **T2. 055 迁移编写（顺序显式化）**：`db/migrations/public/055_iam_menu_permission_unify.sql`（§1 DROP 依赖 → §2 加列 → §2.5 button 导航清理（D8 前置）→ §3 约束/索引 → §4 数据迁移（4.1 权限点删除 / 4.2 回填 / 4.3 新建 / 4.4 非 button 码收敛 / 4.5 绑定转换 / 4.6 无码清除 / 4.7 完整性断言）→ §5/§6 DROP 表 → §7 重建 has_permission/casbin_rule/get_role_permissions/rpc_create_menu/rpc_update_menu → §10 验证 DO 块）
+  - 实施中两项细化（v1.2 记录）：① **非 button 行 api_code 强制 NULL**（数据迁移 4.4 + RPC CASE 落库，Admin.NET CheckMenuParam 同款语义，D8 的镜像补充）；② **D8 CHECK 创建前必须先清理存量 button 行导航字段**（§2.5 前置，否则存量数据违例导致约束创建失败）
+  - 同批源文件（全链重放约束——055 删表后 src/api_v1 阶段不得残留 iam_api/iam_role_api 引用，否则 42P01 全链失败）：git rm `views/iam_api.sql`、`views/iam_role_api.sql`、`views/v_role_api_detail.sql`；改写 `src/public/views/casbin_rule.sql`（API 段 menu 口径）、`views/v_system_stats.sql`（total_apis 口径）、`rpc/rpc_get_role_permissions.sql`（apis 段菜单口径）、`privileges/grant_all.sql`（移除 5 处 GRANT）
+- [x] ✅ **T3. rpc_create_menu / rpc_update_menu 重建**（随 055 §7.4/7.5 交付）：新签名 +p_api_url/p_api_method/p_is_affix（DROP 旧签名防 PGRST203）；**D8 校验**（button 时强制 router/component 置空——RPC 友好报错 22023 + 表级 CHECK 兜底）；**D6 校验**（api_url 与 api_method 成对 + 值域）；非 button 行权限字段强制 NULL；api_code 格式软校验（含 ':'，P2 可选）；verify-055.js 覆盖全部拒绝/成功路径（12 项 ⑧ 断言）
 
 ### 阶段二：联动改造（P1）
 
@@ -259,6 +262,7 @@
 |---|---|---|
 | v1.0 | 2026-08-12 | 初稿：SharpFort 单表模型决策（D1-D7）+ 实施清单 |
 | v1.1 | 2026-08-12 | **独立审查吸收（docs/审查文档/16-审查-菜单权限单表化SharpFort模型.md）**：① 用户拍板 D8（按钮行导航置空 CHECK，借鉴 Admin.NET CheckMenuParam 服务端强制 → 表级化）、D9（遗留无码行/死端点行直接清除，彻底重构不兼容遗留）、D10（删除 041 子树授权 RPC）；② D6 强化（api_method 非空 + 值域约束含 '*'）；③ 删除对象清单补全（024 rpc_set_role_apis、041×2、045 rpc_create_menu_with_api、三个暴露视图源文件、权限点 sys:api:*/sys:role-api:bind）；④ casbin_rule 双段语义明确（菜单段保留）；⑤ T2 DROP 顺序显式化（FK 依赖）；⑥ verify-n4-d3.js 处置修正（保持原样，新建 verify-055.js）；⑦ get_role_permissions 源文件状态查明；⑧ 影响面补 v_role_menu_detail / get_menu_tree_admin；⑨ 验收标准 2/4/6 修正 + 新增 9/10 |
+| v1.2 | 2026-08-12 | **阶段一（P0）实施完成记录**：① T1 冻结（precheck 脚本 + 静态基线文档 + verify-t1-precheck.js 8/8 入链；存量库实测回填留待 T8）；② 055 迁移交付（结构 §1-§10，verify-055.js 84 断言两遍幂等全绿，已入验证链）；③ 实施细化两项——非 button 行 api_code 强制 NULL（Admin.NET CheckMenuParam 语义扩展，D8 镜像）、D8 约束前置清理存量 button 导航字段（§2.5，否则 CHECK 创建失败）；④ **全链重放约束 → 4 个源文件提前至 P0 同批**（casbin_rule / v_system_stats / rpc_get_role_permissions / grant_all——055 删表后 src/api_v1 阶段残留 iam_api 引用会 42P01，v1.1 中标注 P1 的这几项实际必须随 055 同批提交）；⑤ 验收标准 7 提前达成（npm run test 全链绿，断言数 152+84） |
 
 ---
 
