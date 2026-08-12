@@ -41,7 +41,7 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-    IF NOT has_permission('sys:config:write') THEN
+    IF NOT has_permission('public:config:write') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 
@@ -82,7 +82,7 @@ DECLARE
     v_values text[];
     v_sql text;
 BEGIN
-    IF NOT has_permission('sys:import') THEN
+    IF NOT has_permission('public:import') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 

@@ -27,7 +27,7 @@ DECLARE
     v_granted int;
     v_total   int;
 BEGIN
-    IF NOT has_permission('sys:role-api:bind') THEN
+    IF NOT has_permission('public:role-api:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 角色校验: role 镜像表（Logto 角色目录）存在，或已有绑定行（镜像同步缺口兜底——
@@ -96,7 +96,7 @@ AS $$
 DECLARE
     v_removed int;
 BEGIN
-    IF NOT has_permission('sys:role-api:bind') THEN
+    IF NOT has_permission('public:role-api:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 同 §1: 镜像表 OR 已有绑定（镜像同步缺口兜底）

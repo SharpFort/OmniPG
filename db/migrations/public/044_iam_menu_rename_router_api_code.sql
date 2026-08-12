@@ -202,7 +202,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:menu:create') THEN
+    IF NOT has_permission('public:menu:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
@@ -252,7 +252,7 @@ DECLARE
     v_menu_type iam_menu_type;
     v_api_code  text;
 BEGIN
-    IF NOT has_permission('sys:menu:update') THEN
+    IF NOT has_permission('public:menu:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id) THEN

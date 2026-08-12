@@ -1,5 +1,5 @@
 -- =============================================================================
--- 055_iam_menu_permission_unify.sql — 菜单权限单表化（SharpFort 模型，D1-D10）
+-- 055_iam_menu_permission_unify.sql — 菜单权限单表化（SharpFort 模型，D1-D12）
 -- =============================================================================
 -- 背景: 2026-08-12 用户拍板（docs/开发实施方案/16-菜单权限单表化-SharpFort模型-决策与实施清单.md v1.1）
 --   D1 删除 iam_api 表：端点信息并入 iam_menu（api_url/api_method 内嵌按钮行）
@@ -12,6 +12,13 @@
 --   D9 遗留数据彻底重构：无码行/死端点行直接清除不转换；有码行按 T1 规则转换；
 --      非 button 行 api_code 收敛置空（码只归 button 行——Admin.NET 非 Btn 行 Permission 强制 NULL 同款语义）
 --   D10 删除 041 子树授权 RPC（rpc_grant_menu_subtree_apis / rpc_revoke_menu_subtree_apis）
+--   D11 权限码命名空间统一 sys: → public:（v1.2 用户拍板：权限码前缀 = 权限域命名空间，
+--       与"public schema 整体即 admin 域"对齐；业务域预留 content:/ugc:；旧迁移文件函数体
+--       门槛码已同步改为 public:（023-046），数据 seed 保持历史 sys: 由本迁移 §4.1.5 统一收敛，
+--       幂等——重放时旧迁移重建旧码行 → 再次 UPDATE）
+--   D12 占位路径映射真实端点（v1.2 用户拍板：024 的 /rpc/sys:* 人造占位路径不搬入 api_url；
+--       按码→真实端点映射表（_ep_map，26 端点对）回填；sys:api:*/sys:role-api:bind 随 RPC
+--       删除不迁移；dict:* 一码多端点首例（type+data 两个函数 → 同码两行，D4 落地）
 -- 执行顺序（v1.1 T2 显式化）:
 --   §1 DROP 依赖视图/函数/触发器 → §2 iam_menu 加列 → §3 新约束/索引 →
 --   §4 数据迁移（T1 规则 + D9 清除）→ §5 DROP iam_role_api → §6 DROP iam_api →
@@ -117,18 +124,64 @@ CREATE INDEX idx_iam_menu_api_code ON public.iam_menu(api_code);
 DELETE FROM public.iam_api
 WHERE api_code IN ('sys:api:create', 'sys:api:update', 'sys:api:delete', 'sys:role-api:bind');
 
--- 4.2 有码行回填（T1 规则 1：同 api_code 已有 button 行 → 回填 api_url/api_method；
---     同码多 button 行时仅回填 id 最小行——每 button 行一个端点，其余行留空待管理端配置）
+-- 4.1.5 权限码命名空间统一（D11：sys: → public:；旧迁移 seed 保持历史码，此处统一收敛；
+--        幂等——重放时 024 等重建旧码行 → 再次 UPDATE 收敛；substring FROM 5 去掉 'sys:' 四字符）
+UPDATE public.iam_api SET api_code = 'public:' || substring(api_code FROM 5)
+WHERE api_code LIKE 'sys:%';
+UPDATE public.iam_menu SET api_code = 'public:' || substring(api_code FROM 5)
+WHERE api_code LIKE 'sys:%';
+
+-- ---------------------------------------------------------------------------
+-- §4.1.6 D12 真实端点映射表（临时表，本迁移会话内使用；26 端点对）
+--   sys:api:*/sys:role-api:bind 已由 4.1 删除，不入表；dict:* 一码两行（D4 一码多端点）
+-- ---------------------------------------------------------------------------
+CREATE TEMP TABLE IF NOT EXISTS _ep_map(api_code text, api_url text, api_method text);
+TRUNCATE _ep_map;
+INSERT INTO _ep_map VALUES
+    ('public:dept:create',         '/rpc/rpc_create_department',     'POST'),
+    ('public:dept:update',         '/rpc/rpc_update_department',     'POST'),
+    ('public:dept:delete',         '/rpc/rpc_delete_department',     'POST'),
+    ('public:position:list',       '/rpc/rpc_get_position_tree',     'POST'),
+    ('public:position:create',     '/rpc/rpc_create_position',       'POST'),
+    ('public:position:update',     '/rpc/rpc_update_position',       'POST'),
+    ('public:position:delete',     '/rpc/rpc_delete_position',       'POST'),
+    ('public:position:assign',     '/rpc/rpc_assign_user_positions', 'POST'),
+    ('public:dict:create',         '/rpc/rpc_create_dict_type',      'POST'),
+    ('public:dict:create',         '/rpc/rpc_create_dict_data',      'POST'),
+    ('public:dict:update',         '/rpc/rpc_update_dict_type',      'POST'),
+    ('public:dict:update',         '/rpc/rpc_update_dict_data',      'POST'),
+    ('public:dict:delete',         '/rpc/rpc_delete_dict_type',      'POST'),
+    ('public:dict:delete',         '/rpc/rpc_delete_dict_data',      'POST'),
+    ('public:menu:create',         '/rpc/rpc_create_menu',           'POST'),
+    ('public:menu:update',         '/rpc/rpc_update_menu',           'POST'),
+    ('public:menu:delete',         '/rpc/rpc_delete_menu',           'POST'),
+    ('public:role-menu:bind',      '/rpc/rpc_set_role_menus',        'POST'),
+    ('public:profile:update',      '/rpc/rpc_update_user_profile',   'POST'),
+    ('public:tenant:list',         '/rpc/rpc_list_tenants',          'POST'),
+    ('public:tenant-member:list',  '/rpc/rpc_list_tenant_members',   'POST'),
+    ('public:config:write',        '/rpc/update_config',             'POST'),
+    ('public:import',              '/rpc/import_csv',                'POST'),
+    ('public:login-log:list',      '/rpc/rpc_search_login_logs',     'POST'),
+    ('public:user:list',           '/rpc/search_users',              'POST'),
+    ('public:data-scope:bind',     '/rpc/rpc_set_role_data_scope',   'POST');
+
+-- ---------------------------------------------------------------------------
+-- 4.2 有码行回填（D12：按映射表回填真实端点；同码多 button 行仅回填 id 最小行；
+--     一码多端点（dict:*）首端点回填现有行，其余端点走 4.3 新建——每 button 行一个端点）
+WITH ranked AS (
+    SELECT ep.api_code, ep.api_url, ep.api_method,
+           row_number() OVER (PARTITION BY ep.api_code ORDER BY ep.api_url) AS rn
+    FROM _ep_map ep
+)
 UPDATE public.iam_menu m
-SET api_url = a.path, api_method = a.method, updated_at = now()
-FROM public.iam_api a
-WHERE a.api_code IS NOT NULL
-  AND a.api_code NOT IN ('sys:api:create', 'sys:api:update', 'sys:api:delete', 'sys:role-api:bind')
+SET api_url = r.api_url, api_method = r.api_method, updated_at = now()
+FROM ranked r
+WHERE r.rn = 1
   AND m.menu_type = 'button'
-  AND m.api_code = a.api_code
+  AND m.api_code = r.api_code
   AND m.api_url IS NULL
   AND m.id = (SELECT m2.id FROM public.iam_menu m2
-              WHERE m2.menu_type = 'button' AND m2.api_code = a.api_code
+              WHERE m2.menu_type = 'button' AND m2.api_code = r.api_code AND m2.api_url IS NULL
               ORDER BY m2.id LIMIT 1);
 
 -- 4.3 有码行新建 button 行（T1 规则 2：无同码 button 行 → 按原 menu_id 归属新建；
@@ -138,15 +191,17 @@ INSERT INTO public.iam_menu
      remark, order_num, is_active, created_by, created_at, updated_at)
 SELECT
     COALESCE(a.menu_id, sys_root.id),
-    a.name, 'button'::iam_menu_type, a.api_code, a.path, a.method,
+    a.name, 'button'::iam_menu_type, ep.api_code, ep.api_url, ep.api_method,
     a.description, a.order_num, a.is_active, a.created_by, now(), now()
-FROM public.iam_api a
+FROM _ep_map ep
+JOIN public.iam_api a ON a.api_code = ep.api_code
 LEFT JOIN public.iam_menu sys_root
        ON sys_root.menu_name = 'System' AND sys_root.parent_id IS NULL
-WHERE a.api_code IS NOT NULL
-  AND a.api_code NOT IN ('sys:api:create', 'sys:api:update', 'sys:api:delete', 'sys:role-api:bind')
-  AND NOT EXISTS (SELECT 1 FROM public.iam_menu m
-                  WHERE m.menu_type = 'button' AND m.api_code = a.api_code);
+WHERE NOT EXISTS (SELECT 1 FROM public.iam_menu m
+                  WHERE m.menu_type = 'button'
+                    AND m.api_code = ep.api_code
+                    AND m.api_url = ep.api_url
+                    AND m.api_method = ep.api_method);
 
 -- 4.4 非 button 行 api_code 收敛（码只归 button 行；先复制绑定再清空）
 --     4.4.1 绑定到"带码非 button 行"（如 040 UserList 目录行）的 role_menu → 复制到同码 button 行
@@ -170,17 +225,20 @@ FROM public.iam_role_api ra
 JOIN public.iam_api a ON a.id = ra.api_id
 JOIN public.iam_menu b ON b.menu_type = 'button' AND b.api_code = a.api_code
 WHERE a.api_code IS NOT NULL
-  AND a.api_code NOT IN ('sys:api:create', 'sys:api:update', 'sys:api:delete', 'sys:role-api:bind')
+  AND a.api_code NOT IN ('public:api:create', 'public:api:update', 'public:api:delete', 'public:role-api:bind')
 ON CONFLICT (role_code, menu_id) DO NOTHING;
 
 -- 4.6 无码行/死端点行清除（D9：不转换、不赋码；ALIVE 且无码的行同样清除——
 --     055 后由前端菜单管理按需重建；role_api 绑定 FK CASCADE 连带删）
 DELETE FROM public.iam_api WHERE api_code IS NULL;
 
--- 4.7 转换完整性断言（DROP 前：有码行必须有对应 button 行端点，缺失即失败）
+-- 4.7 转换完整性断言（DROP 前）
+--   4.7.1 数据驱动硬断言：iam_api 现存有码行必须有对应 button 行（缺失即失败）
+--   4.7.2 映射表覆盖核对（NOTICE 不阻断：存量库缺码时映射端点 <26，由前端菜单管理补齐）
 DO $$
 DECLARE
     v_missing   int;
+    v_map_miss  int;
     v_conv_btn  int;
     v_conv_bind int;
 BEGIN
@@ -188,19 +246,24 @@ BEGIN
     FROM public.iam_api a
     WHERE a.api_code IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM public.iam_menu m
-                      WHERE m.menu_type = 'button'
-                        AND m.api_code = a.api_code
-                        AND m.api_url = a.path
-                        AND m.api_method = a.method);
+                      WHERE m.menu_type = 'button' AND m.api_code = a.api_code);
     IF v_missing <> 0 THEN
-        RAISE EXCEPTION '055: 有码行转换缺失 % 行（api_code 无对应 button 行端点）', v_missing;
+        RAISE EXCEPTION '055: 有码行转换缺失 % 行（api_code 无对应 button 行）', v_missing;
     END IF;
+    SELECT count(*) INTO v_map_miss
+    FROM _ep_map ep
+    WHERE NOT EXISTS (SELECT 1 FROM public.iam_menu m
+                      WHERE m.menu_type = 'button'
+                        AND m.api_code = ep.api_code
+                        AND m.api_url = ep.api_url
+                        AND m.api_method = ep.api_method);
     SELECT count(*) INTO v_conv_btn FROM public.iam_menu
     WHERE menu_type = 'button' AND api_url IS NOT NULL;
     SELECT count(*) INTO v_conv_bind FROM public.iam_role_menu rm
     JOIN public.iam_menu m ON m.id = rm.menu_id
     WHERE m.menu_type = 'button' AND m.api_url IS NOT NULL;
-    RAISE NOTICE '055: 转换完成——端点按钮行=% 端点绑定=%（role_api→role_menu）', v_conv_btn, v_conv_bind;
+    RAISE NOTICE '055: 转换完成——端点按钮行=% 端点绑定=%（role_api→role_menu）；映射表覆盖=%-%缺失（存量缺码由前端菜单管理补齐）',
+        v_conv_btn, v_conv_bind, 26, v_map_miss;
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -359,7 +422,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:menu:create') THEN
+    IF NOT has_permission('public:menu:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
@@ -409,7 +472,7 @@ BEGIN
                         'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
     RETURN json_build_object('ok', true, 'id', v_id);
 END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单新增（sys:menu:create；055: +api_url/api_method/is_affix，D8 button 禁导航字段，D6 端点成对值域，非 button 行权限字段强制 NULL）';
+COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单新增（public:menu:create；055: +api_url/api_method/is_affix，D8 button 禁导航字段，D6 端点成对值域，非 button 行权限字段强制 NULL）';
 GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) TO authenticated;
 
 -- 7.5 rpc_update_menu 重建（同上；改类型时按最终类型应用字段归属规则）
@@ -429,7 +492,7 @@ DECLARE
     v_menu_type iam_menu_type;
     v_api_code  text;
 BEGIN
-    IF NOT has_permission('sys:menu:update') THEN
+    IF NOT has_permission('public:menu:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id) THEN
@@ -497,7 +560,7 @@ BEGIN
     PERFORM log_operate('menu', 'update', 'iam_menu', p_id::text);
     RETURN json_build_object('ok', true);
 END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单修改（sys:menu:update；055: +api_url/api_method/is_affix，字段归属按最终类型——button 禁导航字段 D8，端点成对值域 D6）';
+COMMENT ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单修改（public:menu:update；055: +api_url/api_method/is_affix，字段归属按最终类型——button 禁导航字段 D8，端点成对值域 D6）';
 GRANT EXECUTE ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) TO authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -531,6 +594,7 @@ DECLARE
     v_pair_bad  int;
     v_dup       int;
     v_nb_code   int;
+    v_sys_left  int;
     v_endpoints int;
     v_ch_super  boolean;
     v_ch_deny   boolean;
@@ -587,14 +651,18 @@ BEGIN
     WHERE menu_type <> 'button' AND api_code IS NOT NULL;
     IF v_nb_code <> 0 THEN RAISE EXCEPTION '055: 非 button 行 api_code 残留（%）', v_nb_code; END IF;
 
+    -- D11: 权限码命名空间断言（sys: → public: 收敛，无残留）
+    SELECT count(*) INTO v_sys_left FROM iam_menu WHERE api_code LIKE 'sys:%';
+    IF v_sys_left <> 0 THEN RAISE EXCEPTION '055: 权限码 sys: 前缀残留（%）', v_sys_left; END IF;
+
     SELECT count(*) INTO v_endpoints FROM iam_menu WHERE api_url IS NOT NULL;
     IF v_endpoints = 0 THEN RAISE EXCEPTION '055: 无转换出的端点按钮行'; END IF;
 
     -- 6. 行为断言（D3 单通道）
     PERFORM set_config('request.jwt.claims', '{"roles":["role_super_admin"]}', true);
-    v_ch_super := has_permission('sys:menu:create');          -- 超管短路
+    v_ch_super := has_permission('public:menu:create');          -- 超管短路
     PERFORM set_config('request.jwt.claims', '{"roles":["__no_such_role__"]}', true);
-    v_ch_deny  := NOT has_permission('sys:menu:create');      -- 未绑角色拒绝
+    v_ch_deny  := NOT has_permission('public:menu:create');      -- 未绑角色拒绝
     IF NOT v_ch_super OR NOT v_ch_deny THEN
         RAISE EXCEPTION '055: has_permission 单通道行为异常（super=% deny=%）', v_ch_super, v_ch_deny;
     END IF;

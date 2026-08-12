@@ -160,7 +160,7 @@ DECLARE
     v_scope_type text;
     v_depts      json;
 BEGIN
-    IF NOT has_permission('sys:data-scope:bind') THEN
+    IF NOT has_permission('public:data-scope:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 
@@ -194,7 +194,7 @@ AS $$
 DECLARE
     v_dept uuid;
 BEGIN
-    IF NOT has_permission('sys:data-scope:bind') THEN
+    IF NOT has_permission('public:data-scope:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 角色校验同 041（镜像表 OR 已有绑定——镜像同步缺口兜底）

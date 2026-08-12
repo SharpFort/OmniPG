@@ -66,7 +66,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:api:create') THEN
+    IF NOT has_permission('public:api:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_path IS NULL OR trim(p_path) = '' THEN
@@ -114,7 +114,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_new_code text;
 BEGIN
-    IF NOT has_permission('sys:api:update') THEN
+    IF NOT has_permission('public:api:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM iam_api WHERE id = p_id) THEN
@@ -160,7 +160,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_delete_api(p_id uuid)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:api:delete') THEN
+    IF NOT has_permission('public:api:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM iam_api WHERE id = p_id) THEN

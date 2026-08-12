@@ -89,7 +89,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:dept:create') THEN
+    IF NOT has_permission('public:dept:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_dept_name IS NULL OR trim(p_dept_name) = '' THEN
@@ -111,7 +111,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_department(
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:dept:update') THEN
+    IF NOT has_permission('public:dept:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM department
@@ -139,7 +139,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_delete_department(p_id uuid)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:dept:delete') THEN
+    IF NOT has_permission('public:dept:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF EXISTS (SELECT 1 FROM department
@@ -165,7 +165,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_result json;
 BEGIN
-    IF NOT has_permission('sys:position:list') THEN
+    IF NOT has_permission('public:position:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     WITH RECURSIVE tree AS (
@@ -195,7 +195,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:position:create') THEN
+    IF NOT has_permission('public:position:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_pos_name IS NULL OR trim(p_pos_name) = '' THEN
@@ -217,7 +217,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_position(
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:position:update') THEN
+    IF NOT has_permission('public:position:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM position
@@ -246,7 +246,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_delete_position(p_id uuid)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:position:delete') THEN
+    IF NOT has_permission('public:position:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF EXISTS (SELECT 1 FROM position
@@ -270,7 +270,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant text := current_tenant_id();
 BEGIN
-    IF NOT has_permission('sys:position:assign') THEN
+    IF NOT has_permission('public:position:assign') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 目标用户必须是本租户成员
@@ -304,7 +304,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid; v_tenant text;
 BEGIN
-    IF NOT has_permission('sys:dict:create') THEN
+    IF NOT has_permission('public:dict:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_dict_name IS NULL OR trim(p_dict_name) = '' THEN
@@ -330,7 +330,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant text;
 BEGIN
-    IF NOT has_permission('sys:dict:update') THEN
+    IF NOT has_permission('public:dict:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT tenant_id INTO v_tenant FROM dict_type WHERE id = p_id;
@@ -362,7 +362,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant text; v_name text;
 BEGIN
-    IF NOT has_permission('sys:dict:delete') THEN
+    IF NOT has_permission('public:dict:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT tenant_id, dict_name INTO v_tenant, v_name FROM dict_type WHERE id = p_id;
@@ -394,7 +394,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid; v_tenant text;
 BEGIN
-    IF NOT has_permission('sys:dict:create') THEN
+    IF NOT has_permission('public:dict:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 字典类型必须存在，且作用域匹配当前租户（或全局超管）
@@ -429,7 +429,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant text;
 BEGIN
-    IF NOT has_permission('sys:dict:update') THEN
+    IF NOT has_permission('public:dict:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT tenant_id INTO v_tenant FROM dict_data WHERE id = p_id;
@@ -464,7 +464,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_tenant text;
 BEGIN
-    IF NOT has_permission('sys:dict:delete') THEN
+    IF NOT has_permission('public:dict:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT tenant_id INTO v_tenant FROM dict_data WHERE id = p_id;
@@ -498,7 +498,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
-    IF NOT has_permission('sys:menu:create') THEN
+    IF NOT has_permission('public:menu:create') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
@@ -527,7 +527,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_update_menu(
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:menu:update') THEN
+    IF NOT has_permission('public:menu:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id) THEN
@@ -560,7 +560,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_delete_menu(p_id uuid)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:menu:delete') THEN
+    IF NOT has_permission('public:menu:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF EXISTS (SELECT 1 FROM iam_menu WHERE parent_id = p_id) THEN
@@ -578,7 +578,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_set_role_apis(p_role_code text, p_api_
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:role-api:bind') THEN
+    IF NOT has_permission('public:role-api:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_role_code IS NULL OR NOT EXISTS (SELECT 1 FROM role WHERE name = p_role_code) THEN
@@ -604,7 +604,7 @@ CREATE OR REPLACE FUNCTION api_v1_sys.rpc_set_role_menus(p_role_code text, p_men
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
-    IF NOT has_permission('sys:role-menu:bind') THEN
+    IF NOT has_permission('public:role-menu:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_role_code IS NULL OR NOT EXISTS (SELECT 1 FROM role WHERE name = p_role_code) THEN
@@ -663,7 +663,7 @@ BEGIN
     -- 权限：本人改自己（免权限点）或超管/本租户管理成员（需权限点）
     v_self := (p_user_id = current_user_id());
     IF NOT v_self THEN
-        IF NOT has_permission('sys:profile:update') THEN
+        IF NOT has_permission('public:profile:update') THEN
             RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
         END IF;
         IF NOT is_super_admin()

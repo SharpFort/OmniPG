@@ -20,7 +20,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_result json;
 BEGIN
-    IF NOT has_permission('sys:tenant:list') THEN
+    IF NOT has_permission('public:tenant:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT json_build_object(
@@ -55,7 +55,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_result json; v_org text;
 BEGIN
-    IF NOT has_permission('sys:tenant-member:list') THEN
+    IF NOT has_permission('public:tenant-member:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     -- 默认当前租户；指定 org 需超管或该租户成员（管理员）

@@ -25,7 +25,7 @@ DECLARE
     v_bound     int;
     v_unbound   int;
 BEGIN
-    IF NOT has_permission('sys:menu:update') THEN
+    IF NOT has_permission('public:menu:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF p_menu_id IS NULL THEN
