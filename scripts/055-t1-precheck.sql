@@ -48,12 +48,15 @@ ORDER BY a.api_code;
 
 -- ---------------------------------------------------------------------------
 -- §4 死端点判定（PostgREST 实际暴露 = api_v1_public 视图/RPC）
---    DEAD = 仓库/存量库均无对应暴露 → D9 清除对象
+--    ⚠️ 不能按 proname LIKE 'rpc_%' 过滤：源文件层函数名无 rpc_ 前缀
+--    （search_users/get_user_menu/import_csv...），迁移层管理 RPC 才带前缀
+--    DEAD = 仓库/存量库均无对应暴露 → 仅对无码行有"清除"含义（D9）；
+--    有码行的 /rpc/sys:* path 为权限点路径（非真实函数端点），DEAD 判定不影响其转换
 -- ---------------------------------------------------------------------------
 WITH exposed AS (
     SELECT '/rpc/' || p.proname AS path
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'api_v1_public' AND p.proname LIKE 'rpc_%'
+    WHERE n.nspname = 'api_v1_public'
     UNION
     SELECT '/' || v.table_name
     FROM information_schema.views v
@@ -133,4 +136,4 @@ ORDER BY a.api_code;
 --   043: api_code IS NULL 行 ≈14（043 时点实测）
 -- ---------------------------------------------------------------------------
 SELECT '040' AS mig, 'button 空 api_code = 0（040 验证块断言）' AS fact
-UNION ALL SELECT '043', 'api_code IS NULL ≈14 行（043 头注实测，055 实施时以 §2 实测为准';
+UNION ALL SELECT '043', 'api_code IS NULL ≈14 行（043 头注实测，055 实施时以 §2 实测为准）';
