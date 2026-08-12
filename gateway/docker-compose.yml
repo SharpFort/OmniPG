@@ -141,8 +141,8 @@ services:
       DATABASE_STATEMENT_TIMEOUT: "DISABLE_TIMEOUT"   # pgBouncer 兼容（v1.36.0+）
       ENDPOINT: "http://localhost:3001"
       ADMIN_ENDPOINT: "http://localhost:3002"
-      # CSP frame-ancestors 注入（logto-csp-patch.js 启动时打补丁；OmniAdmin 3006 嵌入登录页用）
+      # CSP frame-ancestors 注入（logto-csp-patch.js 启动时打补丁；OmniAdmin 3006/3007 嵌入登录页用）
       # ⚠️ 与 .env VITE_PORT 保持一致；改端口后须 --force-recreate 重建容器（幂等补丁不会自动改）
-      LOGTO_EXTRA_FRAME_ANCESTOR: "http://localhost:3006"
+      LOGTO_EXTRA_FRAME_ANCESTOR: "http://localhost:3006 http://localhost:3007"
     extra_hosts:
       - "host.docker.internal:host-gateway"

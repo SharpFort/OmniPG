@@ -10,6 +10,8 @@
  *
  * 本脚本在容器启动时（compose entrypoint）把 LOGTO_EXTRA_FRAME_ANCESTOR
  * 注入编译产物的 frameAncestors 数组，放行前端域名嵌入。
+ * 支持空格分隔的多个 origin（如 "http://localhost:3006 http://localhost:3007"），
+ * 逐个展开为独立的 frame-ancestors 数组元素。
  *
  * 容错：Logto 镜像升级后编译产物结构变化会导致 target 找不到——此时打印 WARN
  * 并继续启动（嵌入登录失效，但直接跳转登录不受影响；前端登录页有"在新窗口打开"
@@ -21,9 +23,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const BUILD_DIR = '/etc/logto/packages/core/build';
-const extra = process.env.LOGTO_EXTRA_FRAME_ANCESTOR || 'http://localhost:5173';
+const extras = (process.env.LOGTO_EXTRA_FRAME_ANCESTOR || 'http://localhost:5173').split(/\s+/).filter(Boolean);
 const TARGET = 'frameAncestors: ["\'self\'", ...adminOrigins]';
-const REPLACEMENT = 'frameAncestors: ["\'self\'", "' + extra + '", ...adminOrigins]';
+const REPLACEMENT =
+  'frameAncestors: ["\'self\'", ' + extras.map((o) => '"' + o + '"').join(', ') + ', ...adminOrigins]';
 
 if (!fs.existsSync(BUILD_DIR)) {
   console.warn('[logto-csp-patch] WARN: build dir not found: ' + BUILD_DIR);
@@ -48,7 +51,7 @@ for (const file of files) {
   }
 
   fs.writeFileSync(p, src.split(TARGET).join(REPLACEMENT));
-  console.log('[logto-csp-patch] ' + file + ': patched (frame-ancestors += ' + extra + ')');
+  console.log('[logto-csp-patch] ' + file + ': patched (frame-ancestors += ' + extras.join(' ') + ')');
   patched += 1;
 }
 
