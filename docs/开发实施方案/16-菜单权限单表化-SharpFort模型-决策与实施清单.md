@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-08-12
 > **文档类型：** 架构决策记录（ADR）/ 待执行任务清单
-> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0）完成 → ✅ 阶段二（P1：T4/T5/T6/T7 + T8 本机部分）完成（2026-08-12，全链 253 断言全绿）→ ⏳ 阶段三（P2）待指令（T8 存量库 apply-src 两遍演练待 WSL 环境）
+> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0）完成 → ✅ 阶段二（P1）完成 → ✅ 阶段三（P2：T9/T10 代码 + T11 部分）完成（2026-08-12，pnpm build 全绿）→ ⏳ 收尾待办：前端 commit 重提（commitlint body 超长拦截）、T11 的 05/15 文档标注、T8 存量库 apply-src 两遍演练（WSL 环境）
 > **关联文档：** 05-Logto认证与权限架构-完善版.md、05.2-Admin管理模块函数视图补全分析.md、15-数据库迁移文件治理与合并策略.md、casbin-rbac-best-practices-中文版.md
 > **借鉴来源：** SharpFort.Net（GitHub，最终采纳）、Yi.Abp（gitee，对比）、Admin.NET（gitee，对比）
 > **执行工具：** apply-src.sh（psql 全量幂等重放）+ PGlite 验证链（~/.hermes_tmp/pglite-verify/）
@@ -233,11 +233,14 @@
 - [x] ✅ **T7. 全链验证**：`npm run test` 全绿 **253 断言 / 0 失败**（verify-020/ensure-user/n4-d3/n6/p1/p2/052/053/054/t1-precheck/055/t4-src + test_step5 + test_reconcile），含 verify-055 幂等两遍
 - [ ] ⬜ **T8. 存量库演练**（本机部分完成）：grep 全仓复查无 `FROM public.iam_api` / `FROM iam_role_api` / `ON iam_role_api` 代码引用残留（.deprecated 除外；仅历史迁移 009-054 保留——apply-src 重放循环设计内）；**WSL Pigsty apply-src 全量重放两遍 + pgTAP（make test-db）待用户环境执行**（本机无 psql/存量库）
 
-### 阶段三：前端与收尾（P2）
+### 阶段三：前端与收尾（P2）✅ 代码完成（2026-08-12，pnpm build 全绿）
 
-- [ ] ⬜ **T9. 前端菜单管理**：表单 +api_url/api_method/is_affix（api_method 下拉值域对齐 D6）；**menu_type=button 时导航字段（router/component/redirect 等）禁用/清空**（对齐 D8 服务端语义）；接口管理页并入菜单管理（删除独立 API 管理页）；MenuAdminNode 接口 +3 字段（前端方案 §2.2 286 行）
-- [ ] ⬜ **T10. 授权弹窗**：菜单树勾选（数据源 = 扩展后 get_menu_tree_admin 或 GET /iam_menu 视图全列 + 前端组树）；按钮叶子展示 api_code + api_url/api_method；保存复用 rpc_set_role_menus 全量覆盖；父子联动复用前端既有组树两遍构建逻辑
-- [ ] ⬜ **T11. 文档同步**：本文档状态勾选完成、修订记录追加 v1.2；05-Logto认证与权限架构 关联段落标注变更；15 号文档 M4 验证链重构条目同步（055 后验证链文件清单变化）
+- [x] ✅ **T9. 前端菜单管理**（OmniAdmin 仓库，main 分支）：`menu-dialog.vue` 表单 +api_url/api_method/is_affix（api_method 下拉值域对齐 D6 八值：GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/*）；**menu_type=button 时导航字段（router/component/redirect/query/route_name）watch 清空 + 提交时强制 NULL**（对齐 D8 服务端语义）；接口管理页并入菜单管理（git rm `views/system/api/` 三文件 + 路由 Api 块 + locales key）；`MenuAdminNode` +3 字段；删除 046 绑定接口选择器（setMenuApis 已删）与 040 权限码软校验（055 后权限点=按钮行自身，一码多端点合法）；`menu/index.vue` 改纯菜单树（按钮行 api_method 徽标 + 接口列 api_url）；`system-manage.ts` createMenu/updateMenu +3 参数
+- [x] ✅ **T10. 授权弹窗**（`role-permission-dialog.vue` 重写）：菜单树勾选 = **唯一授权通道**（删除 API 权限 tab / 041 一键授权联动 / setRoleApis 保存通道——保存只走 rpc_set_role_menus 全量覆盖）；按钮叶子行内展示 api_code + api_url/api_method；父子联动保留（checked + halfChecked 合并）；保存按钮 v-perm 改 `sys:role-menu:bind`；数据源 = GET /iam_menu 视图全列 + 前端组树（get_role_permissions.menus 回显）
+- [ ] ⬜ **T11. 文档同步**（进行中）：本文档状态勾选 + 修订记录 v1.4 ✅；05-Logto认证与权限架构 关联段落标注变更 ⬜；15 号文档 M4 验证链重构条目同步 ⬜（055 后验证链文件清单变化）
+- [x] ✅ **实施中发现（审查清单外）**：`usePermission.ts` 通道1 数据源 v_role_api_detail → **v_role_menu_detail**（该视图随 055 删除，不改则前端 v-perm 权限码收集 404 全哑）——RoleApiPerm 类型同步改为 RoleMenuPerm；`useAuth.ts` 注释同步
+- [x] ✅ **构建验证**：pnpm build（vue-tsc + vite）全绿；auto-imports.d.ts 由 vite 生成（gitignore 约定，clean clone 首次需先跑 vite）
+- [ ] ⬜ **前端提交**：commit 被 commitlint body-max-line-length 拦截（body 行 >100 字符），短 body 重提后 push 待执行
 
 ---
 
@@ -264,6 +267,7 @@
 | v1.1 | 2026-08-12 | **独立审查吸收（docs/审查文档/16-审查-菜单权限单表化SharpFort模型.md）**：① 用户拍板 D8（按钮行导航置空 CHECK，借鉴 Admin.NET CheckMenuParam 服务端强制 → 表级化）、D9（遗留无码行/死端点行直接清除，彻底重构不兼容遗留）、D10（删除 041 子树授权 RPC）；② D6 强化（api_method 非空 + 值域约束含 '*'）；③ 删除对象清单补全（024 rpc_set_role_apis、041×2、045 rpc_create_menu_with_api、三个暴露视图源文件、权限点 sys:api:*/sys:role-api:bind）；④ casbin_rule 双段语义明确（菜单段保留）；⑤ T2 DROP 顺序显式化（FK 依赖）；⑥ verify-n4-d3.js 处置修正（保持原样，新建 verify-055.js）；⑦ get_role_permissions 源文件状态查明；⑧ 影响面补 v_role_menu_detail / get_menu_tree_admin；⑨ 验收标准 2/4/6 修正 + 新增 9/10 |
 | v1.2 | 2026-08-12 | **阶段一（P0）实施完成记录**：① T1 冻结（precheck 脚本 + 静态基线文档 + verify-t1-precheck.js 8/8 入链；存量库实测回填留待 T8）；② 055 迁移交付（结构 §1-§10，verify-055.js 84 断言两遍幂等全绿，已入验证链）；③ 实施细化两项——非 button 行 api_code 强制 NULL（Admin.NET CheckMenuParam 语义扩展，D8 镜像）、D8 约束前置清理存量 button 导航字段（§2.5，否则 CHECK 创建失败）；④ **全链重放约束 → 4 个源文件提前至 P0 同批**（casbin_rule / v_system_stats / rpc_get_role_permissions / grant_all——055 删表后 src/api_v1 阶段残留 iam_api 引用会 42P01，v1.1 中标注 P1 的这几项实际必须随 055 同批提交）；⑤ 验收标准 7 提前达成（npm run test 全链绿，断言数 152+84） |
 | v1.3 | 2026-08-12 | **阶段二（P1）实施完成记录**：① T4 五源文件联动（iam_menu 视图/v_role_menu_detail/get_menu_tree_admin/get_user_menu/rpc_import_csv）；② **审查遗漏 2 处当场发现修复**——v_role_list.sql（api_count 引用 iam_role_api）、rls_policies.sql（iam_api/iam_role_api RLS 段），均为 src/api_v1 阶段重放 42P01 炸弹；③ T5 trg_audit_role_api.sql → .deprecated；④ T6 pgTAP 同步更新（01_schema_test plan 62 / 05_rls_test plan 12 到 055 语义）+ verify-t4-src.js（11 断言）入链；⑤ T7 全链 253 断言全绿；⑥ T8 本机部分完成（grep 全仓干净），WSL apply-src 两遍演练待用户环境 |
+| v1.4 | 2026-08-12 | **阶段三（P2）前端实施完成记录**：① T9/T10 代码交付（OmniAdmin 仓库，pnpm build 全绿——vue-tsc 类型检查 + vite 构建）；② **审查清单外发现**：usePermission.ts 通道1 依赖 v_role_api_detail（055 已删）→ 改 v_role_menu_detail + RoleMenuPerm 类型，否则前端按钮权限全哑；③ 接口管理页整体删除（视图/RPC/页面/路由/i18n 四层联动）；④ 前端 commit 被 commitlint body-max-line-length 拦截，短 body 重提待执行；⑤ T11 进行中（05/15 文档标注待办） |
 
 ---
 
