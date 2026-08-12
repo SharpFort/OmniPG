@@ -19,24 +19,24 @@ fi
 
 # 设置数据库连接
 DB_URI=${DB_URI:-"postgres://app_owner:dev_password_change_me@localhost:5432/app_db?sslmode=disable"}
-DBMATE_URL=${DBMATE_DATABASE_URL:-"$DB_URI"}
+DBMATE_URL=${DATABASE_URL:-"$DB_URI"}
 
 cd "$PROJECT_DIR/db"
 
-export DBMATE_DATABASE_URL="$DBMATE_URL"
+export DATABASE_URL="$DBMATE_URL"
 
 case "$COMMAND" in
     up)
         echo "应用数据库迁移..."
-        dbmate up
+        dbmate -d migrations/public up
         ;;
     down|rollback)
         echo "回滚最近一次迁移..."
-        dbmate rollback
+        dbmate -d migrations/public rollback
         ;;
     status)
         echo "迁移状态:"
-        dbmate status
+        dbmate -d migrations/public status
         ;;
     create)
         if [ -z "${3:-}" ]; then
