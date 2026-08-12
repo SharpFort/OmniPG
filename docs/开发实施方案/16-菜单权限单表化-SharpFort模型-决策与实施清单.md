@@ -240,7 +240,7 @@
 - [x] ✅ **T11. 文档同步**：本文档状态勾选 + 修订记录 v1.4 ✅；05-Logto认证与权限架构 关联段落标注 ✅（修订记录 v3.11 + 5 处核心段落就地标注：一句话概述/表清单/has_permission/③ PG 自主/E3 casbin_rule）；15 号文档 M4 验证链重构条目同步 ✅（验证链 12 JS + 2 PY 共 253 断言基线、验收标准 3 更新、涉及范围 55 文件）
 - [x] ✅ **实施中发现（审查清单外）**：`usePermission.ts` 通道1 数据源 v_role_api_detail → **v_role_menu_detail**（该视图随 055 删除，不改则前端 v-perm 权限码收集 404 全哑）——RoleApiPerm 类型同步改为 RoleMenuPerm；`useAuth.ts` 注释同步
 - [x] ✅ **构建验证**：pnpm build（vue-tsc + vite）全绿；auto-imports.d.ts 由 vite 生成（gitignore 约定，clean clone 首次需先跑 vite）
-- [ ] ⬜ **前端提交**：commit 被 commitlint body-max-line-length 拦截（body 行 >100 字符），短 body 重提后 push 待执行
+- [x] ✅ **前端提交**：a2856db（并行会话提交同套改动）+ e730c8a（本会话 commit 尝试残留，仅含 .gitignore 的 .env 忽略规则——lint-staged 竞态产物，内容有效保留）均已推送远端 main，工作区干净
 
 ---
 
