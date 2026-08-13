@@ -2,7 +2,7 @@
 
 > **创建日期：** 2026-08-12
 > **文档类型：** 架构决策记录（ADR）/ 待执行任务清单
-> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0）完成 → ✅ 阶段二（P1）完成 → ✅ 阶段三（P2：T9/T10 代码 + T11 部分）完成（2026-08-12，pnpm build 全绿）→ ✅ D11/D12 增量完成（v1.5：public: 前缀 + 真实端点映射）→ ⏳ 收尾待办：前端 commit 重提（commitlint body 超长拦截）、T11 的 05/15 文档标注、T8 存量库 apply-src 两遍演练（WSL 环境）
+> **状态：** ✅ 决策已拍板 → ✅ 阶段一（P0）完成 → ✅ 阶段二（P1）完成 → ✅ 阶段三（P2：T9/T10 代码 + T11 部分）完成（2026-08-12，pnpm build 全绿）→ ✅ D11/D12 增量完成（v1.5：public: 前缀 + 真实端点映射）→ ✅ B1/B2/B3 增量完成（v1.6：056 删 query + route_name 推导；057 keep_alive→is_cache）→ ⏳ 收尾待办：前端 Q 项（去 query 字段 / MenuProcessor is_cache 映射 / p_is_cache 参数）、前端 commit 重提（commitlint body 超长拦截）、T11 的 05/15 文档标注、T8 存量库 apply-src 两遍演练（WSL 环境）
 > **关联文档：** 05-Logto认证与权限架构-完善版.md、05.2-Admin管理模块函数视图补全分析.md、15-数据库迁移文件治理与合并策略.md、casbin-rbac-best-practices-中文版.md
 > **借鉴来源：** SharpFort.Net（GitHub，最终采纳）、Yi.Abp（gitee，对比）、Admin.NET（gitee，对比）
 > **执行工具：** apply-src.sh（psql 全量幂等重放）+ PGlite 验证链（~/.hermes_tmp/pglite-verify/）
@@ -148,7 +148,7 @@
 | 基础 | menu_name / icon / order_num | 现状保留 | 现状 |
 | 类型 | menu_type（ENUM 四值） | directory/menu/button/link | 现状（031/032） |
 | 权限 | api_code | button 必填（040 CHECK 保留）；**非唯一索引**（一码多端点，D4，借鉴 SharpFort PermissionCode 索引） | 现状+SharpFort |
-| 导航 | router / route_name / component / redirect / query / is_link / is_iframe / keep_alive / is_visible / remark | 现状保留（038/044）；**button 行 router/component 强制 NULL（D8 CHECK）** | 现状 |
+| 导航 | router / route_name / component / redirect / is_link / is_iframe / is_cache / is_visible / remark | 现状保留（038/044）；**button 行 router/component 强制 NULL（D8 CHECK）**；query 已删（056 B1）、keep_alive→is_cache（057 B3）、route_name 未填自动推导（056 B2，见 §9） | 现状 |
 | **端点** | **api_url** | 按钮行可选绑定端点路径（原 iam_api.path）；格式约定：以 / 开头、不含 {}（RPC 层软校验，P2） | **SharpFort ApiUrl** |
 | **端点** | **api_method** | 与 api_url 成对；**api_url 非空行必填非空，值域 IN (GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS/*)（D6 CHECK）**；'*' 保留通配语义 | **SharpFort ApiMethod** |
 | 状态 | is_active | 现状保留 | 现状 |
@@ -156,6 +156,8 @@
 | 审计 | created_at / updated_at / created_by / updated_by | 现状保留 | 现状 |
 
 **约束（迁移内补齐）：** 保留 3 个现状 CHECK（link_path / is_link_path / button_perms）；**新增 4 项（v1.1）**：① api_url/api_method 成对 CHECK（api_url IS NOT NULL → api_method IS NOT NULL）；② api_method 值域 CHECK（D6）；③ 部分唯一索引（WHERE api_url IS NOT NULL，D6）；④ **按钮行导航置空 CHECK（menu_type='button' → router IS NULL AND component IS NULL，D8）**。
+
+**056/057 后续增量（B1/B2/B3，2026-08-13）：** query 列已删除（B1）；keep_alive 已改名 is_cache（B3）；route_name 写侧推导兜底（B2）——结论/依据/实施位置详见 §9。
 
 ### 5.2 权限语义（单表化后）
 
@@ -265,7 +267,32 @@
 
 ---
 
-## 9. 修订记录
+## 9. 后续增量（2026-08-13：B1/B2/B3 → 迁移 056/057）
+
+> 055 落地后的字段级收尾（用户拍板清单 B1/B2/B3）。沿用本文档 D 系列决策记录格式；按项目惯例**不含 DDL 代码**，定义直接落迁移文件。
+
+| # | 决策 | 级别 | 实施位置 | 状态 |
+|---|---|---|---|---|
+| B1 | **删除 `iam_menu.query` 列 + `rpc_create/update_menu` 的 `p_query` 参数 + `get_user_menu` 的 `query` 输出**——字段全空 + 前端死路由（与前端 Q2 联动），纯清理无风险 | P1 | 迁移 056 | ✅ 已实施（aa53d8e） |
+| B2 | **route_name 后端自动推导兜底（仿 SharpFort）**：router 末段首字母大写为路由 name（`/system/user` → `User`），**手填值优先**；写侧兜底（create/update RPC），**不触碰存量数据**；仅 directory/menu 型推导（button 行 router 恒 NULL；link 行 router 是外链 URL，末段推导无意义）；update 改 router 未传 route_name 时按新 router 重新推导 | P2 | 迁移 056 | ✅ 已实施（aa53d8e） |
+| B3 | **`keep_alive` → `is_cache` 列改名**（用户拍板）：① 语义对标 SharpFort `IsCache` / RuoYi `is_cache`；② iam_menu 布尔列命名统一——is_active/is_visible/is_link/is_iframe/is_affix 全部 is_ 前缀，keep_alive 是唯一例外。⚠️ **PG 列名用小写 `is_cache`**（C# 风格 IsCache 会被未加引号标识符折叠为 iscache） | P2 | 迁移 057 | ✅ 已实施（d638543） |
+
+**B3 补充约定（用户拍板）：** 前端 Vue 路由 `meta.keepAlive`（art-page-content 消费）**不改**——Vue 生态惯例名，与 DB 字段已解耦；前端仅同步映射输入键与表单字段。
+
+**实施要点（各迁移自带重建段；历史迁移 038-056 保持原样，靠新迁移收敛幂等重放）：**
+- 056：DROP COLUMN 前先 DROP VIEW（PG 列级依赖 2BP01）；视图/get_user_menu/rpc×2 重建；rpc 签名 19/21→18/20 参（去 p_query，全世代旧签名 DROP 防 PGRST203）；新增 `public.derive_route_name()` helper
+- 057：**双分支收敛**——首跑仅 keep_alive 存在 → RENAME（值随列保留）；重放时 038 重建 keep_alive（全默认值）→ DROP 重建列；PL/pgSQL 函数体不随 RENAME 自动更新 → 重建 get_user_menu/rpc×2；参数 `p_keep_alive`→`p_is_cache`；输出键 `keep_alive`→`is_cache`
+- 验证链：新增 verify-056.js（40/40）+ verify-057.js（22/22，含 rename 值保留 / 模拟 038 重放 DROP 分支 / 幂等三遍）入链；verify-t4-src 桩列随源文件同步；全链 17 脚本绿
+
+**前端同步清单（OmniAdmin 仓库，待做 Q 项）：**
+1. Q2：菜单类型/表单/调用链去 `query` 字段 + 死路由清理
+2. MenuProcessor 映射 `menu.keep_alive` → `menu.is_cache`（**meta.keepAlive 本身不动**，B3 补充约定）
+3. 菜单表单字段/TS 类型 keep_alive→is_cache；RPC 调用参数 p_keep_alive→p_is_cache（PostgREST 命名参数，旧名会被拒）
+4. rpc_create/update_menu 调用移除 p_query（056 后传旧参被 PostgREST 拒）
+
+---
+
+## 10. 修订记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
@@ -275,6 +302,7 @@
 | v1.3 | 2026-08-12 | **阶段二（P1）实施完成记录**：① T4 五源文件联动（iam_menu 视图/v_role_menu_detail/get_menu_tree_admin/get_user_menu/rpc_import_csv）；② **审查遗漏 2 处当场发现修复**——v_role_list.sql（api_count 引用 iam_role_api）、rls_policies.sql（iam_api/iam_role_api RLS 段），均为 src/api_v1 阶段重放 42P01 炸弹；③ T5 trg_audit_role_api.sql → .deprecated；④ T6 pgTAP 同步更新（01_schema_test plan 62 / 05_rls_test plan 12 到 055 语义）+ verify-t4-src.js（11 断言）入链；⑤ T7 全链 253 断言全绿；⑥ T8 本机部分完成（grep 全仓干净），WSL apply-src 两遍演练待用户环境 |
 | v1.5 | 2026-08-12 | **D11/D12 增量实施完成**（用户拍板：① 权限码命名空间 `sys:` → `public:`——旧迁移函数体门槛码 39 处同步（023-046），数据由 055 §4.1.5 统一收敛，055 §10 加前缀断言；② 占位路径映射真实端点——055 §4.1.6 `_ep_map` 映射表 26 端点对驱动回填/新建，4.7 断言改双口径（数据驱动硬断言 + 映射覆盖 NOTICE），dict:* 一码多端点首例；verify-055.js 适配（桩模拟旧环境 + 90 断言）；全链 14 脚本 259+ 断言全绿） |
 | v1.4 | 2026-08-12 | **阶段三（P2）前端实施完成记录**：① T9/T10 代码交付（OmniAdmin 仓库，pnpm build 全绿——vue-tsc 类型检查 + vite 构建）；② **审查清单外发现**：usePermission.ts 通道1 依赖 v_role_api_detail（055 已删）→ 改 v_role_menu_detail + RoleMenuPerm 类型，否则前端按钮权限全哑；③ 接口管理页整体删除（视图/RPC/页面/路由/i18n 四层联动）；④ 前端 commit 被 commitlint body-max-line-length 拦截，短 body 重提待执行；⑤ T11 进行中（05/15 文档标注待办） |
+| v1.6 | 2026-08-13 | **B1/B2/B3 增量实施完成（§9）**：① B1 删 query 列 / p_query 参数 / get_user_menu query 输出（迁移 056，rpc 签名 18/20 参，verify-056 40/40）；② B2 route_name 推导兜底（`public.derive_route_name` helper，手填优先，directory/menu 型写侧推导，不触碰存量数据）；③ B3 keep_alive→is_cache 改名（迁移 057 双分支收敛——首跑 RENAME 值保留 / 重放 038 重建列后 DROP 分支，p_is_cache 参数名 + 输出键同步；verify-057 22/22 含 rename 值保留 + 模拟重放 + 幂等三遍）；全链 17 脚本绿；前端 Q 项（去 query / MenuProcessor is_cache 映射 / 表单字段 / p_is_cache 参数）待做 |
 
 ---
 
