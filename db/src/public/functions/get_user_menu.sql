@@ -8,6 +8,9 @@
 -- 055: +is_affix——前端多页签布局固定标签（可选消费）
 -- 056: -query——字段全空 + 前端死路由，B1 清理（与 056 迁移同批；038/044 重放会
 --      用旧版覆盖，056 迁移自带重建段兜底）
+-- 057: keep_alive→is_cache 输出键（SharpFort IsCache 语义 + is_ 前缀统一；
+--      前端 MenuProcessor 读 is_cache → meta.keepAlive，Vue 侧 meta.keepAlive 不改；
+--      038/044/056 重放会用旧版覆盖，057 迁移自带重建段兜底）
 
 CREATE OR REPLACE FUNCTION get_user_menu()
 RETURNS json
@@ -29,7 +32,7 @@ BEGIN
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
-            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.route_name,
+            m.is_link, m.is_iframe, m.is_cache, m.redirect, m.route_name,
             m.is_affix
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
@@ -41,7 +44,7 @@ BEGIN
         SELECT
             m.id, m.parent_id, m.menu_name AS name, m.router AS path, m.icon,
             m.menu_type, m.api_code AS perms, m.is_visible, m.component, m.order_num,
-            m.is_link, m.is_iframe, m.keep_alive, m.redirect, m.route_name,
+            m.is_link, m.is_iframe, m.is_cache, m.redirect, m.route_name,
             m.is_affix
         FROM iam_menu m
         JOIN iam_role_menu rm ON m.id = rm.menu_id
@@ -54,7 +57,7 @@ BEGIN
         SELECT
             c.id, c.parent_id, c.name, c.path,
             c.menu_type, c.perms, c.is_visible, c.component,
-            c.is_link, c.is_iframe, c.keep_alive, c.redirect, c.route_name,
+            c.is_link, c.is_iframe, c.is_cache, c.redirect, c.route_name,
             c.is_affix,
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
@@ -64,4 +67,4 @@ BEGIN
     RETURN v_menu_tree;
 END;
 $$;
-COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（056: -query——B1 清理；055: +is_affix——多页签固定标签，前端可选消费）';
+COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（057: keep_alive→is_cache 输出键——前端 MenuProcessor 映射同步，Vue meta.keepAlive 不改；056: -query B1 清理；055: +is_affix）';
