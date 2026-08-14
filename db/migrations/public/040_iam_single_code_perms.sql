@@ -37,9 +37,22 @@ WHERE path = '/sys_user' AND method = 'GET' AND api_code IS NULL;
 -- 冷启动炸点修复（2026-08-14 PGlite 空库重放暴露）：033 分类回填会把
 -- 011 从 sys_menu 迁入的 UserAdd/UserEdit 等行（perms 空）标为 button，
 -- 违反本约束语义（button 必须 perms）→ CHECK 前把无 perms 的 button 行回 menu
-UPDATE iam_menu SET menu_type = 'menu'::iam_menu_type
-WHERE menu_type = 'button'::iam_menu_type
-  AND (perms IS NULL OR trim(perms) = '');
+-- 幂等修正（2026-08-14）：重放第二遍时 055 已插入 api_code 语义的 button 行
+-- （perms 列 022 残留、恒 NULL，055 用 api_code）——本段只修正"无码"行，
+-- 避免误杀 055 端点行（api_code 列 044 才存在 → 按列存在分叉）
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name='iam_menu' AND column_name='api_code') THEN
+        UPDATE iam_menu SET menu_type = 'menu'::iam_menu_type
+        WHERE menu_type = 'button'::iam_menu_type
+          AND (perms IS NULL OR trim(perms) = '')
+          AND api_code IS NULL;
+    ELSE
+        UPDATE iam_menu SET menu_type = 'menu'::iam_menu_type
+        WHERE menu_type = 'button'::iam_menu_type
+          AND (perms IS NULL OR trim(perms) = '');
+    END IF;
+END $$;
 
 DO $$
 BEGIN

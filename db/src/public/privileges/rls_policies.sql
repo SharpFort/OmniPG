@@ -68,12 +68,19 @@ USING (true);
 -- =============================================================================
 ALTER TABLE user_profile ENABLE ROW LEVEL SECURITY;
 
+-- 060 补写策略（2026-08-14 用户拍板：user_profile 为用户可编辑个人信息）：
+-- 读 = 超管 / 本人 / 同租户（017 语义）；写 = 本人 / 超管
+-- （管理端 rpc_update_user_profile 为 SECURITY DEFINER 绕过 RLS，不受此限）
 DROP POLICY IF EXISTS profile_tenant_policy ON user_profile;
 CREATE POLICY profile_tenant_policy ON user_profile
 USING (
     is_super_admin()
     OR user_id = current_user_id()
     OR tenant_id = current_tenant_id()
+)
+WITH CHECK (
+    is_super_admin()
+    OR user_id = current_user_id()
 );
 
 -- =============================================================================
