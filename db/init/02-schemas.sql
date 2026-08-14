@@ -14,7 +14,8 @@ CREATE SCHEMA IF NOT EXISTS api_v1_public;
 COMMENT ON SCHEMA api_v1_public IS '系统管理 API 暴露层（027 定稿：视图名=底层表名；原 api_v1_sys）';
 
 CREATE SCHEMA IF NOT EXISTS net;
-COMMENT ON SCHEMA net IS 'pg_net 异步 HTTP 请求 Schema';
+-- net schema 注释不在此处维护：pg_net 扩展宿主 schema（owner=postgres），
+--   app_owner 执行 COMMENT 必炸（must be owner）；注释由扩展安装方（superuser）负责
 
 -- ==============================================================================
 -- 角色创建
