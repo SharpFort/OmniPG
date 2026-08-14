@@ -17,7 +17,7 @@
 --   - 审计列：012 的 text 化约定（created_by/updated_by/deleted_by text）
 --   - 软删除：deleted_at/deleted_by（全表惯例）
 -- 联动（同提交）:
---   - src 新增 db/src/public/types/iam_gender.sql（bootstrap 前置建，幂等 DO 块）
+--   - src 新增 db/src/public/types/gender.sql（bootstrap 前置建，幂等 DO 块）
 --   - rls_policies.sql: profile_tenant_policy 补 WITH CHECK（本人/超管可写——
 --     原 017 时代仅 USING 只读；用户可编辑语义）
 --   - trg_audit_user_profile（src）与 trg_updated_at（自动）随表存在自动生效
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
                 REFERENCES users(id) ON DELETE CASCADE,   -- Logto 用户 id（nanoid 21）；1:1 主键即外键
     nickname    varchar(64),                              -- 昵称（应用自定义显示名；users.name 为 Logto 权威，不重复存储）
     avatar_url  text,                                     -- 头像 URL（Supabase profiles.avatar_url 惯例）
-    gender      public.iam_gender,                        -- 性别（原生枚举四值，隐私友好）
+    gender      public.gender,                            -- 性别（原生枚举四值，隐私友好）
     birthday    date,                                     -- 生日（date；隐私字段，前端按需脱敏展示）
     bio         varchar(500),                             -- 个人简介（业界常见 varchar 限长）
     location    varchar(200),                             -- 所在地/住址（自由文本）
@@ -54,7 +54,7 @@ COMMENT ON TABLE user_profile IS '用户个人资料（应用自有扩展，用�
 COMMENT ON COLUMN user_profile.user_id IS 'Logto 用户 id（users.id 1:1；主键即外键，ON DELETE CASCADE）';
 COMMENT ON COLUMN user_profile.nickname IS '昵称（应用自定义显示名；users.name 为 Logto 权威显示名，不重复）';
 COMMENT ON COLUMN user_profile.avatar_url IS '头像 URL（空=默认头像，前端兜底）';
-COMMENT ON COLUMN user_profile.gender IS '性别（iam_gender 枚举：male/female/other/prefer_not_to_say）';
+COMMENT ON COLUMN user_profile.gender IS '性别（gender 枚举：male/female/other/prefer_not_to_say）';
 COMMENT ON COLUMN user_profile.birthday IS '生日（隐私字段；前端按需脱敏）';
 COMMENT ON COLUMN user_profile.bio IS '个人简介（≤500 字）';
 COMMENT ON COLUMN user_profile.location IS '所在地/住址（自由文本）';

@@ -22,7 +22,7 @@ fi
 
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
-MODULES="public inventory sales"
+MODULES="public net inventory sales"
 API_MODULES="_shared public inventory sales"
 
 BOOTSTRAP_ONLY=false
