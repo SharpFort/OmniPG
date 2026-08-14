@@ -15,33 +15,7 @@
 -- 无 down 段: apply-src 全文件幂等重放；回滚走 pg_dump。
 -- =============================================================================
 
-CREATE OR REPLACE VIEW api_v1_public.v_user_list AS
-SELECT
-    u.id,
-    u.username,
-    u.primary_email AS email,
-    u.primary_phone AS phone,
-    u.name,                          -- ← 058 新增（前端关键词搜索姓名匹配）
-    p.tenant_id,
-    p.dept_id,
-    t.name AS tenant_name,
-    d.dept_name,
-    (NOT u.is_suspended) AS is_active,
-    u.created_at,
-    u.updated_at,
-    u.deleted_at,
-    COALESCE(
-        (SELECT json_agg(ut.organization_id ORDER BY ut.organization_id)
-         FROM public.user_tenants ut
-         WHERE ut.user_id = u.id),
-        '[]'::json
-    ) AS organizations
-FROM public.users u
-LEFT JOIN public.user_profile p ON p.user_id = u.id
-LEFT JOIN public.tenants t ON p.tenant_id = t.id
-LEFT JOIN public.department d ON p.dept_id = d.id;
 
-COMMENT ON VIEW api_v1_public.v_user_list IS '用户列表视图（058 +name 列：前端关键词搜索姓名匹配；含租户名、部门名、组织成员关系）';
 
 -- ---------------------------------------------------------------------------
 -- 验证 DO 块（新增列存在 + 原有关键列未丢）
@@ -50,7 +24,11 @@ DO $$
 DECLARE
     v_name_col int;
     v_orig_col int;
+    v_view_ok  boolean;
 BEGIN
+    -- 环境自适应（17 号文档）：v_user_list 定义已迁 src/api_v1，dbmate up 阶段不存在则跳过
+    v_view_ok := to_regclass('api_v1_public.v_user_list') IS NOT NULL;
+    IF v_view_ok THEN
     SELECT count(*) INTO v_name_col FROM information_schema.columns
     WHERE table_schema = 'api_v1_public' AND table_name = 'v_user_list'
       AND column_name = 'name';
@@ -68,6 +46,9 @@ BEGIN
     END IF;
 
     RAISE NOTICE '058: v_user_list +name 列验证通过（新增列=1 原有列=13）';
+    ELSE
+        RAISE NOTICE '058: v_user_list 视图 dbmate 阶段不存在（src 提供），跳过列断言';
+    END IF;
 END $$;
 
 -- PostgREST 模式缓存刷新（DDL 后必须，否则旧计划继续服务；044-046 惯例）

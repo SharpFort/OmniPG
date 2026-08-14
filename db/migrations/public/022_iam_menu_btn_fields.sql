@@ -30,11 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_iam_menu_type ON public.iam_menu(menu_type);
 -- §2 重建暴露视图（含新列）
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS api_v1_sys.sys_menu CASCADE;
-CREATE VIEW api_v1_sys.sys_menu AS
-SELECT id, parent_id, menu_name, menu_type, perms, path, component, icon,
-       order_num, is_active, is_visible, created_at, updated_at, created_by, updated_by
-FROM iam_menu;
-COMMENT ON VIEW api_v1_sys.sys_menu IS '菜单视图（含按钮级字段：menu_type/perms/component/is_visible）';
+
 
 -- ---------------------------------------------------------------------------
 -- §3 验证

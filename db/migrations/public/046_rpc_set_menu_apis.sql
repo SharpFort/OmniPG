@@ -17,54 +17,8 @@
 -- 无 down 段: apply-src 全文件幂等重放；回滚走 pg_dump。
 -- =============================================================================
 
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_set_menu_apis(p_menu_id uuid, p_api_ids uuid[] DEFAULT '{}')
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE
-    v_menu_type iam_menu_type;
-    v_bound     int;
-    v_unbound   int;
-BEGIN
-    IF NOT has_permission('public:menu:update') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF p_menu_id IS NULL THEN
-        RAISE EXCEPTION 'menu_id required' USING ERRCODE = '22023';
-    END IF;
 
-    -- 目标节点必须存在且非 link（外链菜单不挂接口）
-    SELECT menu_type INTO v_menu_type FROM iam_menu WHERE id = p_menu_id;
-    IF v_menu_type IS NULL THEN
-        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF v_menu_type = 'link' THEN
-        RAISE EXCEPTION 'link menu cannot bind apis' USING ERRCODE = '22023';
-    END IF;
 
-    -- 校验传入的 api id 全部存在
-    IF EXISTS (
-        SELECT 1 FROM unnest(p_api_ids) t(id)
-        WHERE NOT EXISTS (SELECT 1 FROM iam_api a WHERE a.id = t.id)
-    ) THEN
-        RAISE EXCEPTION 'api not found' USING ERRCODE = 'P0002';
-    END IF;
-
-    -- 解绑：当前挂在该菜单下但不在选中集合（回未挂载池）
-    UPDATE iam_api SET menu_id = NULL, updated_at = now(), updated_by = current_user_id()
-    WHERE menu_id = p_menu_id AND NOT (id = ANY(p_api_ids));
-    GET DIAGNOSTICS v_unbound = ROW_COUNT;
-
-    -- 绑定：选中集合挂载到该菜单（含从其他节点挪移的防御性覆盖）
-    UPDATE iam_api SET menu_id = p_menu_id, updated_at = now(), updated_by = current_user_id()
-    WHERE id = ANY(p_api_ids) AND menu_id IS DISTINCT FROM p_menu_id;
-    GET DIAGNOSTICS v_bound = ROW_COUNT;
-
-    PERFORM log_operate('menu', 'bind_apis', 'iam_menu', p_menu_id::text, 'success',
-                        jsonb_build_object('bound', v_bound, 'unbound', v_unbound));
-    RETURN json_build_object('ok', true, 'bound', v_bound, 'unbound', v_unbound);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_set_menu_apis(uuid, uuid[]) IS '菜单-接口批量绑定/解绑（sys:menu:update；046: 全量对齐选中集合，解绑回未挂载池，事务原子）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_set_menu_apis(uuid, uuid[]) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 验证（smoke：超管创建测试菜单 + 2 接口 → 绑定 → 部分解绑 → 校验 → 清理）
@@ -76,7 +30,14 @@ DECLARE
     v_api2    uuid;
     v_res     json;
     v_n       int;
+    v_fn_ok   boolean;
 BEGIN
+    -- 环境自适应（17 号文档）：rpc_set_menu_apis 已随 055 退役（D2），
+    -- 函数与 iam_api 表均不存在 → 跳过行为验证
+    v_fn_ok := to_regprocedure('api_v1_public.rpc_set_menu_apis(uuid,uuid[])') IS NOT NULL;
+    IF NOT v_fn_ok THEN
+        RAISE NOTICE '046: 菜单-API 绑定 RPC 已退役（055 D2），行为验证跳过';
+    ELSE
     PERFORM set_config('request.jwt.claims', '{"roles":["role_super_admin"]}', true);
 
     INSERT INTO iam_menu (menu_name, menu_type, created_by)
@@ -112,6 +73,7 @@ BEGIN
     DELETE FROM iam_api WHERE id IN (v_api1, v_api2);
     DELETE FROM iam_menu WHERE id = v_menu_id;
     RAISE NOTICE '046: 全部验证通过（批量绑定+全量对齐+解绑回池+拒绝路径）';
+    END IF;
 END $$;
 
 NOTIFY pgrst, 'reload schema';

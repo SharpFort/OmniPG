@@ -27,64 +27,34 @@
 -- ---------------------------------------------------------------------------
 -- §1 role 视图重建（is_active 恒 true）——与 views/role.sql 一致
 -- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS api_v1_public.role CASCADE;
-CREATE OR REPLACE VIEW api_v1_public.role AS
-SELECT
-    r.id,
-    r.role_code,
-    COALESCE(r.name, r.role_code) AS role_name,
-    NULL::text                          AS tenant_id,      -- Logto 角色为全局（组织角色在 organization_roles）
-    NULL::text                          AS description,
-    true::boolean                       AS is_active,      -- 034: Logto 角色目录无停用状态，恒 true
-    r.created_at,
-    r.updated_at,
-    NULL::timestamptz                   AS deleted_at,
-    NULL::text                          AS created_by,
-    NULL::text                          AS updated_by,
-    NULL::text                          AS deleted_by
-FROM role r;
-COMMENT ON VIEW api_v1_public.role IS '角色表视图（Logto 镜像：role 投影，全局角色；is_active 恒 true——Logto 无角色停用概念，034）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- §2 v_role_list 重建（users_count 真实计数）——与 views/v_role_list.sql 一致
 -- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS api_v1_public.v_role_list CASCADE;
-CREATE OR REPLACE VIEW api_v1_public.v_role_list AS
-SELECT
-    r.id,
-    r.role_code,
-    COALESCE(r.name, r.role_code) AS role_name,
-    NULL::text AS tenant_id,
-    NULL::text AS description,
-    true::boolean AS is_active,         -- 034: 同 role 视图语义
-    r.created_at,
-    r.updated_at,
-    NULL::timestamptz AS deleted_at,
-    '全局'::character varying AS tenant_name,
-    (SELECT count(*) FROM iam_role_api ra WHERE ra.role_code = r.role_code) AS api_count,
-    (SELECT count(*) FROM iam_role_menu rm WHERE rm.role_code = r.role_code) AS menu_count,
-    (SELECT count(*) FROM user_role ur WHERE ur.role_code = r.role_code) AS users_count  -- 034: 真实计数
-FROM role r;
-COMMENT ON VIEW api_v1_public.v_role_list IS '角色列表视图（Logto 镜像：role + 绑定计数；034 users_count 改真实计数）';
+
+
 
 -- 034 补：DROP+CREATE 重建视图会清空授权（grant_all.sql 为 apply-src 重放源，此处兜底幂等）
-GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO authenticated;
-GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO role_admin, role_editor, role_guest;
-GRANT ALL ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO super_admin;
+-- 17 号文档归位（2026-08-14）：视图定义已迁 src/api_v1，dbmate up 阶段不存在则跳过授权
+DO $$ BEGIN
+    IF to_regclass('api_v1_public.role') IS NOT NULL
+       AND to_regclass('api_v1_public.v_role_list') IS NOT NULL
+       AND to_regclass('api_v1_public.user_tenants') IS NOT NULL THEN
+        GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO authenticated;
+        GRANT SELECT ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO role_admin, role_editor, role_guest;
+        GRANT ALL ON api_v1_public.role, api_v1_public.v_role_list, api_v1_public.user_tenants TO super_admin;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §3 user_role 视图 → user_tenants 更名（消除与 public.user_role 表同名冲突）
 --    列 = 表列（user_id / organization_id / joined_at）——与 views/user_tenants.sql 一致
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS api_v1_public.user_role CASCADE;
-DROP VIEW IF EXISTS api_v1_public.user_tenants CASCADE;
-CREATE OR REPLACE VIEW api_v1_public.user_tenants AS
-SELECT
-    ut.user_id,
-    ut.organization_id,        -- Logto 组织 id（= 租户 id）
-    ut.joined_at
-FROM user_tenants ut;
-COMMENT ON VIEW api_v1_public.user_tenants IS '用户-组织成员关系视图（Logto 镜像：user_tenants；034 由 user_role 更名，消除与 public.user_role 表同名冲突）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- §4 GRANT 补齐（条件授权幂等；源文件 grant_all.sql 已同步）
@@ -134,9 +104,14 @@ DECLARE
     v_grants       int;
     v_cron         int;
 BEGIN
-    SELECT is_active INTO v_role_active FROM api_v1_public.role LIMIT 1;
-    SELECT pg_get_viewdef('api_v1_public.v_role_list'::regclass, true)
-        LIKE '%FROM user_role ur%' INTO v_users_count;
+    -- 环境自适应（17 号文档：视图已归位 src/api_v1，dbmate up 阶段不存在则跳过）
+    IF to_regclass('api_v1_public.role') IS NOT NULL THEN
+        SELECT is_active INTO v_role_active FROM api_v1_public.role LIMIT 1;
+    END IF;
+    IF to_regclass('api_v1_public.v_role_list') IS NOT NULL THEN
+        SELECT pg_get_viewdef('api_v1_public.v_role_list'::regclass, true)
+            LIKE '%FROM user_role ur%' INTO v_users_count;
+    END IF;
     SELECT count(*) INTO v_ut_view FROM pg_views
       WHERE schemaname='api_v1_public' AND viewname = 'user_tenants';
     SELECT count(*) INTO v_user_role_vw FROM pg_views

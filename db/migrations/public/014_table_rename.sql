@@ -16,59 +16,18 @@
 -- §1 先重建 sys_api/sys_menu 视图指向 iam_*（旧表移除前视图不能悬空）
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS api_v1_sys.sys_api CASCADE;
-CREATE VIEW api_v1_sys.sys_api AS
-SELECT
-    id, path, method,
-    name AS api_name,          -- 兼容旧列名（011 列名修正）
-    description, is_active, created_at, updated_at, created_by, updated_by
-FROM iam_api;
-COMMENT ON VIEW api_v1_sys.sys_api IS 'API 资源表视图（Logto 自主表：iam_api 投影）';
+
 
 DROP VIEW IF EXISTS api_v1_sys.sys_menu CASCADE;
-CREATE VIEW api_v1_sys.sys_menu AS
-SELECT
-    id, parent_id,
-    menu_name AS name,         -- 兼容旧列名
-    path, icon, order_num, is_active, created_at, updated_at, created_by, updated_by
-FROM iam_menu;
-COMMENT ON VIEW api_v1_sys.sys_menu IS '菜单权限表视图（Logto 自主表：iam_menu 投影）';
+
 
 -- 修正 013 的 JOIN 错误：v_role_api_detail 应 JOIN iam_api（api_id 指向 iam_api.id）
 DROP VIEW IF EXISTS api_v1_sys.v_role_api_detail CASCADE;
-CREATE VIEW api_v1_sys.v_role_api_detail AS
-SELECT
-    ra.id AS role_id,
-    ra.api_id,
-    ra.created_at,
-    ra.role_code,
-    COALESCE(r.name, ra.role_code) AS role_name,
-    a.path,
-    a.method,
-    a.name AS api_name,
-    a.is_active AS api_is_active
-FROM iam_role_api ra
-JOIN role r ON r.role_code = ra.role_code
-JOIN iam_api a ON a.id = ra.api_id;
-COMMENT ON VIEW api_v1_sys.v_role_api_detail IS '角色-API 明细视图（Logto 镜像：iam_role_api→iam_api）';
+
 
 -- 修正 013：v_role_menu_detail 应 JOIN iam_menu（列名 menu_name）
-DROP VIEW IF EXISTS api_v1_sys.v_role_menu_detail CASCADE;
-CREATE VIEW api_v1_sys.v_role_menu_detail AS
-SELECT
-    rm.id AS role_id,
-    rm.menu_id,
-    rm.created_at,
-    rm.role_code,
-    COALESCE(r.name, rm.role_code) AS role_name,
-    m.menu_name,
-    NULL::text AS menu_type,
-    NULL::text AS menu_title,
-    NULL::text AS permission_code,
-    m.parent_id AS menu_parent_id
-FROM iam_role_menu rm
-JOIN role r ON r.role_code = rm.role_code
-JOIN iam_menu m ON m.id = rm.menu_id;
-COMMENT ON VIEW api_v1_sys.v_role_menu_detail IS '角色-菜单明细视图（Logto 镜像：iam_role_menu→iam_menu）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- §2 移除被退役表的 api 视图（sys_tenant/sys_secret/sys_token_blacklist/
@@ -85,31 +44,28 @@ DROP VIEW IF EXISTS api_v1_sys.sys_user_session CASCADE;
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
-    IF to_regclass('public.sys_audit_log') IS NOT NULL THEN
+    -- 幂等修正（2026-08-14）：005 等 CREATE TABLE IF NOT EXISTS 在重放第二遍会重建
+    -- 旧表，RENAME 需同时守卫目标不存在（否则 audit_log 等已存在冲突）
+    IF to_regclass('public.sys_audit_log') IS NOT NULL AND to_regclass('public.audit_log') IS NULL THEN
         ALTER TABLE public.sys_audit_log RENAME TO audit_log;
     END IF;
-    IF to_regclass('public.sys_config') IS NOT NULL THEN
+    IF to_regclass('public.sys_config') IS NOT NULL AND to_regclass('public.app_config') IS NULL THEN
         ALTER TABLE public.sys_config RENAME TO app_config;
     END IF;
-    IF to_regclass('public.sys_cron_log') IS NOT NULL THEN
+    IF to_regclass('public.sys_cron_log') IS NOT NULL AND to_regclass('public.cron_job_log') IS NULL THEN
         ALTER TABLE public.sys_cron_log RENAME TO cron_job_log;
     END IF;
-    IF to_regclass('public.sys_department') IS NOT NULL THEN
+    IF to_regclass('public.sys_department') IS NOT NULL AND to_regclass('public.department') IS NULL THEN
         ALTER TABLE public.sys_department RENAME TO department;
     END IF;
-    IF to_regclass('public.sys_user_profile') IS NOT NULL THEN
+    IF to_regclass('public.sys_user_profile') IS NOT NULL AND to_regclass('public.user_profile') IS NULL THEN
         ALTER TABLE public.sys_user_profile RENAME TO user_profile;
     END IF;
 END $$;
 
 -- 重命名后重建引用新表名的统计视图（sys_user_session/sys_token_blacklist 已退役）
-DROP VIEW IF EXISTS api_v1_sys.v_system_stats_realtime CASCADE;
-CREATE VIEW api_v1_sys.v_system_stats_realtime AS
-SELECT
-    (SELECT MAX(execution_time) FROM public.cron_job_log WHERE job_name = 'cleanup-expired-tokens') AS last_cleanup_time,
-    (SELECT COUNT(*) FROM public.audit_log WHERE created_at > now() - interval '24 hours') AS audit_24h,
-    now() AS stats_time;
-COMMENT ON VIEW api_v1_sys.v_system_stats_realtime IS '实时系统统计视图（T7: 移除会话/黑名单计数）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- §4 删除 7 张退役表
@@ -118,6 +74,10 @@ DROP TABLE IF EXISTS public.sys_api CASCADE;
 DROP TABLE IF EXISTS public.sys_menu CASCADE;
 DROP TABLE IF EXISTS public.sys_tenant CASCADE;
 DROP TABLE IF EXISTS public.sys_user_legacy CASCADE;
+-- 17 号文档归位修正（2026-08-14）：001 建的 sys_user 表（Casdoor 时代）从未被删——
+-- 012 的 D 段（public.sys_user 兼容视图，text 化重建）语义依赖它退役；Logto 由
+-- users 镜像表接管，此处随退役批次一并删除（真实链 012 的 CREATE VIEW 依赖此）
+DROP TABLE IF EXISTS public.sys_user CASCADE;
 DROP TABLE IF EXISTS public.sys_token_blacklist CASCADE;
 DROP TABLE IF EXISTS public.sys_user_session CASCADE;
 DROP TABLE IF EXISTS public.sys_secret CASCADE;

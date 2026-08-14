@@ -57,130 +57,26 @@ ON CONFLICT (role_code, api_id) DO NOTHING;
 -- ---------------------------------------------------------------------------
 -- §2 rpc_create_api — 新增 API 权限点（sys:api:create）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_api(
-    p_path text, p_method text, p_name text,
-    p_api_code text DEFAULT NULL, p_description text DEFAULT NULL,
-    p_is_active boolean DEFAULT true,
-    p_menu_id uuid DEFAULT NULL, p_api_group text DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid;
-BEGIN
-    IF NOT has_permission('public:api:create') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF p_path IS NULL OR trim(p_path) = '' THEN
-        RAISE EXCEPTION 'path required' USING ERRCODE = '22023';
-    END IF;
-    IF p_method IS NULL OR trim(p_method) = '' THEN
-        RAISE EXCEPTION 'method required' USING ERRCODE = '22023';
-    END IF;
-    IF p_name IS NULL OR trim(p_name) = '' THEN
-        RAISE EXCEPTION 'name required' USING ERRCODE = '22023';
-    END IF;
-    IF EXISTS (SELECT 1 FROM iam_api WHERE path = trim(p_path) AND method = upper(p_method)) THEN
-        RAISE EXCEPTION 'path+method exists' USING ERRCODE = '22023';
-    END IF;
-    IF p_api_code IS NOT NULL AND trim(p_api_code) <> ''
-       AND EXISTS (SELECT 1 FROM iam_api WHERE api_code = trim(p_api_code)) THEN
-        RAISE EXCEPTION 'api_code exists' USING ERRCODE = '22023';
-    END IF;
-    INSERT INTO iam_api (path, method, name, description, api_code, is_active,
-                         menu_id, api_group, created_by)
-    VALUES (trim(p_path), upper(p_method), trim(p_name), NULLIF(trim(p_description), ''),
-            NULLIF(trim(p_api_code), ''), p_is_active, p_menu_id,
-            -- 分组默认随归属菜单名（表单默认值服务端落地）
-            COALESCE(NULLIF(trim(p_api_group), ''),
-                     (SELECT menu_name FROM iam_menu WHERE id = p_menu_id)),
-            current_user_id())
-    RETURNING id INTO v_id;
-    PERFORM log_operate('api', 'create', 'iam_api', v_id::text,
-                        'success', jsonb_build_object('code', p_api_code, 'path', p_path,
-                                                      'method', p_method, 'name', p_name));
-    RETURN json_build_object('ok', true, 'id', v_id);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_create_api(text, text, text, text, text, boolean, uuid, text) IS 'API 权限点新增（sys:api:create；api_code 重复/path+method 重复拒绝 22023；p_api_group 为空时默认取归属菜单名；method 自动大写）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_api(text, text, text, text, text, boolean, uuid, text) TO authenticated;
+
+
 
 -- ---------------------------------------------------------------------------
 -- §3 rpc_update_api — 修改 API 权限点（sys:api:update；清空语义见 D4）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_api(
-    p_id uuid, p_path text DEFAULT NULL, p_method text DEFAULT NULL,
-    p_name text DEFAULT NULL, p_api_code text DEFAULT NULL,
-    p_description text DEFAULT NULL, p_is_active boolean DEFAULT NULL,
-    p_menu_id uuid DEFAULT NULL, p_api_group text DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_new_code text;
-BEGIN
-    IF NOT has_permission('public:api:update') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM iam_api WHERE id = p_id) THEN
-        RAISE EXCEPTION 'api not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF p_path IS NOT NULL AND trim(p_path) <> ''
-       AND EXISTS (SELECT 1 FROM iam_api
-                   WHERE path = trim(p_path) AND method = upper(COALESCE(p_method, method))
-                     AND id <> p_id) THEN
-        RAISE EXCEPTION 'path+method exists' USING ERRCODE = '22023';
-    END IF;
-    -- api_code 清空语义: '' → NULL；重复检查排除自身
-    v_new_code := NULLIF(trim(p_api_code), '');
-    IF p_api_code IS NOT NULL AND v_new_code IS NOT NULL
-       AND EXISTS (SELECT 1 FROM iam_api WHERE api_code = v_new_code AND id <> p_id) THEN
-        RAISE EXCEPTION 'api_code exists' USING ERRCODE = '22023';
-    END IF;
-    UPDATE iam_api SET
-        path        = COALESCE(NULLIF(trim(p_path), ''), path),
-        method      = COALESCE(upper(p_method), method),
-        name        = COALESCE(NULLIF(trim(p_name), ''), name),
-        api_code    = CASE WHEN p_api_code IS NOT NULL THEN v_new_code ELSE api_code END,
-        description = CASE WHEN p_description IS NOT NULL AND trim(p_description) = ''
-                           THEN NULL ELSE COALESCE(p_description, description) END,
-        is_active   = COALESCE(p_is_active, is_active),
-        menu_id     = CASE WHEN p_menu_id = '00000000-0000-0000-0000-000000000000'
-                           THEN NULL ELSE COALESCE(p_menu_id, menu_id) END,
-        api_group   = CASE WHEN p_api_group IS NOT NULL AND trim(p_api_group) = ''
-                           THEN NULL ELSE COALESCE(p_api_group, api_group) END,
-        updated_at  = now(),
-        updated_by  = current_user_id()
-    WHERE id = p_id;
-    PERFORM log_operate('api', 'update', 'iam_api', p_id::text);
-    RETURN json_build_object('ok', true);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_update_api(uuid, text, text, text, text, text, boolean, uuid, text) IS 'API 权限点修改（sys:api:update；NULL=不改；文本传 '' '' 清空，menu_id 传零 uuid 清空归属；api_code/path+method 重复拒绝 22023）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_update_api(uuid, text, text, text, text, text, boolean, uuid, text) TO authenticated;
+
 
 -- ---------------------------------------------------------------------------
 -- §4 rpc_delete_api — 删除 API 权限点（sys:api:delete；有角色绑定拒绝）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_delete_api(p_id uuid)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-BEGIN
-    IF NOT has_permission('public:api:delete') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM iam_api WHERE id = p_id) THEN
-        RAISE EXCEPTION 'api not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF EXISTS (SELECT 1 FROM iam_role_api WHERE api_id = p_id) THEN
-        RAISE EXCEPTION 'has role bindings, cannot delete' USING ERRCODE = '23503';
-    END IF;
-    DELETE FROM iam_api WHERE id = p_id;
-    PERFORM log_operate('api', 'delete', 'iam_api', p_id::text);
-    RETURN json_build_object('ok', true);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_delete_api(uuid) IS 'API 权限点删除（sys:api:delete；iam_role_api 有绑定拒绝 23503——先解绑再删，避免 CASCADE 静默清授权）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_delete_api(uuid) TO authenticated;
+
+
 
 -- ---------------------------------------------------------------------------
 -- §5 验证（结构 + 真实冒烟含审计链路，042 同款伪 claims）
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
+    v_fn_ok     boolean;
     v_fns       int;
     v_codes     int;
     v_binds     int;
@@ -194,6 +90,12 @@ DECLARE
     v_del_ok    boolean := false;
     v_deny_ok   boolean := false;
 BEGIN
+    -- 环境自适应（17 号文档）：rpc_create/update/delete_api 已随 055 退役（D2），
+    -- 函数与 iam_api 表均不存在 → 跳过行为验证
+    v_fn_ok := to_regprocedure('api_v1_public.rpc_create_api(text,text,text,text,text,boolean,uuid,text)') IS NOT NULL;
+    IF NOT v_fn_ok THEN
+        RAISE NOTICE '043: API CRUD RPC 已退役（055 D2），行为验证跳过';
+    ELSE
     -- 结构: 3 函数 + 3 权限点 + 3 超管绑定
     SELECT count(*) INTO v_fns FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -283,4 +185,5 @@ BEGIN
         RAISE EXCEPTION '043 验证失败';
     END IF;
     RAISE NOTICE '043: 全部验证通过';
+    END IF;
 END $$;

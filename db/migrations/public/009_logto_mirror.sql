@@ -218,18 +218,9 @@ CREATE INDEX IF NOT EXISTS idx_iam_role_menu_menu ON iam_role_menu(menu_id);
 --     本版本: jsonb_array_elements_text — 直接拿字符串，无 isEnabled 概念
 --     旧版返回 text[]（对象数组解析）→ DROP 重建（语义不同但返回类型相同，仍先 DROP 保幂等）
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS current_user_roles();
 
-CREATE FUNCTION current_user_roles() RETURNS text[]
-LANGUAGE sql STABLE AS $$
-    SELECT COALESCE(ARRAY(
-        SELECT jsonb_array_elements_text(
-            COALESCE(current_setting('request.jwt.claims', true)::jsonb -> 'roles', '[]'::jsonb)
-        )
-    ), ARRAY[]::text[])
-$$;
 
-COMMENT ON FUNCTION current_user_roles() IS '当前用户 Logto 角色名数组（JWT roles claim，字符串数组，零查询）';
+
 
 -- ---------------------------------------------------------------------------
 -- 3.2 current_tenant_id() — 从 organization_id claim 提取
@@ -242,48 +233,33 @@ DROP POLICY IF EXISTS request_tenant_policy ON sys_user_role_request;
 DROP POLICY IF EXISTS session_user_policy ON sys_user_session;
 DROP POLICY IF EXISTS blacklist_system_policy ON sys_token_blacklist;
 DROP POLICY IF EXISTS tenant_isolation_policy ON sys_tenant;
-DROP POLICY IF EXISTS dept_tenant_isolation_policy ON sys_department;
+
 DROP POLICY IF EXISTS role_tenant_isolation_policy ON sys_role;
-DROP POLICY IF EXISTS api_read_policy ON sys_api;
-DROP POLICY IF EXISTS menu_read_policy ON sys_menu;
+
+
 DROP POLICY IF EXISTS secret_system_policy ON sys_secret;
 DROP POLICY IF EXISTS mirror_tenant_policy ON casdoor_user_mirror;
-DROP POLICY IF EXISTS profile_tenant_policy ON sys_user_profile;
 
-DROP FUNCTION IF EXISTS current_tenant_id();
 
-CREATE FUNCTION current_tenant_id() RETURNS text
-LANGUAGE sql STABLE AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb ->> 'organization_id', '')
-$$;
 
-COMMENT ON FUNCTION current_tenant_id() IS '当前租户 ID = Logto organization_id claim（零查询）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- 3.3 current_user_id() — 从 sub claim 提取（Logto user id = 21 位 nanoid）
 --     旧版返回 uuid → DROP 重建
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS current_user_id();
 
-CREATE FUNCTION current_user_id() RETURNS text
-LANGUAGE sql STABLE AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')
-$$;
 
-COMMENT ON FUNCTION current_user_id() IS '当前用户 ID = Logto sub claim（21 位 nanoid 字符串）';
+
 
 -- ---------------------------------------------------------------------------
 -- 3.4 is_super_admin() — 检查是否含全局超管角色
 --     旧版引用旧 current_user_roles（对象数组）→ DROP 重建避免依赖旧函数签名
 -- ---------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS is_super_admin();
 
-CREATE FUNCTION is_super_admin() RETURNS boolean
-LANGUAGE sql STABLE AS $$
-    SELECT current_user_roles() @> ARRAY['role_super_admin']
-$$;
 
-COMMENT ON FUNCTION is_super_admin() IS '当前用户是否含 role_super_admin 角色（读 claims，零查询）';
+
 
 -- ==============================================================================
 -- §4 兼容视图重建
@@ -298,36 +274,7 @@ COMMENT ON FUNCTION is_super_admin() IS '当前用户是否含 role_super_admin 
 -- 4.2 casbin_rule 视图 — 重建为 iam_role_api + iam_role_menu 投影（E3）
 --     沿用 v0/v1/v2 结构；role_code 对齐 Logto 角色名
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW casbin_rule AS
--- p 规则：角色→API 绑定
-SELECT
-    NULL::integer AS id,
-    'p'::varchar AS ptype,
-    ra.role_code::varchar AS v0,              -- 角色名（Logto 角色名 = role_code）
-    a.path::varchar AS v1,                    -- API 路径
-    a.method::varchar AS v2,                  -- HTTP 方法
-    NULL::varchar AS v3,
-    NULL::varchar AS v4,
-    NULL::varchar AS v5
-FROM iam_role_api ra
-JOIN iam_api a ON ra.api_id = a.id
-WHERE a.is_active = true
-UNION ALL
--- p 规则：角色→菜单绑定（前端消费）
-SELECT
-    NULL::integer,
-    'p'::varchar,
-    rm.role_code::varchar AS v0,
-    m.path::varchar AS v1,
-    'menu'::varchar AS v2,
-    NULL::varchar,
-    NULL::varchar,
-    NULL::varchar
-FROM iam_role_menu rm
-JOIN iam_menu m ON rm.menu_id = m.id
-WHERE m.is_active = true;
 
-COMMENT ON VIEW casbin_rule IS 'Casbin 策略运行视图 — Logto 版：iam_role_api + iam_role_menu 投影（E3）；v0=role_code, v1=资源, v2=action';
 
 -- ==============================================================================
 -- §5 权限授予
@@ -345,8 +292,13 @@ GRANT SELECT ON iam_menu TO authenticated;
 GRANT SELECT ON iam_role_api TO authenticated;
 GRANT SELECT ON iam_role_menu TO authenticated;
 
--- 兼容视图（casbin_rule 在 009 建；public.sys_user 在 012 建并 GRANT）
-GRANT SELECT ON casbin_rule TO authenticated;
+-- 兼容视图（casbin_rule 定义已归位 src/public/views/casbin_rule.sql——17 号文档；
+-- dbmate up 阶段不存在则跳过，apply-src 阶段 src 先建再授权）
+DO $$ BEGIN
+    IF to_regclass('public.casbin_rule') IS NOT NULL THEN
+        GRANT SELECT ON casbin_rule TO authenticated;
+    END IF;
+END $$;
 
 -- ==============================================================================
 -- 注意: 本项目迁移由 apply-src.sh 幂等重放（psql 全文件执行，不识别

@@ -7,7 +7,7 @@
 -- ==============================================================================
 -- 审计日志表：记录所有关键业务表的数据变更
 -- ==============================================================================
-CREATE TABLE sys_audit_log (
+CREATE TABLE IF NOT EXISTS sys_audit_log (
     id BIGSERIAL PRIMARY KEY,
     table_name VARCHAR(100) NOT NULL,
     operation audit_operation NOT NULL,
@@ -24,10 +24,10 @@ COMMENT ON COLUMN sys_audit_log.old_data IS '变更前的数据（DELETE 时保�
 COMMENT ON COLUMN sys_audit_log.new_data IS '变更后的数据（INSERT 时保存新数据）';
 COMMENT ON COLUMN sys_audit_log.user_id IS '操作人用户 ID';
 COMMENT ON COLUMN sys_audit_log.tenant_id IS '租户标识';
-CREATE INDEX idx_audit_table ON sys_audit_log(table_name);
-CREATE INDEX idx_audit_tenant ON sys_audit_log(tenant_id);
-CREATE INDEX idx_audit_created ON sys_audit_log(created_at);
-CREATE INDEX idx_audit_user ON sys_audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_table ON sys_audit_log(table_name);
+CREATE INDEX IF NOT EXISTS idx_audit_tenant ON sys_audit_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON sys_audit_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON sys_audit_log(user_id);
 
 -- migrate:down
 DROP TABLE IF EXISTS sys_audit_log CASCADE;

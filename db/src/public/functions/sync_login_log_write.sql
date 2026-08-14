@@ -1,0 +1,42 @@
+-- src/public/functions/sync_login_log_write.sql
+-- FUNCTION: public.sync_login_log_write（17 号文档归位：迁移 023_admin_p0_naming_perm.sql 删定义段，本文件为唯一权威）
+-- 回放终态: 023_admin_p0_naming_perm.sql；幂等写法（§9 模板）
+
+CREATE OR REPLACE FUNCTION sync_login_log_write(payload jsonb) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_user_id    text := payload->>'userId';
+    v_username   text;
+    v_ip         inet;
+    v_agent      text := payload->>'userAgent';
+    v_ts         timestamptz := logto_ts(payload->>'createdAt');
+    v_login_type text;
+BEGIN
+    IF v_user_id IS NULL THEN RETURN; END IF;
+
+    SELECT username INTO v_username FROM users WHERE id = v_user_id;
+
+    BEGIN
+        v_ip := (payload->>'userIp')::inet;
+    EXCEPTION WHEN OTHERS THEN
+        v_ip := NULL;
+    END;
+
+    SELECT key INTO v_login_type
+    FROM jsonb_each_text(COALESCE(payload->'user'->'identities', '{}'::jsonb))
+    LIMIT 1;
+
+    INSERT INTO login_log
+        (tenant_id, user_id, username, login_type, result, ip, user_agent,
+         region, logto_event, created_at)
+    VALUES
+        (NULL, v_user_id, v_username, COALESCE(v_login_type, 'unknown'), 'success',
+         v_ip, v_agent, ip2region(v_ip), 'PostSignIn', COALESCE(v_ts, now()));
+EXCEPTION WHEN OTHERS THEN
+    NULL;
+END;
+$$;
+REVOKE EXECUTE ON FUNCTION sync_login_log_write(jsonb) FROM PUBLIC;

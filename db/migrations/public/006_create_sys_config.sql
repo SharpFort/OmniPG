@@ -8,7 +8,7 @@
 -- =============================================================================
 -- 系统配置表：存储前端 Logo、站点名称等运行时配置
 -- =============================================================================
-CREATE TABLE sys_config (
+CREATE TABLE IF NOT EXISTS sys_config (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     config_key VARCHAR(100) NOT NULL UNIQUE,
     config_value TEXT,
@@ -25,8 +25,8 @@ COMMENT ON COLUMN sys_config.config_value IS '配置值（统一存文本，按 
 COMMENT ON COLUMN sys_config.config_type IS '值类型：string/number/boolean/json';
 COMMENT ON COLUMN sys_config.is_public IS '是否前端可见（true=前端可读取，false=仅后端）';
 
-CREATE INDEX idx_config_key ON sys_config(config_key);
-CREATE INDEX idx_config_public ON sys_config(is_public) WHERE is_public = TRUE;
+CREATE INDEX IF NOT EXISTS idx_config_key ON sys_config(config_key);
+CREATE INDEX IF NOT EXISTS idx_config_public ON sys_config(is_public) WHERE is_public = TRUE;
 
 -- 默认配置
 INSERT INTO sys_config (config_key, config_value, config_type, description, is_public) VALUES

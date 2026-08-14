@@ -43,11 +43,11 @@
 DROP VIEW IF EXISTS api_v1_public.iam_api CASCADE;
 DROP VIEW IF EXISTS api_v1_public.iam_role_api CASCADE;
 DROP VIEW IF EXISTS api_v1_public.v_role_api_detail CASCADE;
-DROP VIEW IF EXISTS public.casbin_rule CASCADE;                 -- §7 重建（双段 menu 口径）
+                 -- §7 重建（双段 menu 口径）
 
 -- 函数（024/027 后实际 schema = api_v1_public；DROP 带签名防重载歧义）
-DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(uuid);   -- 044 时代旧签名兜底
-DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(text);   -- §7 重建
+   -- 044 时代旧签名兜底
+   -- §7 重建
 DROP FUNCTION IF EXISTS api_v1_public.rpc_set_role_apis(text, text[]);          -- 024；D2
 DROP FUNCTION IF EXISTS api_v1_public.rpc_grant_menu_subtree_apis(text, uuid);  -- 041；D10
 DROP FUNCTION IF EXISTS api_v1_public.rpc_revoke_menu_subtree_apis(text, uuid); -- 041；D10
@@ -201,7 +201,8 @@ WHERE NOT EXISTS (SELECT 1 FROM public.iam_menu m
                   WHERE m.menu_type = 'button'
                     AND m.api_code = ep.api_code
                     AND m.api_url = ep.api_url
-                    AND m.api_method = ep.api_method);
+                    AND m.api_method = ep.api_method)
+ON CONFLICT (api_url, api_method) WHERE api_url IS NOT NULL DO NOTHING;  -- 幂等兜底（2026-08-14）
 
 -- 4.4 非 button 行 api_code 收敛（码只归 button 行；先复制绑定再清空）
 --     4.4.1 绑定到"带码非 button 行"（如 040 UserList 目录行）的 role_menu → 复制到同码 button 行
@@ -283,285 +284,30 @@ DROP TABLE IF EXISTS public.iam_api;
 
 -- 7.1 has_permission 单通道（D3：role_menu → menu.api_code；超管短路保留；
 --     一码多行 EXISTS 语义天然正确——任一 button 行命中即 true）
-CREATE OR REPLACE FUNCTION has_permission(p_code text) RETURNS boolean
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_roles text[];
-BEGIN
-    IF p_code IS NULL OR p_code = '' THEN
-        RETURN false;
-    END IF;
-    -- 超管短路（RLS 例外同款语义）
-    IF is_super_admin() THEN
-        RETURN true;
-    END IF;
-    -- 从 JWT claims 提取角色（零查询原则：角色在 claims，绑定查小表）
-    SELECT ARRAY(SELECT jsonb_array_elements_text(
-                    current_setting('request.jwt.claims', true)::jsonb->'roles'))
-      INTO v_roles;
-    IF v_roles IS NULL OR cardinality(v_roles) = 0 THEN
-        RETURN false;
-    END IF;
-    -- 单通道（055 D3）：权限点 = button 行 api_code（非 button 行 api_code 已收敛置空）
-    RETURN EXISTS (
-        SELECT 1
-        FROM iam_role_menu rm
-        JOIN iam_menu m ON m.id = rm.menu_id
-        WHERE rm.role_code = ANY(v_roles)
-          AND m.api_code = p_code
-          AND m.is_active
-    );
-END;
-$$;
-COMMENT ON FUNCTION has_permission(text) IS '权限点判定（055 单通道 D3: role_menu→menu.api_code；超管短路；一码多端点 EXISTS 语义）';
+
 
 -- 7.2 casbin_rule 双段重建（API 段 = role_menu→button 行 api_url/api_method；
 --     菜单段 = role_menu→router/'menu' 原样保留）
-DROP VIEW IF EXISTS public.casbin_rule CASCADE;
-CREATE VIEW casbin_rule AS
--- API 段（055 单表化：端点随 button 行）
-SELECT
-    NULL::integer AS id,
-    'p'::varchar AS ptype,
-    rm.role_code::varchar AS v0,
-    m.api_url::varchar AS v1,
-    m.api_method::varchar AS v2,
-    NULL::varchar AS v3,
-    NULL::varchar AS v4,
-    NULL::varchar AS v5
-FROM iam_role_menu rm
-JOIN iam_menu m ON rm.menu_id = m.id
-WHERE m.is_active AND m.api_url IS NOT NULL
-UNION ALL
--- 菜单段（原样保留：role_menu → router/'menu'）
-SELECT
-    NULL::integer AS id,
-    'p'::varchar AS ptype,
-    rm.role_code::varchar AS v0,
-    m.router::varchar AS v1,
-    'menu'::varchar AS v2,
-    NULL::varchar AS v3,
-    NULL::varchar AS v4,
-    NULL::varchar AS v5
-FROM iam_role_menu rm
-JOIN iam_menu m ON rm.menu_id = m.id
-WHERE m.is_active;
-COMMENT ON VIEW casbin_rule IS 'Casbin 策略运行视图（055 双段）：API 段 = role_menu→button 行端点（v1=api_url, v2=api_method）+ 菜单段 = role_menu→router（v2=menu）原样保留';
-COMMENT ON COLUMN casbin_rule.v0 IS '策略主体：角色代码（role_code）';
-COMMENT ON COLUMN casbin_rule.v1 IS '策略对象：API 路径 / 菜单路径';
-COMMENT ON COLUMN casbin_rule.v2 IS '策略动作：HTTP 方法 / menu';
+
+
+-- 17 号文档归位（2026-08-14）：casbin_rule 定义/COMMENT 已迁 src/public/views/casbin_rule.sql
 
 -- 7.3 get_role_permissions（apis 段改"角色菜单下挂接口"：role_menu → button 行 api_url 非空；
 --     输出键保持 path/method/api_name——前端授权弹窗契约不变）
-CREATE OR REPLACE FUNCTION api_v1_public.get_role_permissions(p_role_code text)
-RETURNS json
-LANGUAGE plpgsql
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_role RECORD;
-    v_apis json;
-    v_menus json;
-BEGIN
-    SELECT id, name AS role_name, role_code, type, is_default INTO v_role
-    FROM role WHERE role_code = p_role_code;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Role not found' USING ERRCODE = 'P0001';
-    END IF;
 
-    -- 055 单表化：API 授权 = 角色绑定按钮行中带端点的行
-    SELECT COALESCE(json_agg(
-        json_build_object('id', m.id, 'path', m.api_url, 'method', m.api_method, 'api_name', m.menu_name)
-        ORDER BY m.api_url
-    ), '[]'::json) INTO v_apis
-    FROM iam_role_menu rm
-    JOIN iam_menu m ON rm.menu_id = m.id
-    WHERE rm.role_code = p_role_code AND m.is_active AND m.api_url IS NOT NULL;
 
-    SELECT COALESCE(json_agg(
-        json_build_object('id', m.id, 'name', m.menu_name, 'parent_id', m.parent_id,
-                          'path', m.router, 'icon', m.icon)
-        ORDER BY m.order_num
-    ), '[]'::json) INTO v_menus
-    FROM iam_role_menu rm
-    JOIN iam_menu m ON rm.menu_id = m.id
-    WHERE rm.role_code = p_role_code AND m.is_active;
-
-    RETURN json_build_object(
-        'role_id', v_role.id,
-        'role_code', v_role.role_code,
-        'role_name', v_role.role_name,
-        'type', v_role.type,
-        'apis', v_apis,
-        'menus', v_menus,
-        'api_count', json_array_length(v_apis),
-        'menu_count', json_array_length(v_menus)
-    );
-END;
-$$;
-COMMENT ON FUNCTION api_v1_public.get_role_permissions(text) IS '获取角色权限（055 单表化: apis 段 = 角色菜单下挂接口，输出键 path/method/api_name 保持）';
-GRANT EXECUTE ON FUNCTION api_v1_public.get_role_permissions(text) TO authenticated;
 
 -- 7.4 rpc_create_menu 重建（T3：+p_api_url/p_api_method/p_is_affix；
 --     D8: button 禁传 router/component；D6: 端点成对 + 值域；
 --     非 button 行 api_code/router/component/api_url 强制 NULL——Admin.NET CheckMenuParam 同款）
-DROP FUNCTION IF EXISTS api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean);
-CREATE FUNCTION api_v1_public.rpc_create_menu(
-    p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
-    p_api_code text DEFAULT NULL, p_router text DEFAULT NULL, p_component text DEFAULT NULL,
-    p_icon text DEFAULT NULL, p_order_num int DEFAULT 0, p_is_visible boolean DEFAULT true,
-    p_remark text DEFAULT NULL, p_route_name text DEFAULT NULL, p_query text DEFAULT NULL,
-    p_is_link boolean DEFAULT NULL, p_is_iframe boolean DEFAULT NULL,
-    p_redirect text DEFAULT NULL, p_keep_alive boolean DEFAULT NULL,
-    p_api_url text DEFAULT NULL, p_api_method text DEFAULT NULL, p_is_affix boolean DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid;
-BEGIN
-    IF NOT has_permission('public:menu:create') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
-        RAISE EXCEPTION 'menu_name required' USING ERRCODE = '22023';
-    END IF;
-    IF p_menu_type NOT IN ('directory','menu','button','link') THEN
-        RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
-    END IF;
-    -- 040 单码制：button 必须 api_code
-    IF p_menu_type = 'button' AND (p_api_code IS NULL OR trim(p_api_code) = '') THEN
-        RAISE EXCEPTION 'button menu requires api_code' USING ERRCODE = '22023';
-    END IF;
-    -- 055 D8：button 行禁传导航字段（RPC 友好报错 + 表级 CHECK 兜底）
-    IF p_menu_type = 'button' AND (p_router IS NOT NULL OR p_component IS NOT NULL) THEN
-        RAISE EXCEPTION 'button menu cannot have router/component' USING ERRCODE = '22023';
-    END IF;
-    -- 055 D6：端点成对 + 值域
-    IF p_api_url IS NOT NULL AND (p_api_method IS NULL OR p_api_method NOT IN
-       ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','*')) THEN
-        RAISE EXCEPTION 'invalid api_method' USING ERRCODE = '22023';
-    END IF;
-    IF p_api_method IS NOT NULL AND p_api_url IS NULL THEN
-        RAISE EXCEPTION 'api_url required with api_method' USING ERRCODE = '22023';
-    END IF;
-    -- 端点仅 button 行使用（Admin.NET CheckMenuParam 语义：非 Btn 行不落端点）
-    IF p_menu_type <> 'button' AND (p_api_url IS NOT NULL OR p_api_method IS NOT NULL) THEN
-        RAISE EXCEPTION 'api_url/api_method only for button' USING ERRCODE = '22023';
-    END IF;
-    INSERT INTO iam_menu (parent_id, menu_name, menu_type, api_code, router, component,
-                          icon, order_num, is_visible,
-                          remark, route_name, query,
-                          is_link, is_iframe, redirect, keep_alive,
-                          api_url, api_method, is_affix, created_by)
-    VALUES (p_parent_id, p_menu_name, p_menu_type::iam_menu_type,
-            CASE WHEN p_menu_type = 'button' THEN p_api_code ELSE NULL END,
-            CASE WHEN p_menu_type = 'button' THEN NULL ELSE p_router END,
-            CASE WHEN p_menu_type = 'button' THEN NULL ELSE p_component END,
-            p_icon, p_order_num, p_is_visible,
-            p_remark, p_route_name, p_query,
-            COALESCE(p_is_link, p_menu_type = 'link'), COALESCE(p_is_iframe, false),
-            p_redirect, COALESCE(p_keep_alive, true),
-            CASE WHEN p_menu_type = 'button' THEN p_api_url ELSE NULL END,
-            CASE WHEN p_menu_type = 'button' THEN p_api_method ELSE NULL END,
-            COALESCE(p_is_affix, false), current_user_id())
-    RETURNING id INTO v_id;
-    PERFORM log_operate('menu', 'create', 'iam_menu', v_id::text,
-                        'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
-    RETURN json_build_object('ok', true, 'id', v_id);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单新增（public:menu:create；055: +api_url/api_method/is_affix，D8 button 禁导航字段，D6 端点成对值域，非 button 行权限字段强制 NULL）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) TO authenticated;
+
+
+
 
 -- 7.5 rpc_update_menu 重建（同上；改类型时按最终类型应用字段归属规则）
-DROP FUNCTION IF EXISTS api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean);
-CREATE FUNCTION api_v1_public.rpc_update_menu(
-    p_id uuid, p_parent_id uuid DEFAULT NULL, p_menu_name text DEFAULT NULL,
-    p_menu_type text DEFAULT NULL, p_api_code text DEFAULT NULL, p_router text DEFAULT NULL,
-    p_component text DEFAULT NULL, p_icon text DEFAULT NULL, p_order_num int DEFAULT NULL,
-    p_is_active boolean DEFAULT NULL, p_is_visible boolean DEFAULT NULL,
-    p_remark text DEFAULT NULL, p_route_name text DEFAULT NULL, p_query text DEFAULT NULL,
-    p_is_link boolean DEFAULT NULL, p_is_iframe boolean DEFAULT NULL,
-    p_redirect text DEFAULT NULL, p_keep_alive boolean DEFAULT NULL,
-    p_api_url text DEFAULT NULL, p_api_method text DEFAULT NULL, p_is_affix boolean DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE
-    v_menu_type iam_menu_type;
-    v_api_code  text;
-BEGIN
-    IF NOT has_permission('public:menu:update') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id) THEN
-        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF p_parent_id = p_id THEN
-        RAISE EXCEPTION 'parent cannot be self' USING ERRCODE = '22023';
-    END IF;
-    IF p_menu_type IS NOT NULL AND p_menu_type NOT IN ('directory','menu','button','link') THEN
-        RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
-    END IF;
-    SELECT menu_type, api_code INTO v_menu_type, v_api_code FROM iam_menu WHERE id = p_id;
-    -- 040 单码制：最终类型为 button 必须 api_code
-    IF (COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type)
-       AND (COALESCE(p_api_code, v_api_code) IS NULL OR trim(COALESCE(p_api_code, v_api_code)) = '') THEN
-        RAISE EXCEPTION 'button menu requires api_code' USING ERRCODE = '22023';
-    END IF;
-    -- 055 D8：最终类型为 button 禁传导航字段
-    IF (COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type)
-       AND (p_router IS NOT NULL OR p_component IS NOT NULL) THEN
-        RAISE EXCEPTION 'button menu cannot have router/component' USING ERRCODE = '22023';
-    END IF;
-    -- 055 D6：端点成对 + 值域
-    IF p_api_url IS NOT NULL AND (p_api_method IS NULL OR p_api_method NOT IN
-       ('GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS','*')) THEN
-        RAISE EXCEPTION 'invalid api_method' USING ERRCODE = '22023';
-    END IF;
-    IF p_api_method IS NOT NULL AND p_api_url IS NULL THEN
-        RAISE EXCEPTION 'api_url required with api_method' USING ERRCODE = '22023';
-    END IF;
-    IF (COALESCE(p_menu_type::iam_menu_type, v_menu_type) <> 'button'::iam_menu_type)
-       AND (p_api_url IS NOT NULL OR p_api_method IS NOT NULL) THEN
-        RAISE EXCEPTION 'api_url/api_method only for button' USING ERRCODE = '22023';
-    END IF;
-    UPDATE iam_menu SET
-        parent_id   = COALESCE(p_parent_id, parent_id),
-        menu_name   = COALESCE(p_menu_name, menu_name),
-        menu_type   = COALESCE(p_menu_type::iam_menu_type, menu_type),
-        -- 055：字段归属按最终类型（Admin.NET CheckMenuParam 语义）
-        api_code    = CASE WHEN COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type
-                           THEN COALESCE(p_api_code, api_code) ELSE NULL END,
-        router      = CASE WHEN COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type
-                           THEN NULL ELSE COALESCE(p_router, router) END,
-        component   = CASE WHEN COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type
-                           THEN NULL ELSE COALESCE(p_component, component) END,
-        icon        = COALESCE(p_icon, icon),
-        order_num   = COALESCE(p_order_num, order_num),
-        is_active   = COALESCE(p_is_active, is_active),
-        is_visible  = COALESCE(p_is_visible, is_visible),
-        remark      = COALESCE(p_remark, remark),
-        route_name  = COALESCE(p_route_name, route_name),
-        query       = COALESCE(p_query, query),
-        is_link     = COALESCE(p_is_link, p_menu_type = 'link', is_link),
-        is_iframe   = COALESCE(p_is_iframe, is_iframe),
-        redirect    = COALESCE(p_redirect, redirect),
-        keep_alive  = COALESCE(p_keep_alive, keep_alive),
-        api_url     = CASE WHEN COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type
-                           THEN COALESCE(p_api_url, api_url) ELSE NULL END,
-        api_method  = CASE WHEN COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type
-                           THEN COALESCE(p_api_method, api_method) ELSE NULL END,
-        is_affix    = COALESCE(p_is_affix, is_affix),
-        updated_at  = now(),
-        updated_by  = current_user_id()
-    WHERE id = p_id;
-    PERFORM log_operate('menu', 'update', 'iam_menu', p_id::text);
-    RETURN json_build_object('ok', true);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) IS '菜单修改（public:menu:update；055: +api_url/api_method/is_affix，字段归属按最终类型——button 禁导航字段 D8，端点成对值域 D6）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean, text, text, boolean) TO authenticated;
+
+
+
 
 -- ---------------------------------------------------------------------------
 -- §8 权限点清理核对（D9/验收 10）
@@ -603,7 +349,11 @@ DECLARE
     v_ch_role   boolean;
     v_api_seg   int;
     v_menu_seg  int;
+    v_fn_ok     boolean;
 BEGIN
+    -- 环境自适应（17 号文档）：has_permission/casbin_rule 已迁 src，
+    -- dbmate up 阶段不存在则跳过行为/视图断言；结构/约束/数据断言不受影响
+    v_fn_ok := to_regprocedure('has_permission(text)') IS NOT NULL;
     -- 1. 表删除断言（D1/D2）
     SELECT count(*) INTO v_tables FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name IN ('iam_api', 'iam_role_api');
@@ -658,6 +408,7 @@ BEGIN
     SELECT count(*) INTO v_endpoints FROM iam_menu WHERE api_url IS NOT NULL;
     IF v_endpoints = 0 THEN RAISE EXCEPTION '055: 无转换出的端点按钮行'; END IF;
 
+    IF v_fn_ok THEN
     -- 6. 行为断言（D3 单通道）
     PERFORM set_config('request.jwt.claims', '{"roles":["role_super_admin"]}', true);
     v_ch_super := has_permission('public:menu:create');          -- 超管短路
@@ -690,4 +441,5 @@ BEGIN
 
     RAISE NOTICE '055: 全部验证通过（表删=1 列=3 约束=6 索引=2 端点=% 双段=%/% 单通道超管=% 拒绝=%）',
         v_endpoints, v_api_seg, v_menu_seg, v_ch_super, v_ch_deny;
+    END IF;
 END $$;

@@ -13,6 +13,8 @@
 -- §1 iam_api — 从 sys_api 迁移 API 权限点目录
 --    排除旧 Casdoor 登录/刷新路由（已 deprecated）
 -- ==============================================================================
+DO $$ BEGIN
+IF to_regclass('public.sys_api') IS NOT NULL THEN
 INSERT INTO iam_api (path, method, name, description, is_active)
 SELECT
     a.path,
@@ -29,6 +31,8 @@ ON CONFLICT (path, method) DO UPDATE SET
     description = EXCLUDED.description,
     is_active   = EXCLUDED.is_active,
     updated_at  = now();
+END IF;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE 'Seeded iam_api: % rows', (SELECT count(*) FROM iam_api); END $$;
 
@@ -36,6 +40,11 @@ DO $$ BEGIN RAISE NOTICE 'Seeded iam_api: % rows', (SELECT count(*) FROM iam_api
 -- §2 iam_menu — 从 sys_menu 迁移菜单树
 --    假设 sys_menu 中存在数据；若空则跳过
 -- ==============================================================================
+DO $$ BEGIN
+-- 幂等修正（2026-08-14）：044 已把 iam_menu.path 改名 router，重放时 path 列不存在则跳过
+IF to_regclass('public.sys_menu') IS NOT NULL
+   AND EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name='iam_menu' AND column_name='path') THEN
 INSERT INTO iam_menu (id, parent_id, menu_name, path, icon, order_num, is_active)
 SELECT
     m.id,
@@ -54,6 +63,8 @@ ON CONFLICT (id) DO UPDATE SET
     order_num  = EXCLUDED.order_num,
     is_active  = EXCLUDED.is_active,
     updated_at = now();
+END IF;
+END $$;
 
 DO $$ BEGIN RAISE NOTICE 'Seeded iam_menu: % rows', (SELECT count(*) FROM iam_menu); END $$;
 

@@ -16,17 +16,7 @@
 -- §1 current_user_roles() 重建（Logto 字符串数组语义）
 --     is_super_admin() = current_user_roles() @> ARRAY['role_super_admin'] 立即恢复
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION current_user_roles() RETURNS text[]
-LANGUAGE sql
-STABLE
-AS $$
-    SELECT ARRAY(
-        SELECT jsonb_array_elements_text(
-            COALESCE(current_setting('request.jwt.claims', true)::jsonb -> 'roles', '[]'::jsonb)
-        )
-    );
-$$;
-COMMENT ON FUNCTION current_user_roles() IS '当前用户角色 code 列表（JWT claims roles 字符串数组，零查询；030 修复 Logto 语义）';
+
 
 -- ---------------------------------------------------------------------------
 -- §2 删除 rpc_get_online_users（悬空引用 v_online_users；在线用户功能废弃）
@@ -55,7 +45,12 @@ DECLARE
     v_super  boolean;
     v_perm   int;
     v_fn     int;
+    v_fn_ok  boolean;
 BEGIN
+    -- 环境自适应（17 号文档）：current_user_roles/is_super_admin 已迁 src，
+    -- dbmate up 阶段不存在则跳过行为断言；iam_api 在 055 前存在 ✓
+    v_fn_ok := to_regprocedure('current_user_roles()') IS NOT NULL;
+    IF v_fn_ok THEN
     -- 模拟 Logto JWT：roles = 字符串数组
     PERFORM set_config('request.jwt.claims',
                        '{"sub":"u_test","roles":["role_super_admin","tenant_admin"]}', true);
@@ -83,4 +78,5 @@ BEGIN
         RAISE EXCEPTION '030 验证失败: get_online_users 未删除';
     END IF;
     RAISE NOTICE '030: 全部验证通过（is_super_admin 恢复 / 权限点 seed / 悬空 RPC 已删）';
+    END IF;
 END $$;

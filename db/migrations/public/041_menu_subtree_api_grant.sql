@@ -17,122 +17,14 @@
 -- ---------------------------------------------------------------------------
 -- §1 授权：授予角色「菜单及全部子孙菜单归属的 API 权限点」（增量）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_grant_menu_subtree_apis(p_role_code text, p_menu_id uuid)
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_granted int;
-    v_total   int;
-BEGIN
-    IF NOT has_permission('public:role-api:bind') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    -- 角色校验: role 镜像表（Logto 角色目录）存在，或已有绑定行（镜像同步缺口兜底——
-    -- 实测 role_super_admin/tenant_admin 绑定 55 条但镜像表仅 2 角色，见 041 §背景）
-    IF p_role_code IS NULL OR NOT (
-        EXISTS (SELECT 1 FROM role WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_api WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_menu WHERE role_code = p_role_code)
-    ) THEN
-        RAISE EXCEPTION 'role not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF p_menu_id IS NULL OR NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_menu_id) THEN
-        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
-    END IF;
 
-    -- 递归子树（含自身）→ 归属 API（仅激活）→ 增量绑定
-    WITH RECURSIVE subtree AS (
-        SELECT id FROM iam_menu WHERE id = p_menu_id AND is_active
-        UNION ALL
-        SELECT m.id FROM iam_menu m
-        JOIN subtree s ON m.parent_id = s.id
-        WHERE m.is_active
-    )
-    INSERT INTO iam_role_api (role_code, api_id, created_by)
-    SELECT p_role_code, a.id, current_user_id()
-    FROM iam_api a
-    JOIN subtree s ON a.menu_id = s.id
-    WHERE a.is_active
-    ON CONFLICT (role_code, api_id) DO NOTHING;
 
-    GET DIAGNOSTICS v_granted = ROW_COUNT;
-
-    SELECT count(*) INTO v_total
-    FROM iam_role_api ra
-    JOIN iam_api a ON a.id = ra.api_id
-    JOIN (
-        WITH RECURSIVE subtree AS (
-            SELECT id FROM iam_menu WHERE id = p_menu_id AND is_active
-            UNION ALL
-            SELECT m.id FROM iam_menu m
-            JOIN subtree s ON m.parent_id = s.id
-            WHERE m.is_active
-        )
-        SELECT id FROM subtree
-    ) s ON a.menu_id = s.id
-    WHERE ra.role_code = p_role_code AND a.is_active;
-
-    PERFORM log_operate('role', 'grant-subtree-apis', 'iam_role_api',
-                        p_role_code, 'success',
-                        jsonb_build_object('menu_id', p_menu_id, 'granted', v_granted, 'total', v_total));
-    RETURN json_build_object('ok', true, 'granted', v_granted, 'total', v_total);
-END;
-$$;
-COMMENT ON FUNCTION api_v1_public.rpc_grant_menu_subtree_apis(text, uuid) IS '一键授权：授予角色菜单及其全部子孙菜单归属的 API 权限点（增量；sys:role-api:bind；039 menu_id 分组配套）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_grant_menu_subtree_apis(text, uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- §2 撤销：移除角色该子树归属的 API 权限点（对称操作，仅撤这些 API）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_revoke_menu_subtree_apis(p_role_code text, p_menu_id uuid)
-RETURNS json
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_removed int;
-BEGIN
-    IF NOT has_permission('public:role-api:bind') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    -- 同 §1: 镜像表 OR 已有绑定（镜像同步缺口兜底）
-    IF p_role_code IS NULL OR NOT (
-        EXISTS (SELECT 1 FROM role WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_api WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_menu WHERE role_code = p_role_code)
-    ) THEN
-        RAISE EXCEPTION 'role not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF p_menu_id IS NULL OR NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_menu_id) THEN
-        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
-    END IF;
 
-    WITH RECURSIVE subtree AS (
-        SELECT id FROM iam_menu WHERE id = p_menu_id
-        UNION ALL
-        SELECT m.id FROM iam_menu m
-        JOIN subtree s ON m.parent_id = s.id
-    )
-    DELETE FROM iam_role_api ra
-    WHERE ra.role_code = p_role_code
-      AND ra.api_id IN (
-          SELECT a.id FROM iam_api a JOIN subtree s ON a.menu_id = s.id
-      );
 
-    GET DIAGNOSTICS v_removed = ROW_COUNT;
-
-    PERFORM log_operate('role', 'revoke-subtree-apis', 'iam_role_api',
-                        p_role_code, 'success',
-                        jsonb_build_object('menu_id', p_menu_id, 'removed', v_removed));
-    RETURN json_build_object('ok', true, 'removed', v_removed);
-END;
-$$;
-COMMENT ON FUNCTION api_v1_public.rpc_revoke_menu_subtree_apis(text, uuid) IS '一键撤销：移除角色菜单及其子孙菜单归属的 API 权限点（对称；sys:role-api:bind）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_revoke_menu_subtree_apis(text, uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- §3 验证（造临时菜单树 + API 归属，实测授权/撤销/过滤）
@@ -146,7 +38,14 @@ DECLARE
     v_res     json;
     v_granted int;
     v_removed int;
+    v_fn_ok   boolean;
 BEGIN
+    -- 环境自适应（17 号文档）：rpc_grant/revoke_menu_subtree_apis 已随 055 退役
+    -- （D10 单表化），函数与 iam_api/iam_role_api 表均不存在 → 跳过行为验证
+    v_fn_ok := to_regprocedure('api_v1_public.rpc_grant_menu_subtree_apis(text,uuid)') IS NOT NULL;
+    IF NOT v_fn_ok THEN
+        RAISE NOTICE '041: 子树授权 RPC 已退役（055 D10），行为验证跳过';
+    ELSE
     -- 临时树：root → child；2 个 API 归属（1 激活 1 停用）
     INSERT INTO iam_menu (id, parent_id, menu_name, menu_type) VALUES
         (v_root, NULL, '__smoke_root__', 'directory'),
@@ -186,4 +85,5 @@ BEGIN
     DELETE FROM iam_menu WHERE id IN (v_child, v_root);
 
     RAISE NOTICE '041: 授权=% 幂等重授=% 撤销=% — 全部验证通过', v_granted, 0, v_removed;
+    END IF;
 END $$;

@@ -10,7 +10,10 @@ BEGIN
         SELECT table_name FROM information_schema.columns 
         WHERE column_name = 'updated_at' AND table_schema = 'public'
     LOOP
-        EXECUTE format('CREATE TRIGGER IF NOT EXISTS trg_%s_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at()', t, t);
+        -- PG 不支持 CREATE TRIGGER IF NOT EXISTS（17 号文档归位修正：DO 块守卫幂等）
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = format('trg_%s_updated_at', t) AND NOT tgisinternal) THEN
+            EXECUTE format('CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION update_updated_at()', t, t);
+        END IF;
     END LOOP;
 END;
 $$;

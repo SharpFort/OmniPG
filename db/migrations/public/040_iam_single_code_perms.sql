@@ -34,6 +34,13 @@ WHERE path = '/sys_user' AND method = 'GET' AND api_code IS NULL;
 -- ---------------------------------------------------------------------------
 -- §2 表级 CHECK：button 必须 perms（D2；回填完成后才建）
 -- ---------------------------------------------------------------------------
+-- 冷启动炸点修复（2026-08-14 PGlite 空库重放暴露）：033 分类回填会把
+-- 011 从 sys_menu 迁入的 UserAdd/UserEdit 等行（perms 空）标为 button，
+-- 违反本约束语义（button 必须 perms）→ CHECK 前把无 perms 的 button 行回 menu
+UPDATE iam_menu SET menu_type = 'menu'::iam_menu_type
+WHERE menu_type = 'button'::iam_menu_type
+  AND (perms IS NULL OR trim(perms) = '');
+
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'iam_menu_button_perms_check') THEN
@@ -48,162 +55,16 @@ END $$;
 --    通道2: iam_role_menu → iam_menu.perms（按钮权限码，40 新增）
 --    超管短路不变；判定零查询（claims）+ 小表索引
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION has_permission(p_code text) RETURNS boolean
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_roles text[];
-BEGIN
-    IF p_code IS NULL OR p_code = '' THEN
-        RETURN false;
-    END IF;
 
-    -- 超管短路（RLS 例外同款语义）
-    IF is_super_admin() THEN
-        RETURN true;
-    END IF;
-
-    -- 从 JWT claims 提取角色（零查询原则：角色在 claims，绑定查小表）
-    SELECT ARRAY(SELECT jsonb_array_elements_text(
-                    current_setting('request.jwt.claims', true)::jsonb->'roles'))
-      INTO v_roles;
-
-    IF v_roles IS NULL OR cardinality(v_roles) = 0 THEN
-        RETURN false;
-    END IF;
-
-    -- 双通道：API 权限点（api_code）∪ 菜单按钮权限码（menu.perms）
-    RETURN EXISTS (
-        SELECT 1
-        FROM iam_role_api ra
-        JOIN iam_api a ON a.id = ra.api_id
-        WHERE ra.role_code = ANY(v_roles)
-          AND a.api_code = p_code
-          AND a.is_active
-        UNION ALL
-        SELECT 1
-        FROM iam_role_menu rm
-        JOIN iam_menu m ON m.id = rm.menu_id
-        WHERE rm.role_code = ANY(v_roles)
-          AND m.perms = p_code
-          AND m.is_active
-    );
-END;
-$$;
-COMMENT ON FUNCTION has_permission(text) IS '权限点判定（040 单码制双通道: role_api→api_code ∪ role_menu→menu.perms；超管短路；按钮码与权限点同体系）';
 
 -- ---------------------------------------------------------------------------
 -- §4 重建 rpc_create_menu / rpc_update_menu（038 签名不变，+按钮码硬校验/软校验）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_menu(
-    p_menu_name text, p_parent_id uuid DEFAULT NULL, p_menu_type text DEFAULT 'menu',
-    p_perms text DEFAULT NULL, p_path text DEFAULT NULL, p_component text DEFAULT NULL,
-    p_icon text DEFAULT NULL, p_order_num int DEFAULT 0, p_is_visible boolean DEFAULT true,
-    p_remark text DEFAULT NULL, p_route_name text DEFAULT NULL, p_query text DEFAULT NULL,
-    p_is_link boolean DEFAULT NULL, p_is_iframe boolean DEFAULT NULL,
-    p_redirect text DEFAULT NULL, p_keep_alive boolean DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_id uuid;
-BEGIN
-    IF NOT has_permission('public:menu:create') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF p_menu_name IS NULL OR trim(p_menu_name) = '' THEN
-        RAISE EXCEPTION 'menu_name required' USING ERRCODE = '22023';
-    END IF;
-    IF p_menu_type NOT IN ('directory','menu','button','link') THEN
-        RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
-    END IF;
-    -- 040 单码制：button 必须 perms（表级 CHECK 前置友好报错）
-    IF p_menu_type = 'button' AND (p_perms IS NULL OR trim(p_perms) = '') THEN
-        RAISE EXCEPTION 'button menu requires perms' USING ERRCODE = '22023';
-    END IF;
-    -- 040 软校验：perms 应对应 iam_api.api_code（新码可先建权限点，仅警告不阻断）
-    IF p_perms IS NOT NULL AND NOT EXISTS (SELECT 1 FROM iam_api WHERE api_code = p_perms AND is_active) THEN
-        RAISE NOTICE 'perms [%] 未对应 iam_api.api_code——建议先建权限点再配按钮（单码制对齐）', p_perms;
-    END IF;
-    INSERT INTO iam_menu (parent_id, menu_name, menu_type, perms, path, component,
-                          icon, order_num, is_visible,
-                          remark, route_name, query,
-                          is_link, is_iframe, redirect, keep_alive, created_by)
-    VALUES (p_parent_id, p_menu_name, p_menu_type::iam_menu_type, p_perms, p_path,
-            p_component, p_icon, p_order_num, p_is_visible,
-            p_remark, p_route_name, p_query,
-            COALESCE(p_is_link, p_menu_type = 'link'), COALESCE(p_is_iframe, false),
-            p_redirect, COALESCE(p_keep_alive, true), current_user_id())
-    RETURNING id INTO v_id;
-    PERFORM log_operate('menu', 'create', 'iam_menu', v_id::text,
-                        'success', jsonb_build_object('name', p_menu_name, 'type', p_menu_type));
-    RETURN json_build_object('ok', true, 'id', v_id);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean) IS '菜单新增（sys:menu:create；040: button 强制 perms + api_code 软校验——单码制）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_create_menu(text, uuid, text, text, text, text, text, int, boolean, text, text, text, boolean, boolean, text, boolean) TO authenticated;
 
-CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_menu(
-    p_id uuid, p_parent_id uuid DEFAULT NULL, p_menu_name text DEFAULT NULL,
-    p_menu_type text DEFAULT NULL, p_perms text DEFAULT NULL, p_path text DEFAULT NULL,
-    p_component text DEFAULT NULL, p_icon text DEFAULT NULL, p_order_num int DEFAULT NULL,
-    p_is_active boolean DEFAULT NULL, p_is_visible boolean DEFAULT NULL,
-    p_remark text DEFAULT NULL, p_route_name text DEFAULT NULL, p_query text DEFAULT NULL,
-    p_is_link boolean DEFAULT NULL, p_is_iframe boolean DEFAULT NULL,
-    p_redirect text DEFAULT NULL, p_keep_alive boolean DEFAULT NULL)
-RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE
-    v_menu_type iam_menu_type;
-    v_perms     text;
-BEGIN
-    IF NOT has_permission('public:menu:update') THEN
-        RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id) THEN
-        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
-    END IF;
-    IF p_parent_id = p_id THEN
-        RAISE EXCEPTION 'parent cannot be self' USING ERRCODE = '22023';
-    END IF;
-    IF p_menu_type IS NOT NULL AND p_menu_type NOT IN ('directory','menu','button','link') THEN
-        RAISE EXCEPTION 'invalid menu_type' USING ERRCODE = '22023';
-    END IF;
-    -- 040 单码制：更新后类型为 button 必须 perms（改类型或改 perms 均按最终值校验）
-    SELECT menu_type, perms INTO v_menu_type, v_perms FROM iam_menu WHERE id = p_id;
-    IF (COALESCE(p_menu_type::iam_menu_type, v_menu_type) = 'button'::iam_menu_type)
-       AND (COALESCE(p_perms, v_perms) IS NULL OR trim(COALESCE(p_perms, v_perms)) = '') THEN
-        RAISE EXCEPTION 'button menu requires perms' USING ERRCODE = '22023';
-    END IF;
-    IF p_perms IS NOT NULL AND NOT EXISTS (SELECT 1 FROM iam_api WHERE api_code = p_perms AND is_active) THEN
-        RAISE NOTICE 'perms [%] 未对应 iam_api.api_code——建议先建权限点再配按钮（单码制对齐）', p_perms;
-    END IF;
-    UPDATE iam_menu SET
-        parent_id   = COALESCE(p_parent_id, parent_id),
-        menu_name   = COALESCE(p_menu_name, menu_name),
-        menu_type   = COALESCE(p_menu_type::iam_menu_type, menu_type),
-        perms       = COALESCE(p_perms, perms),
-        path        = COALESCE(p_path, path),
-        component   = COALESCE(p_component, component),
-        icon        = COALESCE(p_icon, icon),
-        order_num   = COALESCE(p_order_num, order_num),
-        is_active   = COALESCE(p_is_active, is_active),
-        is_visible  = COALESCE(p_is_visible, is_visible),
-        remark      = COALESCE(p_remark, remark),
-        route_name  = COALESCE(p_route_name, route_name),
-        query       = COALESCE(p_query, query),
-        is_link     = COALESCE(p_is_link, p_menu_type = 'link', is_link),
-        is_iframe   = COALESCE(p_is_iframe, is_iframe),
-        redirect    = COALESCE(p_redirect, redirect),
-        keep_alive  = COALESCE(p_keep_alive, keep_alive),
-        updated_at  = now(),
-        updated_by  = current_user_id()
-    WHERE id = p_id;
-    PERFORM log_operate('menu', 'update', 'iam_menu', p_id::text);
-    RETURN json_build_object('ok', true);
-END $$;
-COMMENT ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean) IS '菜单修改（sys:menu:update；040: button 强制 perms + api_code 软校验——单码制）';
-GRANT EXECUTE ON FUNCTION api_v1_public.rpc_update_menu(uuid, uuid, text, text, text, text, text, text, int, boolean, boolean, text, text, text, boolean, boolean, text, boolean) TO authenticated;
+
+
+
+
 
 -- ---------------------------------------------------------------------------
 -- §5 验证
@@ -218,13 +79,17 @@ DECLARE
     v_ch2       boolean;   -- 通道2: role_menu→menu.perms
     v_deny      boolean;   -- 无权限角色拒绝
     v_deny_create boolean; -- button 无 perms 创建被拒
+    v_fn_ok     boolean;
 BEGIN
+    -- 环境自适应（17 号文档：has_permission 定义已归位 src，dbmate up 阶段不存在则跳过行为断言）
+    v_fn_ok := to_regprocedure('has_permission(text)') IS NOT NULL;
     SELECT count(*) INTO v_check FROM pg_constraint
     WHERE conname = 'iam_menu_button_perms_check';
     SELECT count(*), count(*) FILTER (WHERE perms IS NULL OR trim(perms) = '')
       INTO v_btn, v_btn_nulls FROM iam_menu WHERE menu_type = 'button';
     SELECT count(*) INTO v_api_codes FROM iam_api WHERE api_code = 'sys:user:list';
 
+    IF v_fn_ok THEN
     -- 双通道判定（伪 claims；N4/D3: 用户按钮码已由 045 清理、无通道2 载体，
     -- 以保留码 sys:user:list 验证权限点判定链——role_super_admin 绑全部 API）
     PERFORM set_config('request.jwt.claims', '{"roles":["role_super_admin"]}', true);
@@ -251,4 +116,5 @@ BEGIN
         RAISE EXCEPTION '040 验证失败';
     END IF;
     RAISE NOTICE '040: 全部验证通过';
+    END IF;
 END $$;

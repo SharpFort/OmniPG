@@ -22,6 +22,10 @@
 -- ---------------------------------------------------------------------------
 -- §1 menu_type 分类回填（规则重算，幂等）
 -- ---------------------------------------------------------------------------
+-- 幂等修正（2026-08-14）：044 已把 iam_menu.path 改名 router——重放时 path 列不存在则跳过
+DO $$ BEGIN
+IF EXISTS (SELECT 1 FROM information_schema.columns
+           WHERE table_name='iam_menu' AND column_name='path') THEN
 UPDATE iam_menu SET menu_type = CASE
     WHEN path LIKE 'http://%' OR path LIKE 'https://%' THEN 'link'::iam_menu_type
     WHEN EXISTS (SELECT 1 FROM iam_menu c WHERE c.parent_id = iam_menu.id)
@@ -42,6 +46,8 @@ WHERE menu_type = 'menu'::iam_menu_type
   AND component IS NULL
   AND path IS NOT NULL AND path <> ''
   AND path NOT LIKE 'http://%' AND path NOT LIKE 'https://%';
+END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §3 验证

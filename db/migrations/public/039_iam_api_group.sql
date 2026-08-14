@@ -121,39 +121,27 @@ WHERE m.menu_name = 'System'
 -- §3 重建暴露视图（+menu_id/api_group；与 views/iam_api.sql 逐字一致）
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS api_v1_public.iam_api CASCADE;
-CREATE OR REPLACE VIEW api_v1_public.iam_api AS
-SELECT id, path, method, name, description, api_code, is_active,
-       menu_id, api_group,
-       created_at, updated_at, created_by, updated_by
-FROM public.iam_api;
-COMMENT ON VIEW api_v1_public.iam_api IS 'API 资源表视图（039: +menu_id/api_group 分组归属）';
-GRANT SELECT ON api_v1_public.iam_api TO authenticated;
-GRANT ALL ON api_v1_public.iam_api TO super_admin;
+
+-- 17 号文档归位（2026-08-14）：视图定义已迁 src/api_v1，dbmate up 阶段不存在则跳过授权
+DO $$ BEGIN
+    IF to_regclass('api_v1_public.iam_api') IS NOT NULL THEN
+        GRANT SELECT ON api_v1_public.iam_api TO authenticated;
+        GRANT ALL ON api_v1_public.iam_api TO super_admin;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §4 重建 v_role_api_detail（+api_group/menu_id；与 views/v_role_api_detail.sql 一致）
 -- ---------------------------------------------------------------------------
 DROP VIEW IF EXISTS api_v1_public.v_role_api_detail CASCADE;
-CREATE OR REPLACE VIEW api_v1_public.v_role_api_detail AS
-SELECT
-    ra.id AS role_id,
-    ra.api_id,
-    ra.created_at,
-    ra.role_code,
-    COALESCE(r.name, ra.role_code) AS role_name,
-    a.path,
-    a.method,
-    a.name AS api_name,
-    a.api_code,
-    a.api_group,
-    a.menu_id,
-    a.is_active AS api_is_active
-FROM iam_role_api ra
-JOIN role r ON r.role_code = ra.role_code
-JOIN iam_api a ON a.id = ra.api_id;
-COMMENT ON VIEW api_v1_public.v_role_api_detail IS '角色-API 明细视图（039: +api_group/menu_id）';
-GRANT SELECT ON api_v1_public.v_role_api_detail TO authenticated;
-GRANT ALL ON api_v1_public.v_role_api_detail TO super_admin;
+
+-- 17 号文档归位（2026-08-14）：视图定义已迁 src/api_v1，dbmate up 阶段不存在则跳过授权
+DO $$ BEGIN
+    IF to_regclass('api_v1_public.v_role_api_detail') IS NOT NULL THEN
+        GRANT SELECT ON api_v1_public.v_role_api_detail TO authenticated;
+        GRANT ALL ON api_v1_public.v_role_api_detail TO super_admin;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- §5 验证

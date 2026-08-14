@@ -21,7 +21,13 @@ GRANT SELECT ON department        TO authenticated;
 GRANT SELECT ON audit_log         TO authenticated;
 GRANT SELECT ON app_config        TO authenticated;
 GRANT SELECT ON cron_job_log      TO authenticated;
-GRANT SELECT ON user_profile      TO authenticated;
+-- 17 号文档环境自适应（2026-08-14）：user_profile 为 T7 遗留表（014 RENAME 自
+-- sys_user_profile，空库冷启动无源）→ 表存在才授权
+DO $$ BEGIN
+    IF to_regclass('public.user_profile') IS NOT NULL THEN
+        GRANT SELECT ON user_profile TO authenticated;
+    END IF;
+END $$;
 GRANT SELECT ON position          TO authenticated;
 GRANT SELECT ON user_position     TO authenticated;
 GRANT SELECT ON dict_type         TO authenticated;
@@ -31,10 +37,14 @@ GRANT SELECT ON ip_region_v4      TO authenticated;
 GRANT SELECT ON ip_geolite2_city  TO authenticated;
 GRANT SELECT ON user_role         TO authenticated;
 
-GRANT ALL ON department, audit_log, app_config, cron_job_log, user_profile,
-    position, user_position, dict_type, dict_data, login_log,
-    ip_region_v4, ip_geolite2_city
-    TO super_admin;
+DO $$ BEGIN
+    IF to_regclass('public.user_profile') IS NOT NULL THEN
+        GRANT ALL ON department, audit_log, app_config, cron_job_log, user_profile,
+            position, user_position, dict_type, dict_data, login_log,
+            ip_region_v4, ip_geolite2_city
+            TO super_admin;
+    END IF;
+END $$;
 -- N4（2026-08-11）: user_role（分配镜像）移出 ALL → 仅 SELECT（镜像只读；
 --   写入通道 = ensure_user JIT / 对账任务，均为 SECURITY DEFINER 不依赖表授权）
 REVOKE ALL ON user_role FROM super_admin;
@@ -58,22 +68,10 @@ GRANT USAGE ON SCHEMA api_v1_public TO web_anon, role_guest, authenticated;
 -- §2 触发器名 sys_ 残留清理（与 023 命名对齐）
 -- ---------------------------------------------------------------------------
 DROP TRIGGER IF EXISTS trg_audit_sys_department ON department;
-DROP TRIGGER IF EXISTS trg_audit_department ON department;
-CREATE TRIGGER trg_audit_department
-    AFTER INSERT OR UPDATE OR DELETE ON department
-    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');
 
 DROP TRIGGER IF EXISTS trg_audit_sys_role_api ON iam_role_api;
 DROP TRIGGER IF EXISTS trg_audit_role_api ON iam_role_api;
-CREATE TRIGGER trg_audit_role_api
-    AFTER INSERT OR UPDATE OR DELETE ON iam_role_api
-    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');
-
 DROP TRIGGER IF EXISTS trg_audit_sys_role_menu ON iam_role_menu;
-DROP TRIGGER IF EXISTS trg_audit_role_menu ON iam_role_menu;
-CREATE TRIGGER trg_audit_role_menu
-    AFTER INSERT OR UPDATE OR DELETE ON iam_role_menu
-    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');
 
 -- ---------------------------------------------------------------------------
 -- §3 验证

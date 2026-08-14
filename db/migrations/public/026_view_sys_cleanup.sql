@@ -25,7 +25,7 @@ DROP VIEW IF EXISTS api_v1_sys.sys_menu CASCADE;
 DROP VIEW IF EXISTS api_v1_sys.sys_role_api CASCADE;
 DROP VIEW IF EXISTS api_v1_sys.sys_role_menu CASCADE;
 DROP VIEW IF EXISTS api_v1_sys.sys_role CASCADE;
-DROP VIEW IF EXISTS api_v1_sys.sys_user CASCADE;
+
 DROP VIEW IF EXISTS api_v1_sys.sys_user_role CASCADE;
 DROP VIEW IF EXISTS api_v1_sys.sys_config CASCADE;
 DROP VIEW IF EXISTS api_v1_sys.sys_config_admin CASCADE;
@@ -39,36 +39,17 @@ DROP VIEW IF EXISTS api_v1_sys.v_sys_login_log CASCADE;
 -- ---------------------------------------------------------------------------
 -- §2 019 内定义的视图重建（新名；api_v1 源文件已覆盖的 audit_log 除外）
 -- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS api_v1_sys.position CASCADE;
-CREATE VIEW api_v1_sys.position AS
-SELECT id, tenant_id, pos_name, pos_code, parent_id, sort_no, status, remark,
-       created_at, updated_at, deleted_at, created_by, updated_by, deleted_by
-FROM position;
-COMMENT ON VIEW api_v1_sys.position IS '岗位视图（026：sys_position 去前缀）';
 
-DROP VIEW IF EXISTS api_v1_sys.user_position CASCADE;
-CREATE VIEW api_v1_sys.user_position AS
-SELECT user_id, position_id, tenant_id, is_primary, created_at, created_by
-FROM user_position;
-COMMENT ON VIEW api_v1_sys.user_position IS '用户岗位关联视图（026：sys_user_position 去前缀）';
+
+
+
+
 
 -- ---------------------------------------------------------------------------
 -- §3 v_sys_login_log → v_login_log（023 定义重建新名，引用 login_log + geo_locate）
 -- ---------------------------------------------------------------------------
-DROP VIEW IF EXISTS api_v1_sys.v_login_log CASCADE;
-CREATE VIEW api_v1_sys.v_login_log AS
-SELECT l.id, l.tenant_id, l.user_id, l.username, l.login_type, l.result,
-       l.fail_reason, l.ip, l.user_agent,
-       l.region                 AS region_snapshot,
-       g->>'region'             AS region_live,
-       g->>'source'             AS geo_source,
-       (g->>'latitude')::float8 AS latitude,
-       (g->>'longitude')::float8 AS longitude,
-       g->>'timezone'           AS timezone,
-       l.logto_event, l.created_at
-FROM login_log l
-LEFT JOIN LATERAL geo_locate(l.ip) g ON true;
-COMMENT ON VIEW api_v1_sys.v_login_log IS '登录日志视图：login_log + geo_locate 实时地理（026：v_sys_login_log 去前缀）';
+
+
 
 -- ---------------------------------------------------------------------------
 -- §4 授权（新名视图；grant_all.sql 已同步，此处兜底幂等）

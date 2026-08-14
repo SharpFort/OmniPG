@@ -45,12 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logtype ON public.audit_log(log_type, creat
 
 -- 重建视图（含新列；幂等）
 DROP VIEW IF EXISTS api_v1_sys.sys_audit_log CASCADE;
-CREATE VIEW api_v1_sys.sys_audit_log AS
-SELECT id, table_name, operation, old_data, new_data, user_id, tenant_id,
-       source, description, log_type, module, action, target_type, target_id,
-       result, ip, user_agent, region, duration_ms, created_at
-FROM audit_log;
-COMMENT ON VIEW api_v1_sys.sys_audit_log IS '审计日志视图（统一审计流：差异/操作/登录/异常）';
+
 
 -- ---------------------------------------------------------------------------
 -- §2 position 岗位表（树形，租户隔离）— 用户拍板立即创建
@@ -77,11 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_position_tenant ON position(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_position_parent ON position(parent_id);
 
 DROP VIEW IF EXISTS api_v1_sys.sys_position CASCADE;
-CREATE VIEW api_v1_sys.sys_position AS
-SELECT id, tenant_id, pos_name, pos_code, parent_id, sort_no, status, remark,
-       created_at, updated_at, deleted_at, created_by, updated_by, deleted_by
-FROM position;
-COMMENT ON VIEW api_v1_sys.sys_position IS '岗位视图';
+
 
 -- ---------------------------------------------------------------------------
 -- §3 user_position 用户岗位关联（多对多）
@@ -100,10 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_user_position_tenant ON user_position(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_user_position_pos ON user_position(position_id);
 
 DROP VIEW IF EXISTS api_v1_sys.sys_user_position CASCADE;
-CREATE VIEW api_v1_sys.sys_user_position AS
-SELECT user_id, position_id, tenant_id, is_primary, created_at, created_by
-FROM user_position;
-COMMENT ON VIEW api_v1_sys.sys_user_position IS '用户岗位关联视图';
+
 
 -- ---------------------------------------------------------------------------
 -- §4 字典 sys_dict_type / sys_dict_data（D-7）
@@ -146,18 +134,10 @@ COMMENT ON TABLE sys_dict_data IS '字典数据项';
 CREATE INDEX IF NOT EXISTS idx_dict_data_name ON sys_dict_data(dict_name, sort_no);
 
 DROP VIEW IF EXISTS api_v1_sys.sys_dict_type CASCADE;
-CREATE VIEW api_v1_sys.sys_dict_type AS
-SELECT id, tenant_id, dict_name, dict_label, status, sort_no, remark,
-       created_at, updated_at, created_by, updated_by
-FROM sys_dict_type;
-COMMENT ON VIEW api_v1_sys.sys_dict_type IS '字典类型视图';
+
 
 DROP VIEW IF EXISTS api_v1_sys.sys_dict_data CASCADE;
-CREATE VIEW api_v1_sys.sys_dict_data AS
-SELECT id, tenant_id, dict_name, item_label, item_value, item_type, is_default,
-       sort_no, status, remark, created_at, updated_at, created_by, updated_by
-FROM sys_dict_data;
-COMMENT ON VIEW api_v1_sys.sys_dict_data IS '字典数据视图';
+
 
 -- ---------------------------------------------------------------------------
 -- §5 sys_login_log 登录日志（D-3）
@@ -183,11 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_login_log_user ON sys_login_log(user_id, created_
 CREATE INDEX IF NOT EXISTS idx_login_log_created ON sys_login_log(created_at DESC);
 
 DROP VIEW IF EXISTS api_v1_sys.sys_login_log CASCADE;
-CREATE VIEW api_v1_sys.sys_login_log AS
-SELECT id, tenant_id, user_id, username, login_type, result, fail_reason,
-       ip, user_agent, region, logto_event, created_at
-FROM sys_login_log;
-COMMENT ON VIEW api_v1_sys.sys_login_log IS '登录日志视图';
+
 
 -- ---------------------------------------------------------------------------
 -- §6 ip_region_v4: ip2region 数据表（D-4，零后端 IP 归属解析）
@@ -245,47 +221,21 @@ ON CONFLICT DO NOTHING;
 
 -- position: 租户隔离
 ALTER TABLE public.position ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS position_tenant_isolation_policy ON public.position;
-CREATE POLICY position_tenant_isolation_policy ON public.position
-AS RESTRICTIVE
-USING (tenant_id = current_tenant_id())
-WITH CHECK (tenant_id = current_tenant_id());
 
 -- user_position: 租户隔离
 ALTER TABLE public.user_position ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS user_position_tenant_isolation_policy ON public.user_position;
-CREATE POLICY user_position_tenant_isolation_policy ON public.user_position
-AS RESTRICTIVE
-USING (tenant_id = current_tenant_id())
-WITH CHECK (tenant_id = current_tenant_id());
 
 -- sys_dict_type: 全局公共读 + 本租户 + 超管
 ALTER TABLE public.sys_dict_type ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS dict_type_read_policy ON public.sys_dict_type;
-CREATE POLICY dict_type_read_policy ON public.sys_dict_type
-FOR SELECT
-USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
 
 -- sys_dict_data: 全局公共读 + 本租户 + 超管
 ALTER TABLE public.sys_dict_data ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS dict_data_read_policy ON public.sys_dict_data;
-CREATE POLICY dict_data_read_policy ON public.sys_dict_data
-FOR SELECT
-USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
 
 -- sys_login_log: 超管 + 本租户（写经 SECURITY DEFINER webhook RPC，不受 RLS 限制）
 ALTER TABLE public.sys_login_log ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS login_log_read_policy ON public.sys_login_log;
-CREATE POLICY login_log_read_policy ON public.sys_login_log
-FOR SELECT
-USING (is_super_admin() OR tenant_id = current_tenant_id());
 
 -- ip_region_v4: 共享读（离线库，无租户维度）
 ALTER TABLE public.ip_region_v4 ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS ip_region_read_policy ON public.ip_region_v4;
-CREATE POLICY ip_region_read_policy ON public.ip_region_v4
-FOR SELECT
-USING (true);
 
 -- ---------------------------------------------------------------------------
 -- §9 验证

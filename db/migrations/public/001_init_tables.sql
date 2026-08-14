@@ -12,20 +12,14 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- sha256 等辅助哈希（仅用于
 
 -- ==============================================================================
 -- 1. updated_at 自动更新触发器函数
+--    17 号文档归位（2026-08-14，§6.2 情形 a）: update_updated_at 定义迁
+--    db/src/public/functions/update_updated_at.sql（幂等源文件），此处不再定义
 -- ==============================================================================
-CREATE OR REPLACE FUNCTION update_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-COMMENT ON FUNCTION update_updated_at() IS '自动更新 updated_at 字段为当前时间';
 
 -- ==============================================================================
 -- 2. 密钥配置表（仅 SECURITY DEFINER 函数可读）
 -- ==============================================================================
-CREATE TABLE sys_secret (
+CREATE TABLE IF NOT EXISTS sys_secret (
     key_name VARCHAR(100) PRIMARY KEY,
     key_value TEXT NOT NULL
 );
@@ -36,11 +30,12 @@ COMMENT ON COLUMN sys_secret.key_value IS '密钥值（PEM 格式或其他）';
 -- ==============================================================================
 -- 3. 租户表（多租户管理核心，自引用外键最后添加）
 -- ==============================================================================
-CREATE TABLE sys_tenant (
+CREATE TABLE IF NOT EXISTS sys_tenant (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     tenant_code VARCHAR(50) NOT NULL UNIQUE,
     tenant_name VARCHAR(100) NOT NULL,
-    status tenant_status NOT NULL DEFAULT 'active',
+    status text NOT NULL DEFAULT 'active',   -- 17 号文档归位（2026-08-14）: tenant_status 类型无定义（冷启动炸点①），
+                                            -- 废弃表 sys_tenant 014 即删，改 text 兼容 seed；不再依赖类型
     contact_email VARCHAR(255),
     max_users INT DEFAULT 100,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -58,13 +53,13 @@ COMMENT ON COLUMN sys_tenant.max_users IS '该租户最大用户数限制';
 COMMENT ON COLUMN sys_tenant.created_by IS '创建者用户 ID（最后 ALTER TABLE 添加 FK）';
 COMMENT ON COLUMN sys_tenant.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_tenant.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_tenant_code ON sys_tenant(tenant_code);
-CREATE INDEX idx_tenant_status ON sys_tenant(status);
+CREATE INDEX IF NOT EXISTS idx_tenant_code ON sys_tenant(tenant_code);
+CREATE INDEX IF NOT EXISTS idx_tenant_status ON sys_tenant(status);
 
 -- ==============================================================================
 -- 4. 部门表（支持树形结构，租户隔离）
 -- ==============================================================================
-CREATE TABLE sys_department (
+CREATE TABLE IF NOT EXISTS sys_department (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     dept_name VARCHAR(100) NOT NULL,
     tenant_id UUID NOT NULL REFERENCES sys_tenant(id) ON DELETE RESTRICT,
@@ -85,13 +80,13 @@ COMMENT ON COLUMN sys_department.parent_id IS '上级部门 ID，NULL 表示根�
 COMMENT ON COLUMN sys_department.created_by IS '创建者用户 ID';
 COMMENT ON COLUMN sys_department.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_department.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_dept_tenant ON sys_department(tenant_id);
-CREATE INDEX idx_dept_parent ON sys_department(parent_id);
+CREATE INDEX IF NOT EXISTS idx_dept_tenant ON sys_department(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dept_parent ON sys_department(parent_id);
 
 -- ==============================================================================
 -- 5. 用户表（含租户和部门字段）
 -- ==============================================================================
-CREATE TABLE sys_user (
+CREATE TABLE IF NOT EXISTS sys_user (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -116,14 +111,14 @@ COMMENT ON COLUMN sys_user.is_active IS '账户是否激活（软删除替代字
 COMMENT ON COLUMN sys_user.created_by IS '创建者用户 ID';
 COMMENT ON COLUMN sys_user.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_user.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_user_tenant_dept ON sys_user(tenant_id, dept_id);
-CREATE INDEX idx_user_username ON sys_user(username);
-CREATE INDEX idx_user_tenant ON sys_user(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_tenant_dept ON sys_user(tenant_id, dept_id);
+CREATE INDEX IF NOT EXISTS idx_user_username ON sys_user(username);
+CREATE INDEX IF NOT EXISTS idx_user_tenant ON sys_user(tenant_id);
 
 -- ==============================================================================
 -- 6. 角色表（支持全局角色 + 租户角色）
 -- ==============================================================================
-CREATE TABLE sys_role (
+CREATE TABLE IF NOT EXISTS sys_role (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     role_code VARCHAR(50) NOT NULL,
     role_name VARCHAR(100) NOT NULL,
@@ -146,15 +141,15 @@ COMMENT ON COLUMN sys_role.role_code IS '角色代码（英文标识），写入
 COMMENT ON COLUMN sys_role.created_by IS '创建者用户 ID';
 COMMENT ON COLUMN sys_role.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_role.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_role_code ON sys_role(role_code);
-CREATE INDEX idx_role_tenant ON sys_role(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_role_code ON sys_role(role_code);
+CREATE INDEX IF NOT EXISTS idx_role_tenant ON sys_role(tenant_id);
 -- 全局角色（tenant_id NULL）的 role_code 全局唯一（PostgreSQL 唯一约束中 NULL != NULL，所以用部分唯一索引）
-CREATE UNIQUE INDEX idx_role_code_global ON sys_role(role_code) WHERE tenant_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_role_code_global ON sys_role(role_code) WHERE tenant_id IS NULL;
 
 -- ==============================================================================
 -- 7. API 资源表（后端权限防御对象，系统级共享）
 -- ==============================================================================
-CREATE TABLE sys_api (
+CREATE TABLE IF NOT EXISTS sys_api (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     path VARCHAR(255) NOT NULL,
     method VARCHAR(10) NOT NULL,
@@ -175,15 +170,16 @@ COMMENT ON COLUMN sys_api.method IS 'HTTP 方法：GET/POST/PUT/DELETE/PATCH';
 COMMENT ON COLUMN sys_api.created_by IS '创建者用户 ID';
 COMMENT ON COLUMN sys_api.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_api.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_api_path_method ON sys_api(path, method);
+CREATE INDEX IF NOT EXISTS idx_api_path_method ON sys_api(path, method);
 
 -- ==============================================================================
 -- 8. 菜单与前端权限标识表（系统级共享）
 -- ==============================================================================
-CREATE TABLE sys_menu (
+CREATE TABLE IF NOT EXISTS sys_menu (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     parent_id UUID REFERENCES sys_menu(id) ON DELETE CASCADE,
-    type menu_type NOT NULL,
+    type text NOT NULL,   -- 17 号文档归位（2026-08-14）: menu_type 类型 053 已删（src 权威 = types/menu_type.sql
+                          -- 的 iam_menu_type 四值）；废弃表 sys_menu 014 即删，改 text 兼容 seed 大写值
     name VARCHAR(100) NOT NULL,
     path VARCHAR(255),
     component VARCHAR(255),
@@ -206,8 +202,8 @@ COMMENT ON COLUMN sys_menu.permission_code IS '按钮权限标识，如 user:add
 COMMENT ON COLUMN sys_menu.created_by IS '创建者用户 ID';
 COMMENT ON COLUMN sys_menu.updated_by IS '最后修改者用户 ID';
 COMMENT ON COLUMN sys_menu.deleted_by IS '删除者用户 ID';
-CREATE INDEX idx_menu_parent ON sys_menu(parent_id);
-CREATE INDEX idx_menu_type ON sys_menu(type);
+CREATE INDEX IF NOT EXISTS idx_menu_parent ON sys_menu(parent_id);
+CREATE INDEX IF NOT EXISTS idx_menu_type ON sys_menu(type);
 
 -- ==============================================================================
 -- 9. 添加自引用外键约束（必须在所有表创建完成后）

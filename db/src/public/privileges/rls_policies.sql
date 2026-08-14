@@ -119,3 +119,114 @@ DROP POLICY IF EXISTS audit_log_read_policy ON audit_log;
 CREATE POLICY audit_log_read_policy ON audit_log
 FOR SELECT
 USING (is_super_admin() OR tenant_id = current_tenant_id());
+
+-- =============================================================================
+-- dict_data 表：dict_data_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE dict_data ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS dict_data_read_policy ON dict_data;
+CREATE POLICY dict_data_read_policy ON public.dict_data
+FOR SELECT
+USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
+
+-- =============================================================================
+-- dict_type 表：dict_type_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE dict_type ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS dict_type_read_policy ON dict_type;
+CREATE POLICY dict_type_read_policy ON public.dict_type
+FOR SELECT
+USING (is_super_admin() OR tenant_id IS NULL OR tenant_id = current_tenant_id());
+
+-- =============================================================================
+-- ip_geolite2_city 表：geolite2_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE ip_geolite2_city ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS geolite2_read_policy ON ip_geolite2_city;
+CREATE POLICY geolite2_read_policy ON public.ip_geolite2_city
+FOR SELECT
+USING (true);
+
+-- =============================================================================
+-- ip_region_v4 表：ip_region_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE ip_region_v4 ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ip_region_read_policy ON ip_region_v4;
+CREATE POLICY ip_region_read_policy ON public.ip_region_v4
+FOR SELECT
+USING (true);
+
+-- =============================================================================
+-- login_log 表：login_log_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE login_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS login_log_read_policy ON login_log;
+CREATE POLICY login_log_read_policy ON public.login_log
+FOR SELECT
+USING (is_super_admin() OR tenant_id = current_tenant_id() OR user_id = current_user_id());  -- 020 补本人可见
+
+-- =============================================================================
+-- organization_role 表：org_role_select_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE organization_role ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS org_role_select_policy ON organization_role;
+CREATE POLICY org_role_select_policy ON organization_role
+FOR SELECT
+USING (true);
+
+-- =============================================================================
+-- position 表：position_tenant_isolation_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE position ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS position_tenant_isolation_policy ON position;
+CREATE POLICY position_tenant_isolation_policy ON public.position
+AS RESTRICTIVE
+USING (tenant_id = current_tenant_id())
+WITH CHECK (tenant_id = current_tenant_id());
+
+-- =============================================================================
+-- iam_role_data_scope 表：role_data_scope_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE iam_role_data_scope ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS role_data_scope_read_policy ON iam_role_data_scope;
+CREATE POLICY role_data_scope_read_policy ON public.iam_role_data_scope
+FOR SELECT USING (true);
+
+-- =============================================================================
+-- user_position 表：user_position_tenant_isolation_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE user_position ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_position_tenant_isolation_policy ON user_position;
+CREATE POLICY user_position_tenant_isolation_policy ON public.user_position
+AS RESTRICTIVE
+USING (tenant_id = current_tenant_id())
+WITH CHECK (tenant_id = current_tenant_id());
+
+-- =============================================================================
+-- user_role 表：user_role_read_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE user_role ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_role_read_policy ON user_role;
+CREATE POLICY user_role_read_policy ON public.user_role
+FOR SELECT
+USING (is_super_admin() OR user_id = current_user_id());
+
+-- =============================================================================
+-- webhook_event_log 表：webhook_event_log_select_policy（17 号文档归位：迁移段已删，本清单为唯一来源；§4 判定表 POLICY→rls_policies.sql）
+-- =============================================================================
+ALTER TABLE webhook_event_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS webhook_event_log_select_policy ON webhook_event_log;
+CREATE POLICY webhook_event_log_select_policy ON webhook_event_log
+FOR SELECT
+USING (is_super_admin());

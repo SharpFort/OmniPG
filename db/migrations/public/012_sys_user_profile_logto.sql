@@ -43,9 +43,9 @@ BEGIN
                WHERE table_name='sys_user_profile' AND column_name='user_id' AND data_type='uuid') THEN
         -- 先删依赖 user_id 列的 RLS 策略（mirror/profile 策略引用该列，改类型会失败）
         DROP POLICY IF EXISTS mirror_tenant_policy ON casdoor_user_mirror;
-        DROP POLICY IF EXISTS profile_tenant_policy ON sys_user_profile;
+        
         -- 先删旧 Casdoor 兼容视图（007 建的 public.sys_user 依赖 sys_user_profile 列；本迁移末尾重建 Logto 版）
-        DROP VIEW IF EXISTS public.sys_user CASCADE;
+        
         DELETE FROM sys_user_profile;  -- N4: 清空 Casdoor 时代档案（无历史数据）
         ALTER TABLE sys_user_profile ALTER COLUMN user_id TYPE text;
         ALTER TABLE sys_user_profile ALTER COLUMN tenant_id TYPE text;
@@ -54,12 +54,13 @@ BEGIN
         ALTER TABLE sys_user_profile ALTER COLUMN deleted_by TYPE text;
     END IF;
 
-    -- A3. 重建 FK → 新镜像表（存在时；users/tenants 由 009 创建）
-    IF to_regclass('public.users') IS NOT NULL THEN
+    -- A3. 重建 FK → 新镜像表（存在时；users/tenants 由 009 创建；
+    --     sys_user_profile 为 T7 遗留表——空库冷启动不存在 → 环境自适应跳过）
+    IF to_regclass('public.sys_user_profile') IS NOT NULL AND to_regclass('public.users') IS NOT NULL THEN
         ALTER TABLE sys_user_profile ADD CONSTRAINT fk_profile_user_id
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
     END IF;
-    IF to_regclass('public.tenants') IS NOT NULL THEN
+    IF to_regclass('public.sys_user_profile') IS NOT NULL AND to_regclass('public.tenants') IS NOT NULL THEN
         ALTER TABLE sys_user_profile ADD CONSTRAINT fk_profile_tenant_id
             FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT;
     END IF;
@@ -80,86 +81,48 @@ END $$;
 
 -- B1. users — 超管全量 / 本人 / 同租户成员可见
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS users_tenant_policy ON users;
-CREATE POLICY users_tenant_policy ON users
-USING (
-    is_super_admin()
-    OR id = current_user_id()
-    OR EXISTS (
-        SELECT 1 FROM sys_user_profile p
-        WHERE p.user_id = users.id
-          AND p.tenant_id = current_tenant_id()
-          AND p.deleted_at IS NULL
-    )
-);
 
 -- B2. tenants — 超管全量 / 当前租户可见
 ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenants_policy ON tenants;
-CREATE POLICY tenants_policy ON tenants
-USING (
-    is_super_admin()
-    OR id = current_tenant_id()
-);
 
 -- B3. user_tenants — 超管全量 / 本人 / 同租户成员可见
 ALTER TABLE user_tenants ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS user_tenants_policy ON user_tenants;
-CREATE POLICY user_tenants_policy ON user_tenants
-USING (
-    is_super_admin()
-    OR user_id = current_user_id()
-    OR organization_id = current_tenant_id()
-);
 
 -- B4. iam_role — 只读镜像，authenticated 可读（目录数据，无租户维度）
-ALTER TABLE iam_role ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS iam_role_policy ON iam_role;
-CREATE POLICY iam_role_policy ON iam_role
-USING (is_super_admin() OR true);  -- 目录只读（仅 SELECT GRANT 已限制写）
+--     T7 遗留表（016 从 iam_role RENAME 到 role）；空库不存在则跳过——环境自适应
+DO $$ BEGIN
+    IF to_regclass('public.iam_role') IS NOT NULL THEN
+        ALTER TABLE iam_role ENABLE ROW LEVEL SECURITY;
+    END IF;
+END $$;
 
--- B5. sys_user_profile — 重建 RLS（A2 中已删除旧策略；text 版）
-ALTER TABLE sys_user_profile ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS profile_tenant_policy ON sys_user_profile;
-CREATE POLICY profile_tenant_policy ON sys_user_profile
-USING (
-    is_super_admin()
-    OR user_id = current_user_id()
-    OR tenant_id = current_tenant_id()
-);
 
 -- ==============================================================================
 -- C. Casdoor 时代镜像表权限标记（退役声明；表体保留待 T7）
 -- ==============================================================================
-COMMENT ON TABLE casdoor_user_mirror IS '【退役】Casdoor 用户镜像（Phase 2 已由 users 表替代；T7 清理）';
-COMMENT ON TABLE sys_tenant IS '【退役】Casdoor 时代租户表（Phase 2 已由 tenants 镜像表替代；保留兼容视图/历史）';
+-- 17 号文档环境自适应（2026-08-14）：casdoor_user_mirror/sys_tenant 为 T7 遗留表，
+-- 空库冷启动不存在 → 表存在才打注释
+DO $$ BEGIN
+    IF to_regclass('public.casdoor_user_mirror') IS NOT NULL THEN
+        COMMENT ON TABLE casdoor_user_mirror IS '【退役】Casdoor 用户镜像（Phase 2 已由 users 表替代；T7 清理）';
+    END IF;
+    IF to_regclass('public.sys_tenant') IS NOT NULL THEN
+        COMMENT ON TABLE sys_tenant IS '【退役】Casdoor 时代租户表（Phase 2 已由 tenants 镜像表替代；保留兼容视图/历史）';
+    END IF;
+END $$;
 
 -- ==============================================================================
 -- D. public.sys_user 兼容视图（text 化后重建；009 阶段依赖未就绪，故在此建）
 --     沿用 security_invoker 语义；列结构与旧版对齐
 -- ==============================================================================
-CREATE OR REPLACE VIEW public.sys_user
-WITH (security_invoker = true) AS
-SELECT
-    u.id,
-    u.username,
-    NULL::text AS password_hash,              -- 密码由 Logto 管理，不再暴露
-    p.tenant_id,
-    p.dept_id,
-    u.primary_email  AS email,
-    u.primary_phone  AS phone,
-    NOT u.is_suspended AS is_active,          -- D17: is_active = NOT isSuspended
-    u.created_at,
-    u.updated_at,
-    u.deleted_at,
-    u.created_by,
-    u.updated_by,
-    u.deleted_by
-FROM users u
-LEFT JOIN sys_user_profile p ON p.user_id = u.id;
 
-COMMENT ON VIEW public.sys_user IS 'Logto 用户兼容视图（替代 Casdoor 版 casdoor_user_mirror 投影）；security_invoker=true';
-GRANT SELECT ON public.sys_user TO authenticated;
+-- 17 号文档环境自适应（2026-08-14）：sys_user 视图定义已迁 src（014 已删
+-- 001 的 sys_user 表），dbmate/重放阶段不存在则跳过授权
+DO $$ BEGIN
+    IF to_regclass('public.sys_user') IS NOT NULL THEN
+        GRANT SELECT ON public.sys_user TO authenticated;
+    END IF;
+END $$;
 
 -- ==============================================================================
 -- migrate:down

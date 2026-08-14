@@ -18,10 +18,11 @@
 
 -- ---------------------------------------------------------------------------
 -- §1 死按钮清理（iam_menu）
+--     17 号文档适配（2026-08-14）：040 冷启动修复把无 perms 的 button 行回 menu
+--     （UserAdd 等 011 迁入行 perms 空），删除条件不依赖 menu_type——按名字删
 -- ---------------------------------------------------------------------------
 DELETE FROM public.iam_menu
-WHERE menu_type = 'button'
-  AND menu_name IN ('UserAdd', 'UserEdit', 'UserDelete');
+WHERE menu_name IN ('UserAdd', 'UserEdit', 'UserDelete');
 
 -- ---------------------------------------------------------------------------
 -- §2 死端点清理（iam_api：/sys_user 增删改 + /rpc/kick_user）

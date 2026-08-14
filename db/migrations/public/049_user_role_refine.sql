@@ -44,86 +44,8 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- §2 ensure_user 重写（N7 保持 + D5/D6 增量对齐）
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION api_v1_public.ensure_user()
-RETURNS text
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_claims     jsonb := current_setting('request.jwt.claims', true)::jsonb;
-    v_sub        text;
-    v_org        text;
-    v_global     text[];
-    v_org_roles  text[];
-BEGIN
-    v_sub := NULLIF(v_claims->>'sub', '');
-    IF v_sub IS NULL THEN
-        RAISE EXCEPTION 'Unauthorized: missing sub claim' USING ERRCODE = 'P0001';
-    END IF;
 
-    -- N7: users 镜像完全由 webhook（User.*）维护，JIT 仅缺失补建（不覆盖权威值）
-    INSERT INTO users (id, username, name, avatar)
-    VALUES (
-        v_sub,
-        COALESCE(v_claims->>'username', ''),
-        COALESCE(v_claims->>'name', ''),
-        COALESCE(v_claims->>'avatar', '')
-    )
-    ON CONFLICT (id) DO NOTHING;
 
-    -- N7: profile 仅在无记录时补建（tenant 归属 = 首次观察到的组织上下文）
-    v_org := NULLIF(v_claims->>'organization_id', '');
-    IF v_org IS NOT NULL THEN
-        INSERT INTO user_profile (user_id, tenant_id, deleted_at)
-        VALUES (v_sub, v_org, NULL)
-        ON CONFLICT (user_id) DO NOTHING;
-    END IF;
-
-    -- D5/D6（049）: user_role 精确镜像——global/org 分段增量对齐
-    --   · 增量对齐：角色不变零写入、created_at 保留首次分配时间；
-    --   · 全局段（organization_id=''）：claims 恒有 global_roles（脚本注入，可为空）→ 空则清空；
-    --   · 组织段：仅当本次登录携带组织上下文（v_org 非空）时对齐——全局 token 登录
-    --     不清组织段（防多组织用户换上下文登录丢失镜像）；
-    --   · 兼容：claims 无 global_roles/org_roles（旧 token）→ 跳过（不写不删）；
-    --   · role_id 回填：role 镜像存在时按名取 id（LEFT JOIN），缺失为 NULL 等对账。
-    IF v_claims ? 'global_roles' THEN
-        v_global := ARRAY(SELECT jsonb_array_elements_text(v_claims->'global_roles'));
-        INSERT INTO user_role (user_id, organization_id, role_code, role_id)
-        SELECT v_sub, '', g, r.id
-        FROM unnest(v_global) AS g
-        LEFT JOIN role r ON r.name = g
-        WHERE NOT EXISTS (SELECT 1 FROM user_role ur
-                          WHERE ur.user_id = v_sub
-                            AND ur.organization_id = ''
-                            AND ur.role_code = g);
-        DELETE FROM user_role
-        WHERE user_id = v_sub AND organization_id = ''
-          AND role_code NOT IN (SELECT unnest(v_global));
-    END IF;
-
-    IF v_claims ? 'org_roles' THEN
-        v_org_roles := ARRAY(SELECT jsonb_array_elements_text(v_claims->'org_roles'));
-        IF v_org IS NOT NULL THEN
-            INSERT INTO user_role (user_id, organization_id, role_code, role_id)
-            SELECT v_sub, v_org, g, r.id
-            FROM unnest(v_org_roles) AS g
-            LEFT JOIN role r ON r.name = g
-            WHERE NOT EXISTS (SELECT 1 FROM user_role ur
-                              WHERE ur.user_id = v_sub
-                                AND ur.organization_id = v_org
-                                AND ur.role_code = g);
-            DELETE FROM user_role
-            WHERE user_id = v_sub AND organization_id = v_org
-              AND role_code NOT IN (SELECT unnest(v_org_roles));
-        END IF;
-    END IF;
-
-    RETURN v_sub;
-END;
-$$;
-COMMENT ON FUNCTION api_v1_public.ensure_user() IS '登录 JIT 兜底建档 + 角色镜像精确对齐（035: user_role 随 claims 全量覆盖；049 D5/D6: global/org 分段增量对齐，角色不变零写入，保留 created_at，全局 token 不清 org 段）';
-GRANT EXECUTE ON FUNCTION api_v1_public.ensure_user() TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- §3 验证
@@ -139,8 +61,9 @@ BEGIN
     SELECT count(*) INTO v_pk FROM pg_constraint WHERE conname = 'user_role_pkey';
     SELECT count(*) INTO v_fk FROM pg_constraint WHERE conname = 'user_role_role_id_fk';
     SELECT count(*) INTO v_fn FROM pg_proc WHERE proname = 'ensure_user';
-    RAISE NOTICE '049: 新增列=% PK=% FK=% ensure_user=%（期望 2/1/1/1）', v_cols, v_pk, v_fk, v_fn;
-    IF v_cols <> 2 OR v_pk <> 1 OR v_fk <> 1 OR v_fn <> 1 THEN
+    RAISE NOTICE '049: 新增列=% PK=% FK=% ensure_user=%（dbmate 阶段 ensure_user=0，apply-src 后=1）', v_cols, v_pk, v_fk, v_fn;
+    -- 环境自适应（17 号文档）：ensure_user 已迁 src，dbmate up 阶段不存在
+    IF v_cols <> 2 OR v_pk <> 1 OR v_fk <> 1 OR NOT (v_fn IN (0, 1)) THEN
         RAISE EXCEPTION '049 验证失败';
     END IF;
     RAISE NOTICE '049: 全部验证通过';
