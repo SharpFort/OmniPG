@@ -13,7 +13,7 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-    IF NOT has_permission('sys:config:write') THEN
+    IF NOT has_permission('public:config:write') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 
@@ -29,5 +29,5 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.update_config(text, text) IS '更新系统配置（sys:config:write；029 补门槛，035 源文件同步）';
+COMMENT ON FUNCTION api_v1_public.update_config(text, text) IS '更新系统配置（public:config:write；029 补门槛，035 源文件同步）';
 GRANT EXECUTE ON FUNCTION api_v1_public.update_config(text, text) TO authenticated;

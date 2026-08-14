@@ -10,7 +10,7 @@ DECLARE
     v_global     json;
     v_org_roles  json;
 BEGIN
-    IF NOT has_permission('sys:tenant-member:list') THEN
+    IF NOT has_permission('public:tenant-member:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     v_org := COALESCE(p_org_id, current_tenant_id());

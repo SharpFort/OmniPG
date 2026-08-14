@@ -31,7 +31,7 @@ DECLARE
     v_cols     text;
     v_sql      text;
 BEGIN
-    PERFORM require_permission('sys:import');
+    PERFORM require_permission('public:import');
 
     IF NOT (p_table_name = ANY(v_allow)) THEN
         RAISE EXCEPTION 'Table % not importable. Allowed: %',
@@ -79,5 +79,5 @@ BEGIN
                              'dry_run', p_dry_run);
 END;
 $$;
-COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化列子集；sys:import）';
+COMMENT ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) IS '通用导入（035 重写：显式业务表白名单 + jsonb_populate_record 参数化列子集；public:import）';
 GRANT EXECUTE ON FUNCTION api_v1_public.import_csv(text, jsonb, boolean) TO authenticated;

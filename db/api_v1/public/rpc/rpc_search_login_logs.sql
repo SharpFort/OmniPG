@@ -22,7 +22,7 @@ DECLARE
     v_tenant text := current_tenant_id();
 BEGIN
     -- 权限门槛：超管或具备登录日志查询权限点（023 原逻辑）
-    IF NOT has_permission('sys:login-log:list') THEN
+    IF NOT has_permission('public:login-log:list') THEN
         RAISE EXCEPTION 'permission denied'
             USING ERRCODE = '42501';
     END IF;

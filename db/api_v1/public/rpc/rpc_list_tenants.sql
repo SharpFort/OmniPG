@@ -8,7 +8,7 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_result json;
 BEGIN
-    IF NOT has_permission('sys:tenant:list') THEN
+    IF NOT has_permission('public:tenant:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT json_build_object(
