@@ -1,6 +1,7 @@
 -- src/public/functions/sync_user_upsert.sql
 -- FUNCTION: public.sync_user_upsert（17 号文档归位：迁移 051_logto_guard_cleanup.sql 删定义段，本文件为唯一权威）
 -- 回放终态: 051_logto_guard_cleanup.sql；幂等写法（§9 模板）
+-- 061（2026-08-15）: 镜像表无 updated_at（同步水位统一 logto_updated_at）
 
 CREATE OR REPLACE FUNCTION sync_user_upsert(data jsonb) RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER AS $$
@@ -9,7 +10,7 @@ DECLARE
 BEGIN
     INSERT INTO users (id, username, primary_email, primary_phone, name, avatar,
                        custom_data, identities, last_sign_in_at, created_at, application_id,
-                       is_suspended, profile, sso_identities, updated_at, logto_updated_at)
+                       is_suspended, profile, sso_identities, logto_updated_at)
     VALUES (
         data->>'id',
         COALESCE(data->>'username', ''),
@@ -25,7 +26,7 @@ BEGIN
         COALESCE((data->>'isSuspended')::boolean, false),
         COALESCE(data->'profile', '{}'),
         COALESCE(data->'ssoIdentities', '{}'),
-        v_ts, v_ts
+        v_ts
     )
     ON CONFLICT (id) DO UPDATE SET
         username        = EXCLUDED.username,
@@ -40,7 +41,6 @@ BEGIN
         is_suspended    = EXCLUDED.is_suspended,
         profile         = EXCLUDED.profile,
         sso_identities  = EXCLUDED.sso_identities,
-        updated_at      = EXCLUDED.updated_at,
         logto_updated_at = EXCLUDED.logto_updated_at
     WHERE users.logto_updated_at IS NULL                       -- 存量兼容（首次同步）
        OR EXCLUDED.logto_updated_at >= users.logto_updated_at; -- 乱序守护（N18）

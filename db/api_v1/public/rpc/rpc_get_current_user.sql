@@ -1,6 +1,8 @@
 -- db/api_v1/sys/rpc/rpc_get_current_user.sql
 -- 获取当前登录用户信息 RPC（T7: Logto 镜像语义 users+user_profile+tenants+department）
 -- 来源: 20260707000014_auth_rpc_functions.sql → T7 适配
+-- 061（2026-08-15）: 镜像表无 updated_at/deleted_at——updated_at 映射 logto_updated_at，
+--   去 deleted_at 过滤（镜像表无软删，Logto 删除=行删除）
 
 CREATE OR REPLACE FUNCTION api_v1_public.get_current_user()
 RETURNS json
@@ -20,7 +22,7 @@ BEGIN
 
     SELECT u.id, u.username, u.primary_email AS email, u.primary_phone AS phone,
            p.tenant_id, p.dept_id, (NOT u.is_suspended) AS is_active,
-           u.created_at, u.updated_at,
+           u.created_at, u.logto_updated_at AS updated_at,
            t.name AS tenant_name,
            d.dept_name,
            (current_setting('request.jwt.claims', true)::json->'roles')::jsonb AS roles
@@ -29,7 +31,7 @@ BEGIN
     LEFT JOIN public.user_profile p ON p.user_id = u.id
     LEFT JOIN public.tenants t ON p.tenant_id = t.id
     LEFT JOIN public.department d ON p.dept_id = d.id
-    WHERE u.id = v_user_id AND u.deleted_at IS NULL;
+    WHERE u.id = v_user_id;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'User not found' USING ERRCODE = 'P0001';
