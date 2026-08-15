@@ -138,8 +138,7 @@ put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","node
 
 # 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema）
 put api_v1_public '{"uri":"/api/v1/sys/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sys/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
-put api_v1_sales '{"uri":"/api/v1/sales/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/sales/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
-put api_v1_inventory '{"uri":"/api/v1/inventory/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":20,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/inventory/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
+# （2026-08-15: api_v1_sales / api_v1_inventory 测试模块退役，路由移除；后续模块按需重建）
 
 # 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高）
 put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'

@@ -78,9 +78,9 @@ services:
         ipv4_address: 172.20.0.2
     environment:
       PGRST_DB_URI: "postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@host.docker.internal:6432/app_db?sslmode=disable"
-      PGRST_DB_SCHEMAS: "api_v1_public,api_v1_sales,api_v1_inventory"
+      PGRST_DB_SCHEMAS: "api_v1_public"
       PGRST_DB_ANON_ROLE: web_anon
-      PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_public,api_v1_sales,api_v1_inventory,public,sales,inventory"
+      PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_public,public"
       # Logto JWKS（ES384 公钥 JSON）作为 JWT 验签密钥；容器内同时暴露 JWKS_JSON 供 conf 引用
       JWKS_JSON: '${JWKS_JSON}'
       PGRST_JWT_SECRET: '${JWKS_JSON}'

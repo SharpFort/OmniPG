@@ -9,9 +9,10 @@ set -e
 #                 059/060 迁移引用 public.scope_type/iam_gender 等 src 枚举）
 # 全量顺序: §6.3 迁移代码对象扫描（P0-5 零容忍）→ src → api_v1 → init → migrations
 # 模块顺序显式声明（2026-08-11，sys→public 重命名）:
-#   public（基础/系统层，无前缀函数落 public schema）→ inventory → sales
+#   public（基础/系统层，无前缀函数落 public schema）→ net
 #   依赖方向: 后置模块可依赖前置模块，反之不可；新增模块须在此声明位置
 #   api_v1 层前缀 _shared（跨模块共享 API）置首
+#   （2026-08-15: inventory/sales 测试模块全链路退役移除，后续按需重建）
 # =============================================================================
 
 DB_URL="$1"
@@ -22,8 +23,8 @@ fi
 
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
-MODULES="public net inventory sales"
-API_MODULES="_shared public inventory sales"
+MODULES="public net"
+API_MODULES="_shared public"
 
 BOOTSTRAP_ONLY=false
 if [ "$2" = "--bootstrap" ]; then
