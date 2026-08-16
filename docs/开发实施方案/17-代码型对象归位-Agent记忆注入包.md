@@ -193,7 +193,7 @@ WHERE t.typtype='e' ORDER BY 1,2,3;
 
 - 部署链：`scripts/deploy-db.sh`（四步）→ `scripts/apply-src.sh`（`--bootstrap` 子集 / 全量含扫描）
 - 铁律权威文档：`docs/开发实施方案/17-代码型对象归位-迁移仅表结构与数据-铁律-v1.1-修订稿.md`
-- 枚举注册表：`db/src/public/types/`（audit_operation / iam_gender / menu_type / request_status / scope_type）
+- 枚举注册表：`db/src/public/types/`（audit_operation / gender / menu_type / scope_type；request_status 2026-08-16 退役——零引用；net 模块退役，net.request_status 为 pg_net 扩展成员对象由扩展管理）
 - GRANT 集中地：`db/api_v1/public/privileges/zz_grant_all.sql`
 - RLS 集中清单：`db/src/public/privileges/rls_policies.sql`（DROP POLICY IF EXISTS + CREATE 幂等模板，挂最终表名）
 - PGlite 验证链：`~/.hermes_tmp/pglite-verify/verify-full-replay.js`（bootstrap→迁移→src→api_v1→两遍幂等；基线：迁移 59/59 + 幂等 59/59 + src 50/50 + api_v1 74/74 + §6.3 零残留 + 终态齐备：函数 87 / 视图 31 / 触发器 24 / RLS 20 / 枚举 5）

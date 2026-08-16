@@ -2,9 +2,6 @@
 -- 初始 Schema 和角色创建（容器首次启动自动执行）
 -- ==============================================================================
 
-CREATE SCHEMA IF NOT EXISTS api_v1;
-COMMENT ON SCHEMA api_v1 IS 'PostgREST 暴露的业务 API Schema';
-
 -- 系统管理 API Schema（027 改名链兼容）
 --   api_v1_sys  : 历史迁移引用承载（027 迁移 RENAME → api_v1_public 或清理残留）
 --   api_v1_public: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
@@ -18,96 +15,37 @@ CREATE SCHEMA IF NOT EXISTS net;
 --   app_owner 执行 COMMENT 必炸（must be owner）；注释由扩展安装方（superuser）负责
 
 -- ==============================================================================
--- 角色创建
+-- 角色与成员关系：由 Pigsty 管理（2026-08-16 拍板，安全第一/最小权限分层）
+--   角色创建与角色间 GRANT 属集群级操作，需 ADMIN OPTION（仅角色创建管理员持有），
+--   与 PostgREST 官方模型一致（管理员创建 authenticator/web_anon/authenticated）。
+--   Pigsty 配置参考（pigsty.yml → pg_users）：
+--     pg_users:
+--       - { name: web_anon,          nologin: true }
+--       - { name: authenticated,     nologin: true }
+--       - { name: authenticator,     login: true, password: '<改>', noinherit: true,
+--           roles: [web_anon, authenticated, super_admin, role_admin, role_editor,
+--                   role_guest, role_super_admin, tenant_admin] }
+--       - { name: super_admin,       nologin: true }
+--       - { name: role_admin,        nologin: true }
+--       - { name: role_editor,       nologin: true }
+--       - { name: role_guest,        nologin: true }
+--       - { name: role_super_admin,  nologin: true, roles: [super_admin] }
+--       - { name: tenant_admin,      nologin: true, roles: [role_admin] }
 -- ==============================================================================
 
--- 1. 匿名角色（无权访问数据）
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'web_anon') THEN
-        CREATE ROLE web_anon NOLOGIN NOINHERIT;
-    END IF;
-END
-$$;
-
--- 2. 认证用户角色
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticated') THEN
-        CREATE ROLE authenticated NOLOGIN NOINHERIT;
-    END IF;
-END
-$$;
-
--- 3. authenticator 角色（PostgREST 连接用的 LOGIN 角色）
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'authenticator') THEN
-        CREATE ROLE authenticator LOGIN NOINHERIT PASSWORD 'authenticator_dev_pass';
-    END IF;
-END
-$$;
-
--- 4. （T7 移除）casdoor 角色已退役——Logto 直连 PG 5433，无 casdoor DB/角色
-
--- 业务角色（JWT roles 数组映射到 PG 角色，与 role.role_code 一致）
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'super_admin') THEN
-        CREATE ROLE super_admin NOLOGIN NOINHERIT;
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_admin') THEN
-        CREATE ROLE role_admin NOLOGIN NOINHERIT;
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_editor') THEN
-        CREATE ROLE role_editor NOLOGIN NOINHERIT;
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_guest') THEN
-        CREATE ROLE role_guest NOLOGIN NOINHERIT;
-    END IF;
-    -- 034: Logto 角色名补齐（postgrest.conf jwt-role-claim-key=roles[0] 的映射目标；
-    --      与 iam_role_api.role_code / role 镜像 role_code 对齐）
-    --      role_super_admin = Logto 全局超管 → 继承 super_admin 全部权限
-    --      tenant_admin      = Logto 租户管理员 → 继承 role_admin（SELECT ALL + 业务表写）
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'role_super_admin') THEN
-        CREATE ROLE role_super_admin NOLOGIN;
-    END IF;
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'tenant_admin') THEN
-        CREATE ROLE tenant_admin NOLOGIN;
-    END IF;
-END
-$$;
-
--- 将业务角色授予 authenticator（允许 SET ROLE 切换）
-GRANT super_admin TO authenticator;
-GRANT role_admin TO authenticator;
-GRANT role_editor TO authenticator;
-GRANT role_guest TO authenticator;
--- 034: 继承既有授权角色（避免复制授权清单）+ 允许切换
-GRANT super_admin TO role_super_admin;
-GRANT role_admin TO tenant_admin;
-GRANT role_super_admin TO authenticator;
-GRANT tenant_admin TO authenticator;
-
--- ==============================================================================
--- 角色权限授予
--- ==============================================================================
-
--- authenticator 可以切换到 web_anon 和 authenticated
-GRANT web_anon TO authenticator;
-GRANT authenticated TO authenticator;
-
--- Schema 使用权
-GRANT USAGE ON SCHEMA api_v1 TO web_anon;
-GRANT USAGE ON SCHEMA api_v1 TO authenticated;
-GRANT USAGE ON SCHEMA api_v1 TO authenticator;
+-- Schema 使用权（api_v1 已随 027 收敛为 api_v1_public）
+GRANT USAGE ON SCHEMA api_v1_public TO web_anon;
+GRANT USAGE ON SCHEMA api_v1_public TO authenticated;
+GRANT USAGE ON SCHEMA api_v1_public TO authenticator;
 
 -- web_anon 默认无任何表权限（安全第一）
--- authenticated 的权限在后续 migration 中根据表逐步授予
+-- authenticated 的权限由 db/api_v1/public/privileges/zz_grant_all.sql 与
+--   db/src/public/privileges/rls_policies.sql 显式授予（RLS 为安全边界）
 
--- pg_net 权限
-GRANT USAGE ON SCHEMA net TO authenticated;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA net TO authenticated;
+-- pg_net 权限收紧（2026-08-16 拍板）：pg_net 可发任意外网 HTTP 请求，
+--   直接授 EXECUTE 给 authenticated = SSRF 后门；调用一律经 SECURITY DEFINER 封装函数
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA net FROM authenticated;
+REVOKE USAGE ON SCHEMA net FROM authenticated;
 
 \echo 'Schema 和角色创建完成'
 

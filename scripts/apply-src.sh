@@ -8,8 +8,9 @@ set -e
 #                 冷启动前置——扩展/枚举必须先于迁移存在（§3.4 依赖倒置陷阱：
 #                 059/060 迁移引用 public.scope_type/iam_gender 等 src 枚举）
 # 全量顺序: §6.3 迁移代码对象扫描（P0-5 零容忍）→ src → api_v1 → init → migrations
-# 模块顺序显式声明（2026-08-11，sys→public 重命名）:
-#   public（基础/系统层，无前缀函数落 public schema）→ net
+# 模块声明（2026-08-16: net 模块退役——net.request_status 零引用删除；pg_net
+#   schema 属扩展所有，项目对象不入驻）:
+#   public（基础/系统层，无前缀函数落 public schema）
 #   依赖方向: 后置模块可依赖前置模块，反之不可；新增模块须在此声明位置
 #   api_v1 层前缀 _shared（跨模块共享 API）置首
 #   （2026-08-15: inventory/sales 测试模块全链路退役移除，后续按需重建）
@@ -23,7 +24,7 @@ fi
 
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
-MODULES="public net"
+MODULES="public"
 API_MODULES="_shared public"
 
 BOOTSTRAP_ONLY=false
@@ -80,16 +81,38 @@ echo "[scan] 迁移目录代码对象扫描通过（零残留）"
 #     按字母序 privileges < views 会先执行而炸（2026-08-14 实测）——显式排后
 #   migrations 重放 = 幂等性验证（ddl 均 IF NOT EXISTS / DO 块守卫，两遍不炸）
 # ---------------------------------------------------------------------------
-for f in \
-    $(for m in $MODULES; do find "$DB_DIR/src/$m/types" -name "*.sql" 2>/dev/null | sort; done) \
-    $(for m in $MODULES; do find "$DB_DIR/src/$m" -name "*.sql" -not -path "*/types/*" 2>/dev/null | sort; done) \
-    $(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/rpc" -name "*.sql" 2>/dev/null | sort; done) \
-    $(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/views" -name "*.sql" 2>/dev/null | sort; done) \
-    $(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m" -name "*.sql" -not -path "*/rpc/*" -not -path "*/views/*" 2>/dev/null | sort; done) \
-    $(find "$DB_DIR/init" -name "*.sql" 2>/dev/null | sort) \
-    $(for m in $MODULES; do find "$DB_DIR/migrations/$m" -name "*.sql" 2>/dev/null | sort; done); do
-    echo "Applying: "$f""
-    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"
-done
+# 多遍收敛重放（2026-08-16 拍板）：LANGUAGE sql 函数体在 CREATE 时即解析绑定，
+#   单遍 find|sort 无法保证依赖顺序；失败文件重试至多 3 遍（幂等文件重放安全），
+#   三遍仍失败 = 真错误（依赖缺失/语法错），终止并列出。
+apply_files_converge() {
+    local pending="$1"
+    local pass retry f
+    for pass in 1 2 3; do
+        [ -z "$pending" ] && break
+        retry=""
+        for f in $pending; do
+            echo "Applying: "$f""
+            if ! psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f"; then
+                echo "WARN: $f 第 $pass 遍失败，进入重试队列"
+                retry="$retry $f"
+            fi
+        done
+        pending="$retry"
+    done
+    if [ -n "$pending" ]; then
+        echo "ERROR: 连续 3 遍仍失败的文件：$pending"
+        return 1
+    fi
+}
+
+FILES="$(for m in $MODULES; do find "$DB_DIR/src/$m/types" -name "*.sql" 2>/dev/null | sort; done) \
+$(for m in $MODULES; do find "$DB_DIR/src/$m" -name "*.sql" -not -path "*/types/*" 2>/dev/null | sort; done) \
+$(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/rpc" -name "*.sql" 2>/dev/null | sort; done) \
+$(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/views" -name "*.sql" 2>/dev/null | sort; done) \
+$(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m" -name "*.sql" -not -path "*/rpc/*" -not -path "*/views/*" 2>/dev/null | sort; done) \
+$(find "$DB_DIR/init" -name "*.sql" 2>/dev/null | sort) \
+$(for m in $MODULES; do find "$DB_DIR/migrations/$m" -name "*.sql" 2>/dev/null | sort; done)"
+
+apply_files_converge "$FILES" || exit 1
 
 echo "All SQL files applied successfully."
