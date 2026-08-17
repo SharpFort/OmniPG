@@ -1,0 +1,15 @@
+# 行尾统一为 LF，防止 CRLF 噪音（2026-02 批量 CRLF 事件后引入）
+* text=auto eol=lf
+
+# 常用文本类型显式声明（文本文件将按 UTF-8 文本处理）
+*.sql text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.conf text eol=lf
+*.ini text eol=lf
+*.json text eol=lf
+*.ps1 text eol=lf
+*.py text eol=lf
