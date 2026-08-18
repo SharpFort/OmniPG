@@ -73,7 +73,7 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 ### 决策
 
 - PostgREST v14（gateway/docker-compose.yml postgrest 服务）暴露对外层 schema：docker-compose env 运行时为 `api_v1_public`（env 覆盖 conf），postgrest.conf 声明多 schema（db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"，sales/inventory 已退役按需重建），extra search path = api_v1_public, public。
-- JWT 验签（PGRST_JWT_SECRET = JWKS_JSON），把 claims 注入 `request.jwt.claims`，按 `.pg_role` claim 切换 PG 角色（docker-compose 运行时配置；postgrest.conf 留档为 roles[0]）。
+- JWT 验签（PGRST_JWT_SECRET = JWKS_JSON），把 claims 注入 `request.jwt.claims`，按 `.pg_role` claim 切换 PG 角色（docker-compose 为运行态权威；postgrest.conf 参考文件写 roles[0]，与运行态不一致）。算法口径：开发 = HS256、staging/production = Logto JWKS RS256（compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实）。
 - RLS 是数据级唯一安全边界；写/管理操作经 /rpc/* SECURITY DEFINER 函数 + has_permission。
 - E1 决策：pg_session_jwt 扩展不采纳（PostgREST 已做 PG 端解析，功能重复；仅未来出现非 PostgREST 入口时按需评估）。
 
@@ -106,7 +106,7 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 
 ### 影响与代价
 
-- 角色/扩展变更属集群级操作（ADMIN OPTION）；infra/pigsty.yml 与 01-extensions.sql 存在部分扩展清单差异（pgsodium/pgaudit 已在 01 文件退役/停用，pigsty.yml 仍列出）——以 01-extensions.sql 为项目权威。
+- 角色/扩展变更属集群级操作（ADMIN OPTION）；扩展口径：pgaudit 不启用、pgsodium 2026-08-16 退役、plpython3u/pgjwt 不使用；⚠️ infra/pigsty.yml 仍列 pgaudit/pgsodium 等与最小集（01-extensions.sql：pg_pwhash/pgcrypto/pg_net/pgtap + Pigsty 集群级 pg_cron/pg_graphql）冲突——TODO，以 db/init/01-extensions.sql 为准。
 - 部署链固化：deploy-db.sh（bootstrap → dbmate up → apply-src）+ deploy-gateway.sh + setup_apisix.sh。
 
 ## ADR 5：业务逻辑下沉到数据库（RPC / 触发器 / RLS）
@@ -175,7 +175,7 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 ### 决策
 
 - dbmate（db/dbmate.toml + Makefile migrate/migrate-rollback/migrate-status）管理 db/migrations/public/。
-- v0.1.0 squash：`064_v010_mirror_tables.sql`（6 张镜像表）→ `065_v010_baseline.sql`（18 张业务表）→ `066_v010_seed_data.sql`（app_config/dict_type/dict_data/iam_menu 种子）；历史迁移保存在 git tag v0.1.0。
+- v0.1.0 squash：`064_v010_mirror_tables.sql`（6 张镜像表）→ `065_v010_baseline.sql`（18 张业务表）→ `066_v010_seed_data.sql`（种子：app_config 14 / dict_type 2 / dict_data 9 / iam_menu 55），共 24 张物理表（另含 schema_migrations）；历史 62 个迁移保存在 git tag v0.1.0。
 - 存量库账本收敛：schema_migrations 只记 064/065/066；新库走 bootstrap → dbmate up → apply-src 自然登记。
 - db/schema.sql 由 dbmate dump 生成（完整 schema 快照，可快速恢复）。
 

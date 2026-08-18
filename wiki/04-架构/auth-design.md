@@ -48,13 +48,13 @@ JWT payload 样例（组织 token）：内置 claim `sub`（Logto 用户 id，21
 
 | 层 | 组件 | 校验内容 | 配置 |
 | --- | --- | --- | --- |
-| 网关 | APISIX jwt-auth 插件 | 签名验签（生产：Logto JWKS，ES384 公钥 JSON；开发：.env.example 的 HS256 对称密钥占位，与 PGRST_JWT_SECRET 同源） | jwt-auth 插件元数据：目标 = scripts/init-apisix-routes.sh（RS256 + 从 Logto /.well-known/openid-configuration 拉取 JWKS）；部署链现状 = scripts/setup_apisix.sh（HS256 旧配置，待收敛）；gateway/.env 的 JWKS_JSON |
+| 网关 | APISIX jwt-auth 插件 | 签名验签（开发：HS256 对称密钥，.env.example 占位；staging/production：Logto JWKS 公钥 **RS256**——05 文档与 init-apisix-routes.sh 口径；compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实） | jwt-auth 插件元数据：目标 = scripts/init-apisix-routes.sh（RS256 + 从 Logto /.well-known/openid-configuration 拉取 JWKS）；部署链现状 = scripts/setup_apisix.sh（HS256 旧配置，待收敛）；gateway/.env 的 JWKS_JSON |
 | API 层 | PostgREST | 再次验签（PGRST_JWT_SECRET = JWKS_JSON）并把 claims 注入 request.jwt.claims | gateway/docker-compose.yml（env 优先） |
 | 角色切换 | PostgREST | 按 JWT claim 切换 PG 角色：docker-compose 运行时为 .pg_role（JSPath），postgrest.conf 留档为 roles[0] | PGRST_JWT_ROLE_CLAIM_KEY |
 
 说明：
 
-- **运行配置以 docker-compose 环境变量为准**（env 覆盖 conf）：`PGRST_DB_SCHEMAS=api_v1_public`（运行时单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=".pg_role"`、`PGRST_DB_PRE_REQUEST=""`（黑名单预请求已退役）。gateway/postgrest/postgrest.conf 为留档/开发参考：db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"（对外暴露层为多 schema 形态；sales/inventory 已退役、按需重建）、db-anon-role = "web_anon"、jwt-secret = "$(JWKS_JSON)"。
+- **运行态以 gateway/docker-compose.yml 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=".pg_role"`、`PGRST_DB_PRE_REQUEST=""`（黑名单预请求已退役）、extra search path = api_v1_public,public、max-rows 1000、宿主 3100。gateway/postgrest/postgrest.conf 为**参考文件**：db-schemas 多 schema（api_v1_public, api_v1_sales, api_v1_inventory）与 jwt-role-claim-key=roles[0] 均与运行态不一致；api_v1_sales / api_v1_inventory schema 当前不存在（063 退役，仅 conf 声明残留）；db-anon-role = "web_anon"、jwt-secret = "$(JWKS_JSON)"。
 - `db/src/public/functions/logto_ts.sql` 的 `logto_ts(text)` 是 **webhook 时间戳解析器**（13 位毫秒 / 10 位秒 / ISO 字符串 → timestamptz），与 token 校验无关。
 - 已知审查项（docs/审查文档/33 号 N8/N9b）：claims 脚本的 pg_role 映射表只覆盖 role_super_admin / role_admin / role_editor / role_guest，组织角色 tenant_admin / editor / viewer 不在映射内会落到 role_guest——如需 PostgREST 侧按租户角色提权，需扩展映射（当前以代码为准，未修）。
 
