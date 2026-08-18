@@ -221,4 +221,4 @@ Logto（权威）                        PostgreSQL 镜像
 
 ---
 
-> 参考：授权模型设计背景见 [项目总纲](../01-项目简介/overview.md) 与 [权限开发指南](../05-开发指南/permission-development.md)；webhook 事件细节见 [Logto webhook](../06-API参考/logto-webhook.md)；镜像同步审查见 docs/审查文档/33 号。
+> 参考：授权模型设计背景见 [项目总纲](../01-项目简介/overview.md) 与 [权限开发指南](../05-开发指南/permission-development.md)；webhook 事件细节见 [Logto webhook](../06-API参考/logto-webhook.md)；镜像同步审查见历史审查 33 号（已归档）。

@@ -35,7 +35,7 @@ PostgREST 以 Docker 容器运行（`gateway/docker-compose.yml` 中 `postgrest`
 
 认证链路：**Logto 签发 access token（OIDC）→ APISIX `jwt-auth` 验签放行 → PostgREST 再用同一 `JWKS_JSON` 验签**，并把 JWT claims 注入 `request.jwt.claims`（PostgREST 自动完成）。
 
-JWT 算法口径：开发环境为 **HS256**（`gateway/.env.example` 的 JWKS_JSON 是 oct 对称密钥，PostgREST 与 APISIX jwt-auth 同源）；staging/production 指向 **Logto JWKS 公钥 RS256**（`docs/开发实施方案/05-Logto认证与权限架构-完善版.md` 与 `scripts/init-apisix-routes.sh` 口径）。⚠️ compose 注释与 `.env.staging/.production` 注释写的是 **ES384**——口径不一致，实际算法需以 Logto 配置为准（TODO 核实）。
+JWT 算法口径：开发环境为 **HS256**（`gateway/.env.example` 的 JWKS_JSON 是 oct 对称密钥，PostgREST 与 APISIX jwt-auth 同源）；staging/production 指向 **Logto JWKS 公钥 RS256**（历史 Logto 方案文档（已归档）与 `scripts/init-apisix-routes.sh` 口径）。⚠️ compose 注释与 `.env.staging/.production` 注释写的是 **ES384**——口径不一致，实际算法需以 Logto 配置为准（TODO 核实）。
 
 ```bash
 curl -H 'Authorization: Bearer <logto-access-token>' \

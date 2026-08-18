@@ -128,4 +128,4 @@ CREATE TABLE public.xxx (
 
 ---
 
-> 参考：迁移规范见 [migrations.md](migrations.md)，权限开发见 [permission-development.md](permission-development.md)，新增 API 流程见 [adding-api.md](adding-api.md)，目录职责见 [repo-layout.md](repo-layout.md)；审计字段决策树与待裁决项见 `docs/审查文档/35-审查-审计字段模板v4.4决策树最佳实践评估.md`。
+> 参考：迁移规范见 [migrations.md](migrations.md)，权限开发见 [permission-development.md](permission-development.md)，新增 API 流程见 [adding-api.md](adding-api.md)，目录职责见 [repo-layout.md](repo-layout.md)；审计字段决策树与待裁决项见历史文档（35 号审查，已归档）。
