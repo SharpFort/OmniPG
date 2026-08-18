@@ -1,28 +1,209 @@
 # 安全设计
 
-> 状态：骨架占位 · 待补充
-> 定位：认证、防注入、密钥管理等安全基线
+本文描述 OmniPG 当前代码（分支 docs/wiki-rewrite，2026-08-18 核对）的安全基线。架构事实以代码为准：**Logto（OIDC）→ APISIX（验签/路由）→ PostgREST（api_v1_public）→ PostgreSQL（RLS + SECURITY DEFINER 函数）**。历史上 Casdoor / casbin / Go PolicySyncer / 库内 JWKS 等方案均已退役，不再出现在任何安全链路中。
 
-## 内容清单
+## 信任边界
 
-- [ ] 认证安全：Logto token 校验、密钥轮换
-- [ ] 防注入：PostgREST 参数化、函数内动态 SQL 规范
-- [ ] 密钥管理：.env 敏感项、DB_PASSWORD、Logto app secret
-- [ ] 网络安全：pg_hba.conf 访问控制、pgbouncer、APISIX 安全头/CSP
-- [ ] RLS 作为数据访问的最后防线
-- [ ] 审计与合规：登录日志、操作日志保留策略
-- [ ] 安全 Checklist
+浏览器 / 客户端 → APISIX (9080，jwt-auth 验签：Logto JWKS) → PostgREST (3100，仅网关可见；角色映射 pg_role) → pgBouncer (6432) → PostgreSQL (5432，RLS + has_permission + SECURITY DEFINER 写路径)。
 
----
+三层防线各司其职：网关负责**认证（token 是否有效）**，PostgREST 负责**角色切换**，数据库负责**授权（行/列/操作）**。即使绕过 APISIX 直连 PostgREST，库内 RLS 与权限函数仍然生效。
 
-## 安全 Checklist（待补全）
+## 1. 认证安全
 
-- [ ] 所有敏感变量不入库、不入日志
-- [ ] 数据库账号最小权限（app_owner 等角色）
-- [ ] RLS 覆盖所有业务表
-- [ ] 网关启用 CSP/安全头
-- [ ] 密钥定期轮换
+### 1.1 认证链路（Logto OIDC）
 
----
+- 登录：前端走 Logto OIDC code flow（PKCE），见 scripts/e2e-test.sh 的 logto_login()（/oidc/auth → /api/interaction → /oidc/token；token 交换必须带 resource 参数，否则 Logto 签发 opaque token 而非 JWT）。
+- Logto 服务：gateway/docker-compose.yml 的 logto 容器（容器名 app-logto），宿主端口 3001（Core/OIDC）/ 3002（Admin Console）。
+- token 校验：APISIX jwt-auth 插件读取 **Logto JWKS 公钥**验签；PostgREST 用同一 JWKS（PGRST_JWT_SECRET='${JWKS_JSON}'）做第二道校验。
+- 登录事件：Logto 推送 PostSignIn webhook → sync_login_log_write() 写入 login_log（见 [审计与日志](audit-logging.md)）。
 
-> 参考：本页内容需与当前代码保持一致，补充时请核对 `feature/logto-authn` 分支。
+### 1.2 网关验签（APISIX）
+
+- 路由初始化脚本为 **scripts/init-apisix-routes.sh**（Logto 版）：
+  - 从 Logto OIDC discovery（http://localhost:3001/oidc/.well-known/openid-configuration）拉取 jwks_uri，将 JWKS 写入 APISIX plugin_metadata/jwt-auth（algorithm: RS256）。
+  - 业务路由 /api/v1/sys/*、/rpc/*、/* 均挂 jwt-auth；/.well-known/jwks 与 /logto/* 为公开代理（指向 app-logto:3001）。
+- 算法口径（统一）：开发环境 JWKS_JSON 为 **HS256 对称密钥**（gateway/.env.example / .env.development）；staging/production 指向 Logto JWKS 公钥 **RS256**（05 文档与 init-apisix-routes.sh 口径）。gateway compose 注释与 .env.staging / .env.production 注释写 **ES384** —— 口径不一致，需以 Logto 实际配置核实（TODO）。
+- ⚠️ scripts/setup_apisix.sh 是 **Casdoor 时代的遗留脚本**（HS256、指向 app-casdoor、user_login_sso/refresh_token_rtr 路由），当前不应使用；deploy-all.sh / deploy-gateway.yml 仍调用它，属于待清理的已知不一致（TODO）。
+
+### 1.3 PostgREST 角色映射
+
+- 生效配置来自 compose 环境变量（覆盖 gateway/postgrest/postgrest.conf）：
+  - PGRST_DB_SCHEMAS: "api_v1_public" —— 只暴露 API 层，public 物理表不可见；PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_public,public"；PGRST_MAX_ROWS: "1000"；
+  - PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role" —— Logto customizer 注入的 pg_role claim（scripts/phase2/init-logto.py 的 CLAIMS_SCRIPT 生成：role_super_admin → super_admin、role_admin → role_admin、role_editor → role_editor，其余 role_guest）；
+  - PGRST_DB_PRE_REQUEST: "" —— 旧的 token 黑名单 pre-request 已退役（会话/吊销交 Logto）。
+- 数据库侧角色（authenticator / web_anon / authenticated / role_*）由 **Pigsty 管理**（infra/pigsty.yml 的 pg_users，以及 db/init/02-schemas.sql 头注中的角色模型参考）。
+
+### 1.4 Webhook 验签
+
+- Logto webhook 入口：POST /rpc/webhook_logto，路由在 init-apisix-routes.sh §4.3 创建，**不挂 jwt-auth**，改由 serverless-pre-function 做 **HMAC-SHA256(rawBody) vs logto-signature-sha-256** 校验；LOGTO_WEBHOOK_SIGNING_KEY 缺失时脚本 **exit 1（fail-closed，N15）**。
+- ⚠️ 注意：该路由不可叠加 request-validation 插件（JSON 重排会破坏 rawBody 签名）；大 body 会落临时文件，脚本内用 get_body_file() 回退读取。
+- 数据库侧 api_v1_public.webhook_logto(jsonb) 已 GRANT EXECUTE TO web_anon，因此 **3100 端口不应暴露到公网**（仅 APISIX 可达），否则可绕过验签。
+
+### 1.5 密钥轮换
+
+- Logto 密钥：JWKS 支持多 key + kid 匹配；轮换后重新执行 init-apisix-routes.sh 即可刷新 APISIX 的 plugin_metadata/jwt-auth（脚本每次从 Logto 实时拉取）。当前**没有自动轮换脚本**（TODO）。
+- PostgREST 侧 PGRST_JWT_SECRET 引用 JWKS_JSON 环境变量，轮换时同步更新 gateway/.env 并重建容器。
+- APISIX Admin Key：**默认值是官方示例 edd1c9f034335f136f87ad84b625c8f1（全网公开）**，docker-compose.yml 与 gateway/.env.example 均已标注警告；任何非本地环境必须更换（openssl rand -hex 16）。
+
+## 2. 防注入
+
+### 2.1 PostgREST 参数化
+
+PostgREST 只接受预定义视图/RPC 调用，HTTP 参数作为绑定值传递，**无法拼接到 SQL 中**；db-schemas 仅 api_v1_public，底层表与敏感列不对应用暴露。这是架构层面的第一道防注入保障。
+
+### 2.2 PL/pgSQL 动态 SQL 规范
+
+唯一剩余注入面是函数内的手动 EXECUTE。仓库规范（承自历史审查结论，与当前代码一致）：
+
+- 禁止 EXECUTE '...' || 用户输入 拼接；
+- 必须使用 EXECUTE ... USING $1（值参数化）或 format('%I', 标识符) / quote_ident()（标识符引用）；
+- 表名白名单先行校验。
+
+### 2.3 实际代码核查（2026-08-18）
+
+| 文件 | 动态 SQL 写法 | 安全性 |
+| --- | --- | --- |
+| db/api_v1/public/rpc/rpc_import_csv.sql | 显式白名单（6 张业务表）→ quote_ident 列名 → format('INSERT INTO api_v1_public.%I ...') + EXECUTE ... USING v_item | ✅ 标识符引用 + 值参数化 |
+| db/src/public/triggers/trg_updated_at.sql | EXECUTE format('CREATE TRIGGER trg_%s_updated_at BEFORE UPDATE ON %I ...', t, t) | ✅ %I 引用表名 |
+| 各搜索类 RPC（rpc_search_login_logs / search_users / search_audit_log） | ILIKE '%' || p_query || '%' | ✅ 值级表达式拼接，非 SQL 拼接；p_limit 均 GREATEST(1, LEAST(..., 100)) 钳制 |
+
+结论：当前代码**没有发现可注入的动态 SQL**。
+
+## 3. 密钥管理
+
+### 3.1 .env 分层
+
+| 层级 | 文件 | 处理方式 |
+| --- | --- | --- |
+| 本地开发 | .env.development / gateway/.env | 占位/开发值，不入 git（.gitignore）；gateway/.env.example 提供模板 |
+| Staging / 生产 | .env.staging / .env.production | 敏感值一律 ${VAR} 占位，由环境注入 |
+| CI/CD | GitHub Secrets | SSH_PRIVATE_KEY、DB_SERVER_HOST、GATEWAY_SERVER_HOST、SERVER_USER、DBMATE_DATABASE_URL、DB_URI、APISIX_ADMIN_KEY、JWKS_JSON（另建议 LOGTO_WEBHOOK_SIGNING_KEY、LOGTO_M2M_SECRET） |
+| 服务器 | 环境变量 / Systemd EnvironmentFile | 部署时注入，不硬编码进脚本 |
+
+### 3.2 需要重点保护的密钥
+
+| 密钥 | 存放位置 | 泄露影响 | 处置 |
+| --- | --- | --- | --- |
+| DB_PASSWORD（app_owner） | .env.*、infra/userlist.txt、infra/pigsty.yml | 数据库全量读写 | 生产换强随机值；userlist.txt 权限 640 |
+| AUTHENTICATOR_PASSWORD | .env.*、userlist.txt、pigsty.yml | PostgREST 连接串 | 同上 |
+| APISIX_ADMIN_KEY | gateway/.env → config.yaml | 网关全部路由/插件可被篡改 | 上线前必须更换默认值；9180 不暴露公网 |
+| JWKS_JSON | gateway/.env | PostgREST 验签密钥（Logto 时代为公钥 JWKS） | 与 Logto 一致即可；公钥泄露风险低 |
+| LOGTO_WEBHOOK_SIGNING_KEY | gateway/.env | webhook 可被伪造（fail-open） | 必填，脚本缺失即拒绝部署 |
+| LOGTO_M2M_SECRET | 环境变量 / --m2m-secret | Management API 全量读写 | 不硬编码；init-logto.py 缺失即拒绝（N23） |
+| Logto 数据库密码 | docker-compose.yml 的 LOGTO_DB_PASSWORD | Logto 数据 | 生产注入 |
+
+### 3.3 已知风险点（需人工跟进）
+
+- Logto 业务库走宿主 **5433**（统一端口口径，compose 中 host.docker.internal:5433/logto）；但 infra/pigsty.yml 的 pg_users **未声明 logto 用户**，infra/pgbouncer.ini / userlist.txt 也未含 logto 库条目 —— 首次部署前需在 Pigsty 侧创建 logto 角色与 logto 库（可 5432 直连或经池），待补齐（TODO，见 [生产问题排查](production-troubleshooting.md)）。
+- infra/redis.conf 为 bind 0.0.0.0 且无密码（开发环境），生产需收窄绑定并启用认证。
+
+## 4. 网络安全
+
+### 4.1 PostgreSQL 访问控制（infra/pg_hba.conf + infra/pigsty.yml）
+
+| 网段 | 方法 | 说明 |
+| --- | --- | --- |
+| local（Unix socket） | peer | 本机 postgres 管理 |
+| 127.0.0.1/32、::1/128 | scram-sha-256 | 本地 TCP |
+| 172.17.0.0/16 | scram-sha-256 | Docker 默认桥接 |
+| 172.20.0.0/16 | scram-sha-256 | Docker app-net（compose 网段） |
+| 10.0.0.0/8（pigsty.db.yml） | scram-sha-256 | Phase 2 内网 |
+
+pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_hba.conf 一致。
+
+### 4.2 pgBouncer（infra/pgbouncer.ini）
+
+- listen_addr = 0.0.0.0:6432（供 Docker 经 host 访问）；auth_type = scram-sha-256，认证文件 userlist.txt。
+- pool_mode = session；max_client_conn = 100、default_pool_size = 20、reserve_pool_size = 5。
+- 连接串只接受 PostgreSQL 侧已放行的网段（见上表）；生产建议收窄监听地址。
+
+### 4.3 Redis（infra/redis.conf）
+
+- bind 0.0.0.0（开发）；appendonly yes + appendfsync everysec；maxmemory 256mb + allkeys-lru。
+- 无密码 —— 生产必须收窄绑定 + requirepass（TODO）。
+
+### 4.4 APISIX 管理面（gateway/apisix/config.yaml）
+
+- Traditional 模式：etcd（compose 内 app-etcd:2379，不映射宿主端口，避免与 Pigsty etcd 冲突）。
+- Admin API 9180 + 内置 Dashboard（/ui）；enable_admin_ui: true；**allow_admin: 0.0.0.0/0 仅限开发**，生产务必收窄。
+- Control API 9092、Status API 7085：控制面/健康检查，不应暴露公网。
+- 全局 CORS 规则（init-apisix-routes.sh 写入）：allow_origins: "*"，生产建议收窄为前端域名。
+
+### 4.5 PostgREST 暴露面
+
+- 宿主端口 3100:3000（compose），Swagger 浏览器端直连拉 spec 因此 PGRST_CORS_ORIGINS: "*"。
+- 生产环境 3100 应仅允许 APISIX 所在网段访问（webhook 入口依赖 APISIX 验签）。
+- ⚠️ gateway/postgrest/postgrest.conf 仍引用已退役的 api_v1_sales / api_v1_inventory 与 check_token_blacklist —— 该文件已被 compose 环境变量覆盖，仅作参考，勿据其排查（TODO 清理）。
+
+### 4.6 数据库扩展面（最小集）
+
+- bootstrap 最小集（db/init/01-extensions.sql）：**pg_pwhash / pgcrypto / pg_net / pgtap**；pg_cron / pg_graphql 由 Pigsty 集群级安装（infra/pigsty.yml 扩展列表）。
+- pgaudit **不启用**、pgsodium 2026-08-16 **退役**、plpython3u / pgjwt 不使用。
+- ⚠️ infra/pigsty.yml 扩展列表仍列 pgaudit / pgsodium 等与最小集冲突 —— 以 01-extensions.sql 为准，清理列为 TODO。
+
+## 5. RLS 作为数据访问的最后防线
+
+### 5.1 策略总览（db/src/public/privileges/rls_policies.sql，共 20 条）
+
+| 表 | 策略 | 语义 |
+| --- | --- | --- |
+| users | users_tenant_policy | 超管全量 / 本人 / 同租户 profile 关联 |
+| tenants | tenants_read_policy | 超管 / 当前组织 / 成员可见本组织 |
+| user_tenants | user_tenants_policy | 本人 / 当前组织 |
+| role | role_read_policy | 全局只读 |
+| user_profile | profile_tenant_policy | 读：超管/本人/同租户；写：本人/超管（WITH CHECK） |
+| department | dept_tenant_isolation_policy | RESTRICTIVE，tenant_id = current_tenant_id() |
+| position | position_tenant_isolation_policy | 同上 |
+| user_position | user_position_tenant_isolation_policy | 同上 |
+| iam_menu | menu_read_policy | 仅 is_active 菜单可读 |
+| iam_role_menu | role_menu_read_policy | 系统级共享读 |
+| audit_log | audit_log_read_policy | 超管 / 本租户管理员 |
+| login_log | login_log_read_policy | 超管 / 本租户 / 本人（020 补本人可见） |
+| dict_type / dict_data | dict_*_read_policy | 超管 / 全局（tenant_id IS NULL）/ 本租户 |
+| user_role | user_role_read_policy | 超管 / 本人 |
+| webhook_event_log | webhook_event_log_select_policy | 仅超管 |
+| organization_role | org_role_select_policy | 全局只读 |
+| iam_role_data_scope | role_data_scope_read_policy | 全局只读 |
+| ip_geolite2_city / ip_region_v4 | geolite2_read_policy / ip_region_read_policy | 静态参考数据，公开只读 |
+
+### 5.2 写路径一律 SECURITY DEFINER
+
+业务角色不直接写敏感表，写入走定义者权限函数（调用者无法绕过）：
+
+- write_audit_log() / audit_trigger_func() —— 审计写入（audit_log）；
+- sync_*（sync_user_upsert / sync_role_upsert / sync_tenant_upsert / sync_membership_delta / sync_user_suspension 等）—— Logto 镜像表写入；
+- sync_login_log_write() —— login_log 写入（REVOKE EXECUTE ... FROM PUBLIC）；
+- log_operate() —— 操作日志写入；
+- api_v1_public.import_csv / update_config —— 业务写，内置 require_permission 门槛。
+
+### 5.3 权限判定函数
+
+- is_super_admin()：JWT roles 含 role_super_admin；
+- has_permission(p_code)：超管短路，否则查 iam_role_menu（按 JWT roles 中的 role_code 匹配 button 行 api_code）；
+- require_permission(p_code) / require_super_admin()：不通过即 RAISE 42501。
+- 详见 [认证与授权设计](../04-架构/auth-design.md) 与 [权限开发](../05-开发指南/permission-development.md)。
+
+## 6. 审计与合规
+
+- 数据变更审计：trg_audit_* → audit_trigger_func('tenant_aware') → write_audit_log → audit_log（old_data/new_data 全量 JSON）；共 9 张业务表挂载（见 [审计与日志](audit-logging.md)）。
+- 登录审计：Logto PostSignIn → sync_login_log_write → login_log（业务端长期保留，Logto 审计日志会被清理）。
+- 操作审计：log_operate() 写入 audit_log(log_type='operate')（配置修改、导入、webhook 重放等）。
+- 追加保护：audit_log / login_log / webhook_event_log 只有 SELECT 型 RLS 策略，业务角色无 UPDATE/DELETE 授权；webhook_event_log 注释约定保留 90 天。
+- 保留策略：目前**无自动分区/归档任务**（B7 建议未落地），audit_log 是全库增长最快的表，需在运维侧制定保留 N 月 + 归档方案（见 [审计与日志](audit-logging.md) 与 [备份与恢复](backup-restore.md)）。
+
+## 7. 安全 Checklist
+
+- [ ] 所有敏感变量不入库、不入日志（DB_PASSWORD / JWKS_JSON / LOGTO_WEBHOOK_SIGNING_KEY 等仅存 .env / Secrets）
+- [ ] 数据库账号最小权限：app_owner（业务主账号）、authenticator（PostgREST 切换角色）、web_anon（匿名，无表权限）；镜像表对应用只读
+- [ ] RLS 覆盖所有业务表（当前 20 条策略，新增表必须补策略）
+- [ ] 网关启用 jwt-auth + 全局 CORS（生产收窄 allow_origins）
+- [ ] APISIX Admin Key 已更换默认值，allow_admin 收窄，9180/9092/7085 不暴露公网
+- [ ] PostgREST 3100 端口仅 APISIX 可达（webhook 验签依赖网关）
+- [ ] LOGTO_WEBHOOK_SIGNING_KEY 已配置且 init-apisix-routes.sh 可 fail-closed
+- [ ] 密钥定期轮换（Logto JWKS + APISIX plugin_metadata 刷新）
+- [ ] 审计日志保留策略与归档任务已建立
+- [ ] 迁移/发布前备份完成（见 [备份与恢复](backup-restore.md)）
+- [ ] 遗留清理：setup_apisix.sh、postgrest.conf 中的 sales/inventory、verify-stack.sh 的 Casdoor/Syncer 检查均已对齐 Logto 现状
+- [ ] 扩展面与 01-extensions.sql 最小集对齐（infra/pigsty.yml 冲突清单清理，TODO）
+
+> 参考：[认证与授权设计](../04-架构/auth-design.md) · [数据流](../04-架构/data-flow.md) · [网关路由](../06-API参考/gateway-routing.md) · [Logto Webhook](../06-API参考/logto-webhook.md) · [审计与日志](audit-logging.md) · [生产问题排查](production-troubleshooting.md)

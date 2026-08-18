@@ -1,29 +1,137 @@
 # 前置条件
 
-> 状态：骨架占位 · 待补充
-> 定位：本地开发环境需要准备什么
+> 本地开发环境由两部分组成：**WSL2/Linux 宿主上的 Pigsty 基础设施**（PostgreSQL 18、pgBouncer、Redis、etcd、Grafana）与 **Docker 网关栈**（etcd/APISIX/PostgREST/Swagger/Logto，见 `gateway/docker-compose.yml`）。数据库必须先行就绪——网关容器通过 `host.docker.internal` 回连宿主。
 
-## 内容清单
+## 环境要求总览
 
-- [ ] 操作系统：推荐 WSL2（Ubuntu 22.04+）或 Linux
-- [ ] Docker 与 docker compose 插件
-- [ ] 资源要求：内存 / 磁盘 / CPU 建议值
-- [ ] 可选：Pigsty 本机部署所需依赖
-- [ ] 网络与镜像源注意事项
+| 类别 | 要求 | 验证命令 |
+| --- | --- | --- |
+| 操作系统 | WSL2 Ubuntu 22.04+（项目实测 26.04）或原生 Linux | `uname -a` / `cat /etc/os-release` |
+| Docker | 24+，含 compose v2 插件 | `docker --version`、`docker compose version` |
+| Git | 2.40+ | `git --version` |
+| dbmate | 已安装（`make migrate` 直接调用） | `dbmate --version` |
+| pgTAP / pg_prove | 数据库测试（`make test-db`） | `pg_prove --version` |
+| psql | 宿主 Pigsty 自带 | `psql --version` |
+| python3 | `setup_apisix.sh` 解析 JWKS JSON 需要 | `python3 -c "import json"` |
+| PowerShell 5.1+ | 仅 Windows 侧运行 `scripts/wsl-portproxy.ps1` 需要 | `$PSVersionTable.PSVersion` |
 
----
+> 仓库当前没有前端工程（`frontend/` 不存在），本地开发不需要 Node.js 工具链。Go syncer 已退役——`.github/workflows/ci.yml` 中的 `syncer-check` 作业为历史遗留（代码事实），本地无需安装 Go。
+
+## 操作系统：WSL2 Ubuntu 22.04+
+
+- 推荐 WSL2 + Docker Desktop（WSL2 后端）。`scripts/start.sh` 面向 systemd 服务环境：`postgresql@18-main`、pgbouncer、redis-server、etcd、grafana-server。
+- WSL2 需启用 systemd（`/etc/wsl.conf` 中 `[boot] systemd=true`），否则脚本里的 `systemctl` 调用不可用。
+- Docker Desktop 需在 Settings → Resources → WSL Integration 中勾选对应发行版。
+- Windows 10（无 mirrored 网络模式）下，容器访问 WSL2 内 Pigsty 服务需要 `scripts/wsl-portproxy.ps1` 做端口转发，见 [常见问题排查](troubleshooting.md) §6；Windows 11 22H2+ 的 mirrored 模式可免。
+
+## Docker 与 Docker Compose
+
+- Docker 24+，compose 必须为 v2 插件（`docker compose` 子命令，而非独立 `docker-compose`）。
+- 网关栈镜像（`gateway/docker-compose.yml`）：
+
+| 容器 | 镜像 | 对外端口 |
+| --- | --- | --- |
+| app-etcd | bitnamilegacy/etcd:3.5.11 | 不映射（容器间 `app-etcd:2379`，避免与 Pigsty etcd :2379 冲突） |
+| app-apisix | apache/apisix:3.17.0-debian | 9080 / 9443 / 9180 / 7085 |
+| app-postgrest | postgrest/postgrest:v14.15 | 3100 → 3000 |
+| app-swagger | swaggerapi/swagger-ui:v5.2.0 | 8082 → 8080 |
+| app-logto | ghcr.io/logto-io/logto:latest（OSS v1.42） | 3001（Core/OIDC）/ 3002（Admin Console） |
+
+### 组件版本速查
+
+| 组件 | 版本 |
+| --- | --- |
+| Pigsty | v4.4.0 |
+| PostgreSQL | 18 |
+| PostgREST | v14.15 |
+| APISIX | 3.17.0 |
+| etcd | 3.5.11 |
+| Logto | OSS v1.42 |
+| Swagger UI | v5.2.0 |
+| dbmate / pgTAP | 最新版（迁移与数据库测试） |
+| CI | GitHub Actions（.github/workflows/ci.yml） |
+
+## 资源建议
+
+| 资源 | 最低 | 推荐 |
+| --- | --- | --- |
+| CPU | 4 核 | 8 核 |
+| 内存 | 16 GB | 32 GB（Pigsty 全套 + 5 个网关容器） |
+| 磁盘 | 50 GB SSD | 100 GB NVMe |
+
+WSL2 资源不足时可调整 `%USERPROFILE%\.wslconfig`（参考示例：`memory=8GB`、`processors=4`、`swap=2GB`），改后 `wsl --shutdown` 重启生效。
+
+## Pigsty 基础设施依赖
+
+Pigsty 负责集群级资源，开发环境要求以下组件已就绪：
+
+| 组件 | 端口 | 用途 |
+| --- | --- | --- |
+| PostgreSQL 18 | 5432 | 宿主直连（dbmate 迁移、psql 验证） |
+| pgBouncer | 6432 | PostgREST 容器连接入口 |
+| Redis | 6379 | Pigsty 管理 |
+| etcd | 2379 | Pigsty 自身配置中心（与 compose 内 app-etcd 隔离） |
+| Grafana | 3000 | 监控大盘（PostgREST 容器内 3000 已映射到宿主 3100，无冲突） |
+
+### 库、角色与权限链
+
+- 数据库：`app_db`（owner `app_owner`）、`logto`（owner `logto`，Logto 专用）。
+- 角色由 Pigsty `pg_users` 管理（参考 `db/init/02-schemas.sql` 顶部注释）：登录角色 `app_owner`、`authenticator`（NOINHERIT，持有 web_anon/authenticated 及各业务角色成员）、`logto`；非登录角色 `web_anon`、`authenticated`、`super_admin`、`role_admin`、`role_editor`、`role_guest`、`role_super_admin`、`tenant_admin`。
+- Schema 布局（`db/init/02-schemas.sql`）：`public`（核心业务 + 函数/触发器/RLS）、`api_v1_public`（对外暴露视图/RPC）、`api_v1_sys`（027 改名链兼容，新代码不用）、`net`（pg_net 宿主 schema）。**不存在 extensions schema**。
+- pg_hba 需允许 Docker 网桥访问：`172.17.0.0/16`、`172.20.0.0/16` 走 scram-sha-256；pgBouncer `userlist.txt` 中 `app_owner` / `authenticator` / `logto` 的密码要与 `gateway/.env`、Pigsty `pg_users` 三处一致。
+
+### 数据库扩展
+
+`db/init/01-extensions.sql` 维护最小集（幂等，已装即跳过）：
+
+| 扩展 | 用途 |
+| --- | --- |
+| pg_pwhash | 密码哈希（Argon2id，OWASP 首选） |
+| pgcrypto | 辅助加密函数（sha256 等） |
+| pg_net | 异步 HTTP（webhook 回调等） |
+| pgtap | pgTAP 单元测试框架 |
+
+`pg_cron` / `pg_graphql` 由 Pigsty 集群级安装（不在该文件内）；`pgaudit` 不启用、`pgsodium` 已于 2026-08-16 退役、`plpython3u` / `pgjwt` 不使用。
+
+> ⚠️ TODO（代码事实）：`infra/pigsty.yml` 与 `infra/pigsty.db.yml` 仍列有 `pgaudit` / `pgsodium` 等扩展，与 01-extensions.sql 的最小集冲突——以 `db/init/01-extensions.sql` 为准。
+
+## 网络与镜像源注意事项
+
+- 网关镜像从 Docker Hub 与 ghcr.io（logto）拉取；离线/内网环境需提前 `docker pull` 或配置镜像加速。
+- Pigsty 安装脚本：`curl -fsSL https://pigsty.cc/get | bash -s v4.4.0`；离线部署可先在有网机器构建本地软件源。
+- 容器访问宿主统一走 `host.docker.internal:host-gateway`（compose `extra_hosts`），依赖 Docker Desktop WSL2 网络；Windows 10 见上文 portproxy 说明。
+- 首次 `make dev` 会拉取约 5 个镜像（数 GB），建议预留网络时间。
 
 ## 环境核对清单
 
 ```bash
-# 示例：核对 Docker
+# OS / WSL2
+cat /etc/os-release
+wsl -l -v                        # Windows 侧确认发行版与版本
+
+# Docker
 docker --version
 docker compose version
-# 示例：核对资源
+
+# 资源
 free -h
 df -h /
+
+# Pigsty 基础设施（WSL2 内）
+systemctl is-active postgresql@18-main pgbouncer redis-server etcd grafana-server
+
+# 数据库连通性（直连 5432 与 pgbouncer 6432）
+PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1"
+PGPASSWORD=authenticator_dev_pass psql -h 127.0.0.1 -p 6432 -U authenticator -d app_db -c "SELECT 1"
+
+# 工具链
+dbmate --version
+pg_prove --version
+python3 -c "import json; print('ok')"
 ```
+
+全部通过后，进入 [一键搭建本地开发环境](one-click-dev.md)。
 
 ---
 
-> 参考：本页内容需与当前代码保持一致，补充时请核对 `feature/logto-authn` 分支。
+> 参考：[技术栈全景](../01-项目简介/tech-stack.md) · [一键搭建本地开发环境](one-click-dev.md) · [常见问题排查](troubleshooting.md) · [部署指南总览](../03-部署指南/deployment-overview.md)

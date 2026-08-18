@@ -1,23 +1,172 @@
 # 审计与日志
 
-> 状态：骨架占位 · 待补充
-> 定位：审计触发器、登录日志、操作日志与 cron 任务
+本文基于当前代码（分支 docs/wiki-rewrite，2026-08-18 核对）整理 OmniPG 的审计与日志体系：**数据变更审计（触发器）**、**登录日志**、**操作日志**、**cron 任务记录**与 **webhook 事件日志**。表名均为无 sys_ 前缀的现库名称（public schema）。
 
-## 内容清单
+## 1. 审计体系总览
 
-- [ ] 审计字段与审计触发器（trg_audit_*、trg_updated_at）
-- [ ] login_log 与登录日志查询（rpc_search_login_logs）
-- [ ] 操作日志（log_operate、logto_ts）
-- [ ] cron 任务与执行记录（rpc_list_cron_jobs / rpc_list_cron_job_runs）
-- [ ] 日志保留与清理策略
-- [ ] 对接外部日志系统的建议
+| 链路 | 触发器/函数 | 落点 | 用途 |
+| --- | --- | --- | --- |
+| **变更日志审计（生产主链路）** | trg_audit_<表> → audit_trigger_func('tenant_aware') | write_audit_log() → public.audit_log（old_data/new_data 全量 JSON） | 谁在何时改了什么 —— INSERT/UPDATE/DELETE 全覆盖 |
+| **字段自动填充（可选辅助）** | update_updated_at() / audit_user_fields() / audit_deletion_user() / audit_created_at() | 行内 updated_at / _by / created_at 字段 | 维护行内审计字段供查询/过滤，不落日志 |
+| **登录审计** | Logto PostSignIn webhook → sync_login_log_write() | public.login_log | 登录成功事件（含 IP/UA/归属地） |
+| **操作审计** | log_operate()（业务 RPC 调用） | public.audit_log（log_type='operate'） | 配置修改、导入、webhook 重放等业务操作 |
+| **任务执行日志** | pg_cron（扩展）+ 应用侧写入 | public.cron_job_log | pg_cron 任务执行结果 |
+| **同步事件日志** | api_v1_public.webhook_logto() | public.webhook_event_log | Logto webhook 接收/处理结果，payload 留存可重放 |
 
----
+## 2. 审计字段与审计触发器
 
-## 审计对象清单（待补全）
+### 2.1 变更日志触发器（trg_audit_*）
 
-| 表 | 审计触发器 | 审计内容 |
+源码位于 db/src/public/triggers/，全部为「DROP IF EXISTS + CREATE」幂等写法，共 9 个：
 
----
+| 触发器 | 表 | 参数 |
+| --- | --- | --- |
+| trg_audit_app_config | app_config | audit_trigger_func('tenant_aware') |
+| trg_audit_department | department | audit_trigger_func('tenant_aware') |
+| trg_audit_dict_data | dict_data | audit_trigger_func('tenant_aware') |
+| trg_audit_dict_type | dict_type | audit_trigger_func('tenant_aware') |
+| trg_audit_iam_menu | iam_menu | audit_trigger_func('tenant_aware') |
+| trg_audit_position | position | audit_trigger_func('tenant_aware') |
+| trg_audit_role_menu | iam_role_menu | audit_trigger_func()（无参） |
+| trg_audit_user_position | user_position | audit_trigger_func('tenant_aware') |
+| trg_audit_user_profile | user_profile | audit_trigger_func('tenant_aware') |
 
-> 参考：本页内容需与当前代码保持一致，补充时请核对 `feature/logto-authn` 分支。
+> 注：audit_trigger_func() 源码（db/src/public/functions/audit_trigger_func.sql）为无参版本，函数体不读 TG_ARGV，与库内触发器按 'tenant_aware' 语义创建等价（历史审查 34 号已确认行为等价）。**不涉及** Casdoor/casbin/Syncer。
+
+### 2.2 审计函数
+
+| 函数 | 作用 | 关键实现 |
+| --- | --- | --- |
+| audit_trigger_func() | 触发器回调：按 TG_OP 生成 old/new JSONB，调 write_audit_log | SECURITY DEFINER；DELETE 返回 OLD，其余返回 NEW |
+| write_audit_log(p_table_name, p_operation, p_old_data, p_new_data, p_source, p_description) | 通用审计写入 | SECURITY DEFINER；tenant_id 优先取自 new_data 再取 old_data 的 tenant_id；user_id = current_user_id()（JWT sub，Logto 用户 id） |
+| update_updated_at() | BEFORE UPDATE 自动更新 updated_at | 绑定所有含 updated_at 的 public 基表（trg_updated_at.sql 自动生成 trg_<表>_updated_at，BASE TABLE 过滤） |
+| audit_user_fields() | INSERT 填 created_by / UPDATE 填 updated_by | 无 JWT 上下文（系统/同步/匿名）置 NULL |
+| audit_deletion_user() | 软删除时填 deleted_by | 仅 deleted_at 从 NULL → 非 NULL 时触发 |
+| audit_created_at() | 保护 created_at 不可篡改 | INSERT 强制 now()，UPDATE 强制恢复 OLD 值 |
+| is_uuid_v7(p_uuid uuid) | 校验 UUID v7 | 可选 CHECK 用（业务表主键）；_by 为 TEXT 不适用 |
+
+> 现状说明：现库业务表挂的是 **trg_audit_* 变更日志链路**；audit_user_fields / audit_deletion_user / audit_created_at 为**按需绑定**的可选辅助（当前未全局绑定，见审查 35 号 D2）。
+
+### 2.3 audit_log 表结构（db/migrations/public/065_v010_baseline.sql）
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| id | uuid DEFAULT uuidv7() | 主键 |
+| tenant_id / user_id | text | Logto 组织/用户 id（user_id 由 write_audit_log 从 JWT sub 提取） |
+| username | varchar(100) | 兼容遗留列（当前写入路径不填，查询经 v_audit_log_detail 关联） |
+| operation | varchar(50) NOT NULL | INSERT / UPDATE / DELETE / 业务动作 |
+| table_name | varchar(100) | 操作对象表 |
+| record_id | uuid | 兼容遗留列 |
+| old_data / new_data | jsonb | 变更前后全量 JSON |
+| ip_address / user_agent | inet / text | 兼容遗留列 |
+| created_at | timestamptz NOT NULL DEFAULT now() | 审计时间 |
+| log_type | text DEFAULT 'data_change' | data_change / operate / login / exception / event / open_api |
+| module / action / target_type / target_id | text | 业务操作维度（log_operate 填充） |
+| result | text | success / fail |
+| ip / region | inet / text | 业务操作 IP 与归属地 |
+| duration_ms | integer | 耗时（毫秒） |
+| source | varchar(20) DEFAULT 'trigger' | trigger / manual / rpc / business |
+| description | text | 业务描述 |
+
+索引（065）：idx_audit_created(created_at)、idx_audit_logtype(log_type, created_at DESC)、idx_audit_operation(operation)、idx_audit_tenant(tenant_id)、idx_audit_user(user_id)。
+
+### 2.4 API 暴露（api_v1_public）
+
+| 对象 | 说明 |
+| --- | --- |
+| api_v1_public.audit_log | 只读视图：id, table_name, operation, old_data, new_data, user_id, tenant_id, created_at |
+| api_v1_public.v_audit_log_detail | 含 username、tenant_name（LEFT JOIN sys_user 兼容视图 / tenants） |
+| api_v1_public.v_audit_log_timeline | 按天聚合：log_date, table_name, operation, change_count, unique_users |
+| api_v1_public.search_audit_log(p_query, p_table_name, p_operation, p_start_date, p_end_date, p_limit, p_offset) | 搜索（INVOKER + RLS；LIMIT 上限 100）；源码文件为 rpc_search_audit_log.sql |
+| api_v1_public.get_audit_log_timeline(p_start_date, p_end_date) | 时间线（默认近 7 天） |
+
+查询示例（经 APISIX，token 为 Logto access_token）：
+
+```bash
+# 最近 20 条审计（经网关）
+curl -s 'http://localhost:9080/api/v1/sys/rpc/search_audit_log' \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"p_limit":20}'
+
+# 按表名模糊 + 时间范围
+curl -s 'http://localhost:9080/api/v1/sys/rpc/search_audit_log' \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"p_table_name":"department","p_start_date":"2026-08-01T00:00:00Z"}'
+```
+
+## 3. login_log 与登录日志查询
+
+### 3.1 表结构（065）
+
+id bigserial、tenant_id text（NULL = 登录前阶段）、user_id text（无 FK：用户可能尚未镜像落库）、username、login_type（password/social/sso/unknown）、result（success/failed）、fail_reason、ip inet、user_agent、region、logto_event、created_at。
+
+- 写入：Logto PostSignIn webhook → api_v1_public.webhook_logto → sync_login_log_write(payload jsonb)（SECURITY DEFINER）。函数从 payload 提取 userId/userIp/userAgent/createdAt/identities，username 查 users 镜像，region 用 ip2region() 计算；任何异常被吞掉（独立容错，不阻断 webhook 处理）。
+- 索引：idx_login_log_created(created_at DESC)、idx_login_log_user(user_id, created_at DESC)。
+
+### 3.2 查询
+
+| 对象 | 说明 |
+| --- | --- |
+| api_v1_public.login_log | 只读视图（含 fail_reason 等全列） |
+| api_v1_public.v_login_log | 含 geo_locate() 实时归属（region_snapshot / region_live / 经纬度 / timezone） |
+| api_v1_public.rpc_search_login_logs(p_user_id, p_result, p_from, p_to, p_limit, p_offset, p_login_type, p_region) | 分页搜索；**需权限点 public:login-log:list**（否则 42501）；非超管仅能查本租户成员（user_tenants 关联）；LIMIT 上限 100 |
+
+```bash
+curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_search_login_logs' \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"p_result":"success","p_limit":20,"p_offset":0}'
+```
+
+## 4. 操作日志（log_operate）
+
+log_operate(p_module, p_action, p_target_type, p_target_id, p_result, p_detail)（SECURITY DEFINER）向 audit_log 写一行 log_type='operate'，user_id/tenant_id 取自 JWT 上下文。当前调用点：
+
+| 调用方 | 场景 |
+| --- | --- |
+| api_v1_public.update_config() | 配置修改（public:config:write 门槛通过后） |
+| api_v1_public.import_csv() | CSV 导入（成功/失败均记，detail 含 total/inserted/errors） |
+| api_v1_public.rpc_replay_webhook_event() | webhook 事件重放（detail 含 event/replay 结果） |
+
+## 5. cron 任务与执行记录
+
+- pg_cron 扩展由 Pigsty 集群级管理（infra/pigsty.yml 扩展列表含 pg_cron）。
+- public.cron_job_log（id bigserial、job_name、execution_time、result jsonb、duration_ms）记录任务执行结果；api_v1_public.cron_job_log 为只读视图（id, job_name, execution_time, result, duration_ms）。
+- 查询 RPC（**仅超管**，SECURITY DEFINER）：
+
+| RPC | 数据源 | 说明 |
+| --- | --- | --- |
+| api_v1_public.rpc_list_cron_jobs() | cron.job | 任务定义：jobid, jobname, schedule, command, nodename, nodeport, database, username, active |
+| api_v1_public.rpc_list_cron_job_runs(p_limit int DEFAULT 100) | cron.job_run_details | 执行记录：runid, jobid, status, return_message, start_time, end_time；LIMIT 上限 1000 |
+
+```bash
+curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_cron_jobs' -H "Authorization: Bearer $TOKEN"
+curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_cron_job_runs' -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"p_limit":20}'
+```
+
+## 6. webhook 事件日志（同步链路可观测）
+
+public.webhook_event_log（id uuidv7、hook_id、event、logto_created、payload jsonb、result、error、created_at；**注释约定保留 90 天**）：
+
+- result 取值：received（已落库未处理完）/ success / error（同步失败，error 列存 SQLERRM）/ ignored（未知事件）。
+- 相关 RPC（均仅超管）：rpc_list_webhook_events(p_result, p_limit≤100, p_offset)、rpc_replay_webhook_event(p_event_id uuid)（重放 payload 调 webhook_logto 并记 log_operate）。
+
+## 7. 日志保留与清理策略
+
+| 日志 | 现状 | 建议 |
+| --- | --- | --- |
+| audit_log | 无自动清理/分区（B7 未落地）；全库增长最快 | 按月分区或归档；保留 N 月后删除；查询走索引（created_at/log_type/tenant/user） |
+| login_log | 表注释明确「业务端保留长期记录」 | 与审计合规要求对齐后设定保留期（如 1-3 年），超期归档到对象存储 |
+| webhook_event_log | 注释约定保留 90 天 | 用 pg_cron 定期 DELETE 超期行（需先确认无待重放事件） |
+| cron_job_log | 无清理 | 保留最近 N 条（rpc 查询已有 LIMIT 上限） |
+
+> ⚠️ 以上清理均**未在代码中实现**（当前仓库无清理任务），属于运维侧待办（TODO）。
+
+## 8. 对接外部日志系统的建议
+
+1. **只读导出**：创建最小只读账号，直接 SELECT api_v1_public.audit_log / login_log（RLS 已隔离租户；建议只给超管）。
+2. **定时导出归档**：pg_cron + pg_dump 单表（--table=public.audit_log --data-only）或 COPY TO CSV，落对象存储（S3/OSS），审计日志原始 JSON 保留在 old_data/new_data 中。
+3. **流式对接**：若需实时，可基于表上的触发器把变更写入 pg_net 回调（pg_net 已装，注意 SSRF 风险面：net schema 已 REVOKE 给 authenticated，调用必须经 SECURITY DEFINER 封装）或外部 WAL 捕获工具。
+4. **告警联动**：webhook_event_log.result='error' 与 login_log 失败次数可在 Grafana/Pigsty 监控上做指标（Grafana 已由 Pigsty 提供，端口 3000）。
+
+> 参考：[安全设计](security.md) · [RPC 参考](../06-API参考/rpc-reference.md) · [Logto Webhook](../06-API参考/logto-webhook.md) · [迁移指南](../05-开发指南/migrations.md) · [生产问题排查](production-troubleshooting.md)
