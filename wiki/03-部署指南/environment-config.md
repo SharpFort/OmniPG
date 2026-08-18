@@ -111,4 +111,4 @@ OmniPG 的配置分两层：根目录 `.env.*`（部署/数据库/网关公共�
 - [06-API参考/网关路由](../06-API参考/gateway-routing.md)
 - [08-运维/安全](../08-运维/security.md)
 
-> 参考：本页以根目录 `.env.*`、`gateway/.env.example`、`gateway/docker-compose.yml`、`Makefile` 与 `scripts/deploy-*.sh` 当前代码为准；`docs/配置说明文档.md` 中的 Casdoor 变量（CASDOOR_*）已过时，不再使用。
+> 参考：本页以根目录 `.env.*`、`gateway/.env.example`、`gateway/docker-compose.yml`、`Makefile` 与 `scripts/deploy-*.sh` 当前代码为准；历史文档（配置说明文档，已归档）中的 Casdoor 变量（CASDOOR_*）已过时，不再使用。

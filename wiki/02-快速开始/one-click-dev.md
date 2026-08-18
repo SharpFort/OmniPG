@@ -27,7 +27,7 @@ make test-db
 ## 第 1 步：克隆与分支
 
 - 仓库主线：`feature/logto-authn`（Logto 认证授权改造）。
-- 本 wiki 编写时的本地工作分支为 `docs/wiki-rewrite`，仅文档变更，不影响上述主线说明。
+- 本 wiki 编写完成于 `docs/wiki-rewrite` 分支，现已合并至 `master`；主线不变。
 
 ## 第 2 步：复制环境变量
 

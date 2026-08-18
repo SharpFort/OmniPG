@@ -68,13 +68,13 @@ bash scripts/verify-fresh-db.sh my_check # 自定义库名
 - 需要超级用户能力：默认 `sudo -u postgres psql`；生产 Pigsty 无 sudo 时用 `PG_SUPER_CMD` / `PG_SUPER_POSTGRES_CMD` 覆盖（如 `PG_SUPER_CMD='psql "postgres://dbuser_dba:xxx@host:5432/${DB_NAME}"'`）。
 - `PGPASSWORD` 自动从 `gateway/.env` 提取；`REF_DB` 可用环境变量覆盖。
 - pg_prove 未安装时跳过第 8 步（提示安装 pgtap 或 `TAP::Parser::SourceHandler::pgTAP`）。
-- 文档约定（`docs/开发实施方案/18-迁移基线Squash与冷启动验证指南.md`）：迁移/部署链变更后 `verify-fresh-db.sh` + `make test` 双闸是发布硬门槛（人工执行，未固化到 workflow）。
+- 文档约定（历史文档 18-迁移基线 Squash 指南，已归档）：迁移/部署链变更后 `verify-fresh-db.sh` + `make test` 双闸是发布硬门槛（人工执行，未固化到 workflow）。
 
 ## 055-t1-precheck.sql：迁移前置核查
 
 ### 用途
 
-055“菜单权限单表化”（`iam_api`/`iam_role_api` 并入 `iam_menu` button 行）T1 数据迁移的前置核查。**全文件只读（仅 SELECT）**，输出存量库现状，用于回填 `docs/开发实施方案/16-055-T1前置核查-存量数据清单.md`。
+055“菜单权限单表化”（`iam_api`/`iam_role_api` 并入 `iam_menu` button 行）T1 数据迁移的前置核查。**全文件只读（仅 SELECT）**，输出存量库现状，用于回填历史文档（16-055-T1 前置核查清单，已归档）。
 
 ### 11 段内容
 
@@ -101,7 +101,7 @@ psql -U app_owner -d app_db -f scripts/055-t1-precheck.sql
 
 ## verify-webhook/（历史遗留）
 
-`scripts/verify-webhook/` 是 `docs/开发实施方案/04.7-§10-扩展验证清单.md` 的配套脚本集，针对 **Casdoor**（`CASDOOR_URL`）的 webhook payload 结构与 JWT claims 语义验证。当前认证授权已迁移到 Logto，本目录为历史保留，**不再参与当前链路**。
+`scripts/verify-webhook/` 是历史文档（04.7-§10-扩展验证清单，已归档）的配套脚本集，针对 **Casdoor**（`CASDOOR_URL`）的 webhook payload 结构与 JWT claims 语义验证。当前认证授权已迁移到 Logto，本目录为历史保留，**不再参与当前链路**。
 
 | 脚本 | 作用 | 对应验证项 |
 | --- | --- | --- |

@@ -42,9 +42,9 @@
 | 2026-08-04（Logto 方案定稿） | Logto 承担认证 + 组织（租户）+ **角色目录与分配**；授权判定在 PG；JWT 由 Logto 签发（Custom Token Claims 脚本从 context 提取 `roles`，零 fetch） | 消灭 Go auth-service / Policy Syncer；角色同步改"JWT 权威 + 镜像 JIT 覆盖/对账"（Logto 无角色分配 webhook 事件） |
 | 2026-08-05 ~ 08-12（实现收敛） | webhook 同步全部在库内（`rpc_webhook_logto` + `sync_*`）；`has_permission`（023）；`sys_` 前缀移除；Schema `api_v1_sys` → **`api_v1_public`**（027）；菜单权限单表化（055：`iam_api`/`iam_role_api` 删除，权限点内嵌 `iam_menu` 按钮行，仅剩 `iam_role_menu` 绑定表） | 授权数据收敛为"镜像（Logto 权威）+ 自主（PG 权威）"两类 |
 | 2026-08-16（v0.1.0 baseline） | 历史 62 个迁移 squash 为 `064/065/066`（镜像表/业务表/种子数据）；扩展最小集定稿为 `db/init/01-extensions.sql`（pg_pwhash / pgcrypto / pg_net / pgtap） | 无 down 语义基线，历史迁移见 git tag `v0.1.0` |
-| 当前（`docs/wiki-rewrite` 分支） | 网关容器 = etcd / apisix / postgrest / swagger-ui / logto（`gateway/docker-compose.yml`）；**目标路由集 = `scripts/init-apisix-routes.sh`**（Logto 版）；⚠️ 部署链仍调用旧 `scripts/setup_apisix.sh`（Casdoor 时代残留，新旧并存待收敛，见[技术栈全景](tech-stack.md)） | wiki 文档重写阶段 |
+| 当前（wiki 完成后收敛至 master） | 网关容器 = etcd / apisix / postgrest / swagger-ui / logto（`gateway/docker-compose.yml`）；**目标路由集 = `scripts/init-apisix-routes.sh`**（Logto 版）；⚠️ 部署链仍调用旧 `scripts/setup_apisix.sh`（Casdoor 时代残留，新旧并存待收敛，见[技术栈全景](tech-stack.md)） | wiki 文档重写阶段 |
 
-**为什么放弃 Casdoor / Go Syncer**（依据 `docs/开发实施方案/05-Logto认证与权限架构-完善版.md` 已核实事实）：
+**为什么放弃 Casdoor / Go Syncer**（依据历史 Logto 方案文档（已归档）已核实事实）：
 
 - Casdoor webhook payload 无 `event` 字段、`object` 为 JSON 字符串，结构不可靠；`update-role` API 存在 500 风险；
 - Casdoor 角色分配无可靠事件推送，需自建 Go auth-service 做 token exchange + 同步管道；
@@ -55,7 +55,7 @@
 ## 与 Pigsty / PostgreSQL 扩展生态的关系
 
 - **Pigsty v4.4.0** 统一管理 PGSQL / INFRA / ETCD / REDIS / DOCKER 模块（`infra/pigsty.yml`、`infra/pigsty.db.yml`、`infra/pigsty.gateway.yml`），PostgreSQL 18 单主实例（`pg_role: primary`），pgBouncer（6432）、Redis（6379）、监控（Grafana/VictoriaMetrics）由 Pigsty 部署；
-- **扩展选型**以 `docs/审查文档/23-扩展选型-Pigsty562扩展中零后端Admin可用扩展筛选.md`、`24-扩展引入分析-public模块安全性能审计.md` 的决策为纲，落地现状见 `db/init/01-extensions.sql`（最小依赖集）与 `infra/pigsty.yml`（扩展目录）：
+- **扩展选型**以历史扩展选型审查（23/24 号，已归档）的决策为纲，落地现状见 `db/init/01-extensions.sql`（最小依赖集）与 `infra/pigsty.yml`（扩展目录）：
   - 当前已启用最小集：`pg_pwhash`（Argon2id 密码哈希）、`pgcrypto`、`pg_net`（异步 HTTP）、`pgtap`（测试）；
   - Pigsty 集群级安装：`pg_cron`（定时任务）、`pg_graphql`（预留）；
   - 已拍板待同步：safeupdate / plpgsql_check / pg_jsonschema / omni_csv / pgmemento / pg_mockable / jsquery / index_advisor / pg_repack（24 号文档批次，`infra/pigsty.yml` 已列条目）；
@@ -78,4 +78,4 @@ CI/CD（`.github/workflows/`）：PR 到 `dev`/`main` 触发 `ci.yml`（SQL lint
 
 ---
 
-> 参考：[技术栈全景](tech-stack.md) · [架构总览](../04-架构/architecture-overview.md) · [认证与授权设计](../04-架构/auth-design.md) · [部署指南总览](../03-部署指南/deployment-overview.md) · 设计决策过程见 `docs/开发实施方案/00-项目总纲-背景理念技术选型.md` 与 `docs/开发实施方案/05-Logto认证与权限架构-完善版.md`（历史文档，正文以当前代码为准）。
+> 参考：[技术栈全景](tech-stack.md) · [架构总览](../04-架构/architecture-overview.md) · [认证与授权设计](../04-架构/auth-design.md) · [部署指南总览](../03-部署指南/deployment-overview.md) · 设计决策过程见历史文档（00 号项目总纲、05 号 Logto 方案，已归档）；正文以当前代码为准。

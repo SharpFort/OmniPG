@@ -1,6 +1,6 @@
 # 备份与恢复
 
-本文面向 OmniPG 运维，说明 backups/ 目录用途、pg_dump / pg_basebackup 备份策略、恢复流程、迁移前备份强制要求与 RTO/RPO 建议。所有事实以当前代码为准（分支 docs/wiki-rewrite，2026-08-18 核对）。
+本文面向 OmniPG 运维，说明 backups/ 目录用途、pg_dump / pg_basebackup 备份策略、恢复流程、迁移前备份强制要求与 RTO/RPO 建议。所有事实以当前代码为准（master，2026-08-18 核对）。
 
 ## 1. backups/ 目录的用途
 
@@ -121,4 +121,4 @@ backups/ **不是自动化备份目录**，而是手工执行的**迁移/重建�
 - [ ] 关键表行数抽查（audit_log / login_log / iam_menu / users / tenants / role）
 - [ ] 记录 RTO / RPO 实测值
 
-> 参考：[部署指南总览](../03-部署指南/deployment-overview.md) · [迁移指南](../05-开发指南/migrations.md) · [迁移基线 Squash 与冷启动验证指南](../../docs/开发实施方案/18-迁移基线Squash与冷启动验证指南.md) · [生产问题排查](production-troubleshooting.md) · [安全设计](security.md)
+> 参考：[部署指南总览](../03-部署指南/deployment-overview.md) · [迁移指南](../05-开发指南/migrations.md) · [冒烟验证脚本](../07-测试/verify-scripts.md) · [生产问题排查](production-troubleshooting.md) · [安全设计](security.md)

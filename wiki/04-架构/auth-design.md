@@ -56,7 +56,7 @@ JWT payload 样例（组织 token）：内置 claim `sub`（Logto 用户 id，21
 
 - **运行态以 gateway/docker-compose.yml 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=".pg_role"`、`PGRST_DB_PRE_REQUEST=""`（黑名单预请求已退役）、extra search path = api_v1_public,public、max-rows 1000、宿主 3100。gateway/postgrest/postgrest.conf 为**参考文件**：db-schemas 多 schema（api_v1_public, api_v1_sales, api_v1_inventory）与 jwt-role-claim-key=roles[0] 均与运行态不一致；api_v1_sales / api_v1_inventory schema 当前不存在（063 退役，仅 conf 声明残留）；db-anon-role = "web_anon"、jwt-secret = "$(JWKS_JSON)"。
 - `db/src/public/functions/logto_ts.sql` 的 `logto_ts(text)` 是 **webhook 时间戳解析器**（13 位毫秒 / 10 位秒 / ISO 字符串 → timestamptz），与 token 校验无关。
-- 已知审查项（docs/审查文档/33 号 N8/N9b）：claims 脚本的 pg_role 映射表只覆盖 role_super_admin / role_admin / role_editor / role_guest，组织角色 tenant_admin / editor / viewer 不在映射内会落到 role_guest——如需 PostgREST 侧按租户角色提权，需扩展映射（当前以代码为准，未修）。
+- 已知审查项（历史审查 33 号 N8/N9b，已归档）：claims 脚本的 pg_role 映射表只覆盖 role_super_admin / role_admin / role_editor / role_guest，组织角色 tenant_admin / editor / viewer 不在映射内会落到 role_guest——如需 PostgREST 侧按租户角色提权，需扩展映射（当前以代码为准，未修）。
 
 ## 3. 授权模型（角色 / 菜单 / 权限 / 数据范围）
 

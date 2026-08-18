@@ -1,6 +1,6 @@
 # 仓库目录地图
 
-> 定位：OmniPG 仓库各目录职责速查。事实以当前 `docs/wiki-rewrite` 分支工作区为准。
+> 定位：OmniPG 仓库各目录职责速查。事实以当前 master 分支工作区为准（2026-08-18 核对）。
 
 ## 顶层速查
 
@@ -11,7 +11,7 @@
 | `infra/` | Pigsty 基础设施配置（WSL/服务器侧） | `pigsty*.yml`、`pg_hba.conf`、`pgbouncer.ini`、`redis.conf` |
 | `scripts/` | 部署/迁移/初始化/验证脚本 | 见下表 |
 | `wiki/` | 本项目 Wiki（本页面所在） | 01-08 目录 + Home.md |
-| `docs/` | 历史设计文档/ADR/审查报告（内容逐步迁往 wiki） | `开发实施方案/`、`审查文档/` |
+| `docs/` | ~~历史设计文档/ADR/审查报告~~ **已归档清理**（wiki 完成后删除，git 历史可查） | — |
 | `Makefile` | 统一入口：迁移、测试、部署、开发环境 | 见下表 |
 | `.env.example` / `.env.development` / `.env.staging` / `.env.production` | 环境变量模板（DB 密码、APISIX 凭据、JWKS 等） | scripts 按 `ENV` 加载；`gateway/.env` 为本地运行配置（gitignored） |
 | `backups/` | 一次性数据备份 SQL（如 iam_menu 重建前后快照） | `rebuild_iam_menu_20260814*.sql` |
@@ -105,8 +105,8 @@
 
 ## wiki/ 与 docs/ 的关系
 
-- `wiki/` 是**现行文档**（本仓库维护的中文 Markdown 手册），按 01-08 分章。
-- `docs/` 是**历史设计文档与 ADR**（如 17 号铁律、18 号 squash 指南、35 号审查），内容逐步迁入 wiki；写 wiki 时以 `docs/` 为背景、以 `db/` 等当前代码为准。
+- `wiki/` 是**现行文档**（本仓库维护的中文 Markdown 手册），按 01-08 分章，正文以 `db/`、`gateway/`、`scripts/` 等当前代码为准。
+- `docs/`（历史设计文档/ADR/审查报告，如 17 号铁律、18 号 squash 指南、35 号审查）已在 wiki 完成后**归档清理**；历史内容保留在 git 历史中（`git log --all -- docs/` 可追溯）。
 
 ---
 

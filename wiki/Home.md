@@ -38,10 +38,10 @@
 
 ## 项目状态
 
-- 当前工作分支：docs/wiki-rewrite（本 wiki 编写完成，待评审后收敛合并）
-- 代码主线：feature/logto-authn（Logto 认证授权改造，v0.1.0 基线 064/065/066）
+- 当前主线：master（已收敛：feature/logto-authn 与 wiki 编写成果全部合并，旧分支已归档删除）
+- 代码基线：v0.1.0（迁移 064/065/066）
 - 认证授权演进：casbin / casdoor → **Logto**（认证）+ **RLS / has_permission**（授权，吸收 casbin 的 RBAC 思路）
 - 已知代码侧待收敛项（详见各页 ⚠️ 注记）：scripts/setup_apisix.sh 与 gateway/apisix/apisix.yaml 为 Casdoor 时代残留、部署链仍调用旧脚本；Go syncer 已退役（ci.yml syncer-check 为遗留作业）
-- 分支策略：wiki 评审通过后收缩为 master 单主线 + 短生命周期分支（见 [分支策略](08-运维/branch-strategy.md)）
+- 分支策略：master 单主线 + 短生命周期分支，收敛已于 2026-08-18 完成（见 [分支策略](08-运维/branch-strategy.md)）
 
-> 说明：本 wiki 以当前代码为准编写；历史过程文档位于 docs/（迁移完成后将归档清理）。
+> 说明：本 wiki 以当前代码为准编写；历史过程文档 docs/ 已在 wiki 完成后归档清理（git 历史可查）。

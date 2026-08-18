@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_xxx_tenant ON public.xxx USING btree (tenant_id);
 | `065_v010_baseline.sql` | 业务表 18 张 + 2 序列 + 30 索引 + 31 约束（department/position/user_profile/iam_menu/audit_log/login_log/app_config 等） | 幂等：CREATE IF NOT EXISTS / DO 守卫 / COMMENT 覆盖 |
 | `066_v010_seed_data.sql` | 种子 80 行：app_config(14)、dict_type(2)、dict_data(9)、iam_menu(55) | 全部 ON CONFLICT (id) DO NOTHING；iam_menu 按 parent_id 拓扑序 |
 
-历史 62 个迁移保存在 `git tag v0.1.0`（`git show v0.1.0 -- db/migrations/public/` 可取回）。squash 的完整 SOP 见 `docs/开发实施方案/18-迁移基线Squash与冷启动验证指南.md`。
+历史 62 个迁移保存在 `git tag v0.1.0`（`git show v0.1.0 -- db/migrations/public/` 可取回）。squash 的完整 SOP 见历史文档（18-迁移基线 Squash 指南，已归档）。
 
 ## 迁移与 src（函数/触发器/RLS）的关系：apply-src.sh
 

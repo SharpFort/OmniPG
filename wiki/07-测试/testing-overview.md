@@ -33,7 +33,7 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 | 本地开发 | `make test` | 先 `make dev` 起网关栈并完成数据库迁移（`make migrate`），再跑全量测试 |
 | PR CI | `ci.yml` 各 job | 按变更路径过滤触发，见下方 CI 现状 |
 | 网关部署 | `deploy-gateway.yml` | 部署后执行 `setup_apisix.sh` + `e2e-test.sh`，`skip_tests=true` 可跳过 |
-| 发布硬门槛（文档约定） | `bash scripts/verify-fresh-db.sh` + `make test` | 迁移/部署链变更后的双闸验证（`docs/开发实施方案/18-迁移基线Squash与冷启动验证指南.md`；目前为人工执行，未固化到 workflow） |
+| 发布硬门槛（文档约定） | `bash scripts/verify-fresh-db.sh` + `make test` | 迁移/部署链变更后的双闸验证（历史文档 18-迁移基线 Squash 指南，已归档；目前为人工执行，未固化到 workflow） |
 
 ### CI 现状（`.github/workflows/ci.yml`，PR 到 dev/main 触发）
 

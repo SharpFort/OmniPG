@@ -70,7 +70,7 @@ pkill pgbouncer
 sudo -u postgres /usr/sbin/pgbouncer /etc/pgbouncer/pgbouncer.ini &
 ```
 
-- 密码含特殊字符时用 `PGPASSWORD='...'` 环境变量，不要拼进 URL（历史踩坑，见 docs/审查文档/17）。
+- 密码含特殊字符时用 `PGPASSWORD='...'` 环境变量，不要拼进 URL（历史踩坑记录，已归档）。
 - PostgREST 连接串走 pgbouncer **6432**（`PGRST_DB_URI`）；Logto 走宿主 PG **5433**（compose `DB_URL`）。
 - 容器→宿主不通：`docker run --rm --network gateway_app-net --add-host host.docker.internal:host-gateway alpine sh -c 'nc -z -w3 host.docker.internal 6432'`；不通则检查 Docker Desktop WSL2 网络 / `scripts/wsl-portproxy.ps1`（§6）。
 - 直连 PostgREST 报 `PGRST101`（连不上库）/ `PGRST115`（authenticator/web_anon 角色缺失）时，检查 Pigsty 角色与 GRANT 链（`db/init/02-schemas.sql`、`db/api_v1/public/privileges/zz_grant_all.sql`）。

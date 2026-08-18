@@ -36,7 +36,7 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 | —（不映射） | etcd | 2379 | 容器间 `app-etcd:2379` |
 | 6432 | pgBouncer（宿主 Pigsty） | — | PostgREST/Logto 经 `host.docker.internal:6432` 连接 |
 
-> ⚠️ 历史文档（`docs/服务访问速查手册.md`、`scripts/verify-stack.sh`、`scripts/start.sh`）仍写 PostgREST=3001、Casdoor=8000——那是 Logto 迁移前的旧值。**当前以本表为准**：3001 是 Logto，PostgREST 是 3100，Casdoor 已移除。
+> ⚠️ 历史文档（服务访问速查手册，已归档）与 `scripts/verify-stack.sh`、`scripts/start.sh` 仍写 PostgREST=3001、Casdoor=8000——那是 Logto 迁移前的旧值。**当前以本表为准**：3001 是 Logto，PostgREST 是 3100，Casdoor 已移除。
 
 ## 路由表（当前，由 `scripts/init-apisix-routes.sh` 写入）
 
@@ -114,7 +114,7 @@ curl -s -X PUT http://localhost:9180/apisix/admin/plugin_metadata/jwt-auth \
 
 ### 限流 / 安全头（当前状态）
 
-- **限流（limit-req）**：`docs/开发实施方案/10-APISIX路由批量配置.md` 曾设计全局 `limit-req`（rate=100/burst=50），**未落入当前 `init-apisix-routes.sh`**——当前 global_rules 只有 CORS。如需限流请新增 global_rule 或路由级插件。
+- **限流（limit-req）**：历史方案文档（10-APISIX路由批量配置，已归档）曾设计全局 `limit-req`（rate=100/burst=50），**未落入当前 `init-apisix-routes.sh`**——当前 global_rules 只有 CORS。如需限流请新增 global_rule 或路由级插件。
 - **安全头**（real-ip、http-to-https、UA 校验等）：当前未配置。TODO：生产环境需补充（参照 10 号文档 §10 生产注意事项）。
 
 ## 新增一条路由的操作步骤

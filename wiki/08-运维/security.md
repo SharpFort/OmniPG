@@ -1,6 +1,6 @@
 # 安全设计
 
-本文描述 OmniPG 当前代码（分支 docs/wiki-rewrite，2026-08-18 核对）的安全基线。架构事实以代码为准：**Logto（OIDC）→ APISIX（验签/路由）→ PostgREST（api_v1_public）→ PostgreSQL（RLS + SECURITY DEFINER 函数）**。历史上 Casdoor / casbin / Go PolicySyncer / 库内 JWKS 等方案均已退役，不再出现在任何安全链路中。
+本文描述 OmniPG 当前代码（master，2026-08-18 核对）的安全基线。架构事实以代码为准：**Logto（OIDC）→ APISIX（验签/路由）→ PostgREST（api_v1_public）→ PostgreSQL（RLS + SECURITY DEFINER 函数）**。历史上 Casdoor / casbin / Go PolicySyncer / 库内 JWKS 等方案均已退役，不再出现在任何安全链路中。
 
 ## 信任边界
 

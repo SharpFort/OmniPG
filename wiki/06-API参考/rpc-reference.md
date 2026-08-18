@@ -4,7 +4,7 @@
 
 > 范围说明：本页只覆盖 **api_v1_public 域**（`db/api_v1/public/`，即 URL 前缀 `/api/v1/sys/*` 重写后的对象）。Schema 布局以 `db/init/02-schemas.sql` 为准（public / api_v1_public / api_v1_sys 兼容 / net，无 extensions schema）；PostgREST **运行态以 `gateway/docker-compose.yml` 为权威，仅暴露 api_v1_public 单 schema**。`postgrest.conf` 参考文件中的 `api_v1_sales`/`api_v1_inventory` 多 schema 声明与运行态不一致（schema 未创建、`db/api_v1/inventory/` 与 `_shared/` 无实体 SQL、对应 URL 路由 2026-08-15 已退役）——详见 [PostgREST 使用指南](./postgrest.md) 与 [网关路由](./gateway-routing.md)「已知不一致/待收敛」。
 
-> ⚠️ 仓库内 `docs/开发实施方案/API接口文档.md`、`API速查表.md`、`openapi.yaml` 是 Casdoor 时代的旧版，其中 `user_login_sso`、`refresh_token_rtr`、`create_user`、`kick_user`、`health_check`、`logout`、`sys_user` 等端点**已删除**，请勿引用。机器可读的最新契约 = PostgREST 根路径 OpenAPI（见 [PostgREST 使用指南](./postgrest.md)）。
+> ⚠️ 历史 API 文档（API接口文档、API速查表、openapi.yaml，已随 docs/ 归档清理）为 Casdoor 时代旧版，其中 `user_login_sso`、`refresh_token_rtr`、`create_user`、`kick_user`、`health_check`、`logout`、`sys_user` 等端点**已删除**，请勿引用。机器可读的最新契约 = PostgREST 根路径 OpenAPI（见 [PostgREST 使用指南](./postgrest.md)）。
 
 ## 调用约定
 
