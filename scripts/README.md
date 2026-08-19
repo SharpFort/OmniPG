@@ -98,8 +98,9 @@ su - postgres -c "psql -c \"CREATE USER authenticator WITH PASSWORD 'authenticat
 su - postgres -c "psql -c \"CREATE ROLE web_anon NOLOGIN;\""
 su - postgres -c "psql -c \"CREATE DATABASE app_db OWNER app_owner;\""
 
-# 安装扩展
-su - postgres -c "psql -d app_db -c \"CREATE EXTENSION IF NOT EXISTS pgcrypto, pgsodium, pgaudit, pgtap, pg_graphql, pg_cron;\""
+# 安装扩展（2026-08-19：权威 = Pigsty infra/pigsty.yml，pgsodium/pgaudit/pg_pwhash 已退役；
+#   以下为本地验证环境手动安装的最小集，生产一律走 Pigsty）
+su - postgres -c "psql -d app_db -c \"CREATE EXTENSION IF NOT EXISTS pgcrypto, pg_net, pgtap;\""
 
 # 配置 shared_preload_libraries
 echo "shared_preload_libraries = 'pg_net,pg_cron'" >> /etc/postgresql/18/main/postgresql.conf

@@ -28,7 +28,7 @@ else
     echo "  警告: 未找到 .env.$ENV，使用默认配置"
 fi
 
-# 2. 拉取最新镜像（Syncer 已退役（Logto 同步经 webhook），compose 无 syncer 服务）
+# 2. 拉取最新镜像
 echo ""
 echo "[2/5] 拉取最新镜像..."
 docker compose pull --ignore-pull-failures || true
