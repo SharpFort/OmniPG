@@ -1,7 +1,7 @@
 # =============================================================================
 # OmniPG - Docker Compose Stack（全栈版: 网关 + Admin API + 内置 Dashboard）
 # 架构: PostgreSQL/pgBouncer/Redis 由 Pigsty 统一管理（宿主 WSL2），
-#       Compose 仅部署网关侧服务（etcd/APISIX/PostgREST/Swagger/Casdoor/Syncer）
+#       Compose 仅部署网关侧服务（etcd/APISIX/PostgREST/Swagger/Logto；Casdoor/Syncer 已于 2026-08-19 退役）
 # 变更记录:
 #   2026-08-03 ① 新增 etcd 容器，APISIX 切回 traditional 模式（Admin API/Dashboard 可用）
 #              ② APISIX 新增端口: 9180(Admin API + Dashboard UI) / 7085(Status API)

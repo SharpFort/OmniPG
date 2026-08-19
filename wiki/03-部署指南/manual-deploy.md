@@ -16,8 +16,8 @@ cd ~/pigsty
 
 # 选择配置文件并复制（all=单机完整 / db=DB 服务器 / gateway=网关服务器）
 cp ~/OmniPG/infra/pigsty.yml ~/pigsty/pigsty.yml        # 单机 all
-# cp ~/OmniPG/infra/pigsty.db.yml ~/pigsty/pigsty.yml    # Phase 2 DB 节点
-# cp ~/OmniPG/infra/pigsty.gateway.yml ~/pigsty/pigsty.yml  # Phase 2 网关节点
+# cp ~/OmniPG/infra/pigsty.yml ~/pigsty/pigsty.yml   # 唯一 inventory（2026-08-19 方案 A）
+#   Phase 2 多机: 同一 pigsty.yml，按官方剧本 + LIMIT 主机限制分角色部署（见 scripts/deploy-infra.sh）
 
 # 执行部署（deploy-infra.sh 等价动作）
 ./deploy.yml   # INFRA + PGSQL + REDIS + ETCD + DOCKER 等模块
@@ -32,10 +32,10 @@ cp ~/OmniPG/infra/pigsty.yml ~/pigsty/pigsty.yml        # 单机 all
 | pg_cluster | pg_omnipg | 集群名 |
 | pg_users | app_owner / authenticator / web_anon | 应用角色（web_anon NOLOGIN） |
 | pg_databases | app_db（owner app_owner） | 主业务库 |
-| pg_extensions | pgcrypto/pgsodium/pg_net/pgaudit/pgtap/pg_graphql/pg_cron/safeupdate/plpgsql_check/pg_jsonschema/omni_csv/pgmemento/pg_mockable/jsquery/index_advisor/pg_repack | 集群级扩展（safeupdate 需 shared_preload + 重启） |
+| pg_extensions | pgcrypto/pg_net/pgtap/pg_graphql/pg_cron/safeupdate/plpgsql_check/pg_jsonschema/omni_csv/pgmemento/pg_mockable/jsquery/index_advisor/pg_repack | 集群级扩展（pgaudit/pgsodium 已于 2026-08-19 移除；safeupdate 需 shared_preload + 重启；权威清单见 infra/pigsty.yml） |
 | pg_hba_rules | 127.0.0.1/32、::1/128、172.17.0.0/16、172.20.0.0/16（db.yml 另含 10.0.0.0/8） | scram-sha-256 |
 
-> ⚠️ 对齐项（TODO）：① `db/init/02-schemas.sql` 头注给出角色分层参考（super_admin/role_admin/role_editor/role_guest/role_super_admin/tenant_admin 及 authenticator 的 roles 成员关系），当前 `infra/*.yml` 的 pg_users 尚未包含；② 运行态扩展最小集以 `db/init/01-extensions.sql` 为准（pg_pwhash / pgcrypto / pg_net / pgtap + Pigsty 集群级 pg_cron / pg_graphql），pigsty.yml 仍列 pgaudit/pgsodium 等与最小集冲突——pgaudit 未启用、pgsodium 已于 2026-08-16 退役，plpython3u / pgjwt 不用；`pg_pwhash` 未列入 pigsty.yml。生产部署前请按 02-schemas 头注与 01-extensions.sql 补齐。
+> ⚠️ 对齐项（TODO）：① `db/init/02-schemas.sql` 头注给出角色分层参考（super_admin/role_admin/role_editor/role_guest/role_super_admin/tenant_admin 及 authenticator 的 roles 成员关系），当前 `infra/*.yml` 的 pg_users 尚未包含；② 扩展权威 = `infra/pigsty.yml`（唯一 inventory，2026-08-19 方案 A；`pg_extensions` + `pg_databases[].extensions`），`db/init/01-extensions.sql` 已于 2026-08-19 移除；pgaudit 未启用、pgsodium 2026-08-16 退役并已于 2026-08-19 从 yml 移除，plpython3u / pgjwt 不用。生产部署前请按 02-schemas 头注与 infra/*.yml 补齐。
 
 **对应脚本**：`scripts/deploy-infra.sh`（模式 all/db/gateway，步骤 1-4）。
 
@@ -74,9 +74,14 @@ redis-cli ping   # PONG
 ```bash
 cd ~/OmniPG
 
-# 1) 扩展（需超级用户；app_owner 无权限）
-sudo -u postgres psql -d app_db -v ON_ERROR_STOP=1 -f db/init/01-extensions.sql
-#    => pg_pwhash / pgcrypto / pg_net / pgtap（IF NOT EXISTS 幂等兜底）
+# 1) 扩展（需超级用户；app_owner 无权限）——权威 = Pigsty（infra/pigsty.yml 声明装包 + 库内启用）
+#    Pigsty 部署后扩展即就绪；手动补建仅用于本地验证环境兜底（2026-08-19 起无 01-extensions.sql）：
+sudo -u postgres psql -d app_db -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_net";
+CREATE EXTENSION IF NOT EXISTS "pgtap";
+SQL
+#    （pg_cron/pg_graphql 等集群级扩展由 Pigsty 安装；safeupdate 仅装包 + preload，无 CREATE EXTENSION）
 
 # 2) Schema 与授权（app_owner 执行）
 PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db \
@@ -126,21 +131,21 @@ docker compose up -d postgrest
 curl -sf http://localhost:3100/ | head -c 100   # OpenAPI JSON
 ```
 
-运行时配置以 `gateway/docker-compose.yml` 为准（`gateway/postgrest/postgrest.conf` 是本地二进制运行的参考文件，未挂载进容器，且部分参数与 compose 不一致）：
+运行时配置以 `gateway/docker-compose.yml` 为准（`gateway/postgrest/postgrest.conf` 是本地二进制运行的参考文件，未挂载进容器；2026-08-19 已与 compose 对齐）：
 
 | 参数 | compose 实际值 | postgrest.conf（参考） |
 | --- | --- | --- |
 | PGRST_DB_URI | `postgres://authenticator:${AUTHENTICATOR_PASSWORD}@host.docker.internal:6432/app_db` | 同左（经 pgBouncer） |
-| PGRST_DB_SCHEMAS | `api_v1_public`（⚠️ 与 conf 不一致，待收敛） | `api_v1_public, api_v1_sales, api_v1_inventory`（多模块目标） |
-| PGRST_DB_EXTRA_SEARCH_PATH | `api_v1_public,public` | `api_v1_public, api_v1_sales, api_v1_inventory, public, sales, inventory` |
+| PGRST_DB_SCHEMAS | `api_v1_public` | `api_v1_public`（2026-08-19 对齐） |
+| PGRST_DB_EXTRA_SEARCH_PATH | `api_v1_public,public` | `api_v1_public, public`（2026-08-19 对齐） |
 | PGRST_DB_ANON_ROLE | `web_anon` | `web_anon` |
 | PGRST_MAX_ROWS | `1000` | max-rows = 1000 |
 | PGRST_JWT_SECRET | `${JWKS_JSON}` | `$(JWKS_JSON)` |
-| PGRST_JWT_ROLE_CLAIM_KEY | `.pg_role` | `roles[0]`（Casdoor 时代遗留） |
-| PGRST_DB_PRE_REQUEST | （空） | `api_v1_public.check_token_blacklist`（已退役） |
+| PGRST_JWT_ROLE_CLAIM_KEY | `.pg_role` | `.pg_role`（2026-08-19 对齐） |
+| PGRST_DB_PRE_REQUEST | （空） | （已退役移除，2026-08-19 对齐） |
 | 端口映射 | 3100:3000 | server-port 3000 |
 
-**多 schema 暴露层（当前事实）**：目标对外暴露层为 `api_v1_public` / `api_v1_sales` / `api_v1_inventory` 多 schema（`gateway/postgrest/postgrest.conf` 的 db-schemas 声明；`db/api_v1/` 目录含 `_shared` / `inventory` / `public` 三个子目录）。`db/init/02-schemas.sql` 还创建遗留空 schema `api_v1_sys`（027 改名链兼容，新代码不用）；**不存在 extensions schema**。当前 sales/inventory 测试模块已退役（`db/api_v1/inventory`、`db/api_1_sales`、`db/api_1_inventory` 均为空目录，无 SQL），实际有对象的是 `api_v1_public`；compose 运行时 `PGRST_DB_SCHEMAS=api_v1_public` 与 conf 的差异属待收敛项（TODO）。
+**暴露层（当前事实）**：运行态单 schema `api_v1_public`（`db/api_v1/` 目录含 `_shared`（模块排序前缀）/ `public`）。`db/init/02-schemas.sql` 还创建遗留空 schema `api_v1_sys`（027 改名链兼容，新代码不用）；**不存在 extensions schema**。sales/inventory 测试模块已退役（063；`postgrest.conf` 声明与 `db/api_1_*`、`db/api_v1/inventory` 占位目录已于 2026-08-19 清理，按需重建时再补）。
 
 **JWT 算法**：开发环境 HS256（`JWKS_JSON` 对称密钥）；staging/production 指向 Logto JWKS 公钥（RS256——compose 与 .env 注释写 ES384，口径不一致，需以 Logto 实际配置核实）。
 
@@ -161,7 +166,7 @@ curl -sf http://localhost:7085/status   # {"status":"ok"}
 bash ../scripts/init-apisix-routes.sh   # 需 gateway/.env 的 APISIX_ADMIN_KEY 与 LOGTO_WEBHOOK_SIGNING_KEY
 ```
 
-`gateway/apisix/config.yaml` 关键点：`deployment.role = traditional`、`config_provider = etcd`（etcd 地址 `http://app-etcd:2379`）、Admin API 9180 + 内嵌 Dashboard（`/ui`）、Status API 7085、Control API 9092、`admin_key` 来自环境变量 `APISIX_ADMIN_KEY`。`gateway/apisix/apisix.yaml` 是 standalone 时代留档，**当前不被加载**（内含 Casdoor 时代路由，勿当作现行路由表）。
+`gateway/apisix/config.yaml` 关键点：`deployment.role = traditional`、`config_provider = etcd`（etcd 地址 `http://app-etcd:2379`）、Admin API 9180 + 内嵌 Dashboard（`/ui`）、Status API 7085、Control API 9092、`admin_key` 来自环境变量 `APISIX_ADMIN_KEY`。`gateway/apisix/apisix.yaml`（standalone 时代留档，含 Casdoor 路由）已于 2026-08-19 删除。
 
 **目标路由集**（`scripts/init-apisix-routes.sh`，Logto 时代，共 7 条）：
 
@@ -177,9 +182,9 @@ bash ../scripts/init-apisix-routes.sh   # 需 gateway/.env 的 APISIX_ADMIN_KEY 
 
 同时写入 RS256 + Logto JWKS 的 `plugin_metadata/jwt-auth` 与全局 CORS（放行 `logto-signature-sha-256`），并幂等清理 Casdoor 时代旧路由（jwks / user_login_sso / refresh_token_rtr / casdoor_proxy / api_v1_sys）。
 
-> ⚠️ **部署链现状（新旧并存）**：部署链（`Makefile` dev、`deploy-all.sh`、CI deploy-gateway.yml）目前仍调用旧脚本 `scripts/setup_apisix.sh`——它写入的是 Casdoor 时代路由（jwks 上游 `app-casdoor:8000` 已死、user_login_sso / refresh_token_rtr、api_v1_sales/inventory 重写、HS256），与 Logto 架构不一致；`init-apisix-routes.sh` 尚未接入部署链，仅被 `e2e-test.sh` 引用。两脚本会互相覆盖 jwt-auth 元数据与路由，只能二选一；目标统一到 Logto 版（TODO）。完整对比见 [script-deploy.md](script-deploy.md) 与 [06-API参考/网关路由](../06-API参考/gateway-routing.md)。
+> ✅ **部署链已收敛（2026-08-19）**：`Makefile` dev、`deploy-all.sh`、CI deploy-gateway.yml 已统一切换到 Logto 版 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS、`/logto/*` 代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`）；Casdoor 时代 `setup_apisix.sh` / `apisix.yaml` 已删除。
 
-**对应脚本**：`scripts/deploy-gateway.sh`（拉起服务）+ `scripts/init-apisix-routes.sh`（目标）/ `scripts/setup_apisix.sh`（部署链现状）。
+**对应脚本**：`scripts/deploy-gateway.sh`（拉起服务）+ `scripts/init-apisix-routes.sh`（路由初始化，2026-08-19 起唯一入口）。
 
 ## Step 7：接入 Logto（应用注册、webhook 配置）
 
@@ -216,7 +221,7 @@ bash scripts/import-ip2region.sh [数据源] [PG_DSN]
 MAXMIND_LICENSE_KEY=xxxx bash scripts/import-geolite2.sh [PG_DSN]
 ```
 
-两个脚本都幂等（TRUNCATE 后全量重灌），依赖 `db/init/01-extensions.sql` 后的 `ip_region_v4` / `ip_geolite2_*` 表与 `ip2region(inet)` / `geo_locate(inet)` 函数；导入后抽样验证：
+两个脚本都幂等（TRUNCATE 后全量重灌），依赖 `ip_region_v4` / `ip_geolite2_*` 表与 `ip2region(inet)` / `geo_locate(inet)` 函数（由 apply-src 建，扩展由 Pigsty 管理）；导入后抽样验证：
 
 ```sql
 SELECT ip2region('1.0.1.0'::inet);
@@ -228,7 +233,7 @@ SELECT geo_locate('8.8.8.8'::inet);
 ## Step 9：验证
 
 ```bash
-# 1) 全栈验证（注意：第 4/9 项 Casdoor/Syncer 为遗留检查，当前架构会失败）
+# 1) 全栈验证（8 项，2026-08-19 起无 Casdoor/Syncer 检查）
 bash scripts/verify-stack.sh
 
 # 2) 全新库冷启动验证（迁移/部署链变更后的硬门槛）
@@ -256,7 +261,7 @@ curl -sf http://localhost:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_
 | 3 | db/init 初始化（扩展/schema/types） | `scripts/apply-src.sh --bootstrap`（deploy-db [1/4]） |
 | 4 | dbmate 迁移 | `scripts/migrate.sh up` / `scripts/deploy-db.sh`（[2/4]） |
 | 5 | PostgREST | `scripts/deploy-gateway.sh` |
-| 6 | APISIX | `scripts/deploy-gateway.sh` + `scripts/setup_apisix.sh` / `init-apisix-routes.sh` |
+| 6 | APISIX | `scripts/deploy-gateway.sh` + `scripts/init-apisix-routes.sh` |
 | 7 | Logto | `scripts/phase2/init-logto.py`（手工） |
 | 8 | 辅助数据 | `scripts/import-ip2region.sh` / `import-geolite2.sh`（手工） |
 | 9 | 验证 | `scripts/verify-stack.sh` / `verify-fresh-db.sh` / `e2e-test.sh` |

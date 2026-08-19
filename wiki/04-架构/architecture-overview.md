@@ -59,7 +59,7 @@
 5. **数据访问**：SQL 进入 PostgreSQL：RLS 策略按 request.jwt.claims 强制行过滤（租户/本人/角色例外）；RPC 内部再用 has_permission / require_permission / require_super_admin 做操作级判定。
 6. **webhook 旁路**：Logto 事件（用户/组织/成员/角色/登录）异步 POST 到 http://host.docker.internal:9080/rpc/webhook_logto（经网关进入 PostgREST），由 api_v1_public.webhook_logto 分发到 sync_* 函数写镜像表。
 
-路由表（**目标架构：scripts/init-apisix-routes.sh 的 Logto 时代路由集**，通过 Admin API 写入 etcd；gateway/apisix/apisix.yaml 为 Casdoor 时代 standalone 留档、已不再加载）：
+路由表（**scripts/init-apisix-routes.sh 的 Logto 路由集**，通过 Admin API 写入 etcd；apisix.yaml standalone 留档已于 2026-08-19 删除）：
 
 | 路由 id | URI | 上游 | 插件 | 优先级 | 说明 |
 | --- | --- | --- | --- | --- | --- |
@@ -78,19 +78,19 @@
 | 对象 | 现状 | 判定 |
 | --- | --- | --- |
 | gateway/apisix/config.yaml | traditional 模式（etcd + Admin API + 内置 Dashboard），注释明确"不再读取 apisix.yaml" | ✅ 现行配置 |
-| gateway/apisix/apisix.yaml | Casdoor 时代 standalone 路由（/rpc/user_login_sso、/rpc/refresh_token_rtr、/.well-known/jwks→Casdoor、/api/v1/sales/*、/api/v1/inventory/*） | ❌ 过时残留，不作现行路由表 |
-| scripts/setup_apisix.sh | 被部署链使用（Makefile dev、deploy-all.sh、deploy-gateway.sh、CI deploy-gateway.yml、verify-stack.sh 预期 8 条路由），但内部仍是 Casdoor 时代路由（jwks 上游 app-casdoor:8000 已死、user_login_sso/refresh_token_rtr、api_v1_sales/inventory 重写） | ⚠️ 旧脚本残留，与 Logto 部署不一致 |
+| ~~gateway/apisix/apisix.yaml~~ | ~~Casdoor 时代 standalone 路由~~ | 2026-08-19 已删除 |
+| ~~scripts/setup_apisix.sh~~ | ~~Casdoor 时代路由脚本~~ | 2026-08-19 已删除（部署链统一 init-apisix-routes.sh） |
 | scripts/init-apisix-routes.sh | Logto 时代新脚本（上表路由集 + webhook 验签 fail-closed），**未接入 Makefile/部署链**，仅被 scripts/e2e-test.sh 注释引用 | ✅ 目标架构事实；接入部署链为待办（TODO） |
 
-> 收敛方向：以 init-apisix-routes.sh 为目标路由集；setup_apisix.sh 与 apisix.yaml 的 Casdoor 时代内容待清理/替换（TODO，需在部署侧执行，wiki 不改代码）。
+> ✅ 已收敛（2026-08-19）：部署链统一 init-apisix-routes.sh；setup_apisix.sh 与 apisix.yaml 已删除；Syncer 残留已清理。
 
 ## 分层说明
 
 | 层 | 组件 | 职责 | 配置位置 |
 | --- | --- | --- | --- |
-| 网关层 | APISIX + etcd | JWT 验签、路由/重写、CORS、webhook 验签（目标）；Admin API/Dashboard 管理配置 | gateway/apisix/config.yaml；scripts/setup_apisix.sh（部署链在用，旧）/ scripts/init-apisix-routes.sh（Logto 目标路由） |
+| 网关层 | APISIX + etcd | JWT 验签、路由/重写、CORS、webhook 验签；Admin API/Dashboard 管理配置 | gateway/apisix/config.yaml；scripts/init-apisix-routes.sh（Logto 路由，唯一入口） |
 | 认证层（旁路） | Logto | 登录/注册/MFA/第三方、组织（租户）容器、角色目录与分配、签发 JWT、webhook | gateway/docker-compose.yml（logto 服务）、scripts/phase2/init-logto.py |
-| API 层 | PostgREST | 把对外暴露层 schema（运行态 api_v1_public；conf 参考文件声明多 schema）暴露为 REST；/rpc/* 函数端点；注入 request.jwt.claims；OpenAPI 生成 | gateway/docker-compose.yml（postgrest 环境变量，运行态权威）、gateway/postgrest/postgrest.conf（参考文件） |
+| API 层 | PostgREST | 把对外暴露层 schema（单 api_v1_public；conf 参考文件 2026-08-19 已对齐）暴露为 REST；/rpc/* 函数端点；注入 request.jwt.claims；OpenAPI 生成 | gateway/docker-compose.yml（postgrest 环境变量，运行态权威）、gateway/postgrest/postgrest.conf（参考文件） |
 | 数据层 | PostgreSQL（Pigsty 集群 + pgbouncer + redis） | 业务表 + 镜像表、视图、RPC、触发器、RLS、审计；pg_cron 定时任务 | db/（迁移 + src/api_v1 幂等源码）、infra/pigsty.yml、infra/pgbouncer.ini |
 
 PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 conf）：
@@ -98,7 +98,7 @@ PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 
 | 配置 | 值 | 说明 |
 | --- | --- | --- |
 | PGRST_DB_URI | postgres://authenticator:…@host.docker.internal:6432/app_db | 经 pgbouncer 连接 |
-| PGRST_DB_SCHEMAS | api_v1_public（compose env，运行时生效） | 运行时以 env 为准；postgrest.conf 声明多 schema：api_v1_public, api_v1_sales, api_v1_inventory（sales/inventory 已退役，按需重建） |
+| PGRST_DB_SCHEMAS | api_v1_public（compose env，运行时生效） | 运行时以 env 为准；postgrest.conf 参考文件已对齐单 schema（2026-08-19） |
 | PGRST_DB_EXTRA_SEARCH_PATH | api_v1_public,public | 函数解析搜索路径 |
 | PGRST_DB_ANON_ROLE | web_anon | 匿名角色（无默认表权限） |
 | PGRST_JWT_SECRET | ${JWKS_JSON} | 开发环境 = HS256 对称密钥（.env.example 占位）；staging/production = Logto JWKS 公钥，RS256（05 文档与 init-apisix-routes.sh 口径；compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实） |
@@ -108,7 +108,7 @@ PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 
 | PGRST_DB_TX_END | commit | 事务结束方式 |
 | PGRST_CORS_ORIGINS | * | 供 Swagger 浏览器拉取 spec |
 
-> 配置来源说明：**运行态以 gateway/docker-compose.yml 为权威**（单 schema api_v1_public、.pg_role、extra search path = api_v1_public,public、max-rows 1000、pre-request 已清空、宿主 3100）；postgrest.conf 为参考文件（db-schemas 多 schema、jwt-role-claim-key=roles[0]、jwt-secret="$(JWKS_JSON)" 由 gateway/.env 注入），与运行态不一致处以后者为准。
+> 配置来源说明：**运行态以 gateway/docker-compose.yml 为权威**（单 schema api_v1_public、.pg_role、extra search path = api_v1_public,public、max-rows 1000、pre-request 已清空、宿主 3100）；postgrest.conf 为参考文件（2026-08-19 已与运行态对齐：单 schema、.pg_role、无 pre-request；jwt-secret="$(JWKS_JSON)" 由 gateway/.env 注入），以 compose 为运行态权威。
 
 ## 模块划分总览（按 schema）
 
@@ -116,13 +116,13 @@ PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 
 | --- | --- | --- |
 | public | 核心业务：镜像表（users/tenants/role/…）、自主表（iam_menu/iam_role_menu/…）、全部业务函数/触发器/视图/RLS、审计与日志 | db/src/public/、db/migrations/public/ |
 | api_v1_public | 对外暴露层（现行）：视图投影（视图名 = 底层表名）与 RPC 包装（api_v1_public.*） | db/api_v1/public/ |
-| api_v1_sales / api_v1_inventory | 对外暴露层声明（仅 postgrest.conf）；**schema 不存在**（063 已退役），路由已移除，目录保留为空，按需重建 | db/api_v1/inventory/（空） |
+| ~~api_v1_sales / api_v1_inventory~~ | ~~对外暴露层声明~~ | 2026-08-15 退役；2026-08-19 从 postgrest.conf 移除，占位目录已清理 |
 | api_v1_sys | 兼容历史迁移引用（027 改名链）；非最终使用对象 | db/init/02-schemas.sql |
 | net | pg_net 扩展宿主 schema（owner=postgres；已对 authenticated 收紧权限） | 扩展管理，项目不驻留对象 |
 | cron | pg_cron 扩展宿主 schema（任务定义 cron.job、运行历史 cron.job_run_details） | 扩展管理（Pigsty 集群级安装） |
-| 扩展（非 schema） | 不存在 extensions schema：pg_pwhash/pgcrypto/pgtap 装在 public，pg_net 宿主 net，pg_cron 宿主 cron；ip2region/GeoLite2 离线表在 public；db/extensions/ 为扩展说明文档目录 | db/extensions/、db/init/01-extensions.sql |
+| 扩展（非 schema） | 不存在 extensions schema：pgcrypto/pgtap 装在 public，pg_net 宿主 net，pg_cron 宿主 cron；ip2region/GeoLite2 离线表在 public；说明文档见 wiki/01-项目简介/extensions/（权威 = infra/pigsty.yml） | wiki/01-项目简介/extensions/、infra/pigsty.yml |
 
-> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、api_v1_sys（027 改名链兼容，新代码不用）、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（063 已退役，仅 postgrest.conf 声明残留、db/api_v1/inventory 目录保留为空、按需重建）。运行态暴露层为单 schema api_v1_public。db/api_v1/ 目录含 _shared（空，apply-src API 模块排序前缀）、inventory（空）、public（实际内容）。兼容视图 public.sys_user 与 public.casbin_rule 是刻意保留的兼容层（非未清理的 sys_ 残留）。db/api_v1/public/privileges/zz_grant_all.sql 与 db/src/public/privileges/rls_policies.sql 是授权/策略的集中清单。详见 [模块划分](./module-breakdown.md)。
+> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、api_v1_sys（027 改名链兼容，新代码不用）、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（063 已退役；postgrest.conf 声明与占位目录已于 2026-08-19 清理，按需重建时再补）。运行态暴露层为单 schema api_v1_public。db/api_v1/ 目录含 _shared（空，apply-src API 模块排序前缀）、public（实际内容）。兼容视图 public.sys_user 与 public.casbin_rule 是刻意保留的兼容层（非未清理的 sys_ 残留）。db/api_v1/public/privileges/zz_grant_all.sql 与 db/src/public/privileges/rls_policies.sql 是授权/策略的集中清单。详见 [模块划分](./module-breakdown.md)。
 
 ## 架构关键特性：数据库即后端、RLS 数据隔离
 
@@ -131,7 +131,7 @@ PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 
 - **RLS 集中清单**：db/src/public/privileges/rls_policies.sql 共 20 个策略（租户隔离 RESTRICTIVE、全局共享只读、超管豁免等），全部读取 PostgREST 注入的 request.jwt.claims，零查询。
 - **SECURITY DEFINER + search_path 锁定**：写/管理 RPC 与 helper 一律 SECURITY DEFINER SET search_path = public, pg_temp，函数内自校验（has_permission / require_super_admin）——DEFINER 会绕过 RLS，必须函数内兜底。
 - **17 号铁律（代码对象归位）**：迁移文件只承载表结构 + 数据（幂等 IF NOT EXISTS / DO 块）；函数/视图/触发器/类型/RLS 归 db/src/public/ 与 db/api_v1/public/；scripts/apply-src.sh 全量幂等重放（含 §6.3 迁移目录代码对象扫描，命中即失败）。
-- **部署链**：scripts/deploy-db.sh = bootstrap（init 扩展/schema + src types 枚举）→ dbmate up（迁移）→ apply-src 全量重放；scripts/deploy-gateway.sh = compose 起服务 + 路由初始化（部署链当前调用 scripts/setup_apisix.sh，为 Casdoor 时代旧脚本；目标为 scripts/init-apisix-routes.sh，见上文「已知不一致 / 待收敛」）。CI 见 .github/workflows/ci.yml、deploy-gateway.yml、deploy-infra.yml；其中 ci.yml 的 syncer-check 作业与 deploy-gateway.sh 的 syncer build 段为历史遗留（Go syncer 已退役，webhook 同步全在数据库内）。
+- **部署链**：scripts/deploy-db.sh = bootstrap（init 扩展/schema + src types 枚举）→ dbmate up（迁移）→ apply-src 全量重放；scripts/deploy-gateway.sh = compose 起服务 + 路由初始化（scripts/init-apisix-routes.sh，2026-08-19 起唯一入口）。CI 见 .github/workflows/ci.yml、deploy-gateway.yml、deploy-infra.yml（syncer-check 作业与 syncer build 段已于 2026-08-19 移除）。
 
 ---
 

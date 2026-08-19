@@ -35,7 +35,7 @@
 | db/migrations/**、db/src/**、db/api_v1/**、db/init/**、db/tests/** | SQL Lint（sqlfluff，容错）+ dbmate up --dry-run（postgres:18 服务） |
 | gateway/** | docker compose config --quiet + docker compose build |
 | db/syncer/** | Go build + go test（syncer 已退役，检查保留） |
-| infra/** | yamllint（pigsty.yml / pigsty.db.yml / pigsty.gateway.yml） |
+| infra/** | yamllint（infra/pigsty.yml 唯一配置） |
 
 - Go syncer 已退役：ci.yml 的 syncer-check 作业与 deploy-gateway.sh 的 docker compose build syncer 段为历史遗留（检查保留，不影响部署）。
 - 本地双闸：verify-fresh-db.sh（冷启动结构比对 + pgTAP）+ make test（pgTAP + e2e-test.sh，Logto 版）。

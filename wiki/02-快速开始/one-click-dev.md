@@ -37,7 +37,7 @@ cp gateway/.env.example gateway/.env
 
 也可按脚本注释/文档惯例使用 `cp .env.development gateway/.env`（两者变量集一致）。
 
-`gateway/.env` 是网关栈的**唯一配置源**：docker compose 自动读取；`make migrate` 读取 `DB_PASSWORD`；`setup_apisix.sh` 读取 `APISIX_ADMIN_KEY` / `JWKS_JSON`。
+`gateway/.env` 是网关栈的**唯一配置源**：docker compose 自动读取；`make migrate` 读取 `DB_PASSWORD`；`init-apisix-routes.sh` 读取 `APISIX_ADMIN_KEY` / `LOGTO_WEBHOOK_SIGNING_KEY`，并从 Logto :3001 拉取 JWKS（RS256）。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -60,7 +60,7 @@ cp gateway/.env.example gateway/.env
 ```bash
 cd gateway && docker compose up -d      # ①
 sleep 10                                # ②
-cd gateway && bash -c '[ -f .env ] && export $(grep -v "^#" .env | xargs); bash ../scripts/setup_apisix.sh'   # ③
+cd gateway && bash -c '[ -f .env ] && export $(grep -v "^#" .env | xargs); bash ../scripts/init-apisix-routes.sh'   # ③
 ```
 
 ### ① docker compose up -d
@@ -77,23 +77,24 @@ cd gateway && bash -c '[ -f .env ] && export $(grep -v "^#" .env | xargs); bash 
 
 关键环境变量（compose 内，代码事实）：
 
-- PostgREST（运行态以 compose 环境变量为权威）：`PGRST_DB_URI=postgres://authenticator:***@host.docker.internal:6432/app_db`；`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）；`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`；`PGRST_JWT_SECRET=${JWKS_JSON}`；`PGRST_JWT_ROLE_CLAIM_KEY=.pg_role`（DB 角色取自 JWT 的 `pg_role` claim）；`PGRST_MAX_ROWS=1000`；`PGRST_DB_PRE_REQUEST` 为空（不启用黑名单）。`gateway/postgrest/postgrest.conf` 仅为参考文件（db-schemas 多 schema、jwt-role-claim-key=roles[0] 与运行态不一致），不挂载进容器。
+- PostgREST（运行态以 compose 环境变量为权威）：`PGRST_DB_URI=postgres://authenticator:***@host.docker.internal:6432/app_db`；`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）；`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`；`PGRST_JWT_SECRET=${JWKS_JSON}`；`PGRST_JWT_ROLE_CLAIM_KEY=.pg_role`（DB 角色取自 JWT 的 `pg_role` claim）；`PGRST_MAX_ROWS=1000`；`PGRST_DB_PRE_REQUEST` 为空（不启用黑名单）。`gateway/postgrest/postgrest.conf` 仅为参考文件（2026-08-19 已与运行态对齐：单 schema、.pg_role），不挂载进容器。
 - Logto：`DB_URL=postgres://logto:***@host.docker.internal:5433/logto`；`DATABASE_STATEMENT_TIMEOUT=DISABLE_TIMEOUT`（pgBouncer 兼容）；`ENDPOINT=http://localhost:3001`、`ADMIN_ENDPOINT=http://localhost:3002`。
 
 ### ② 等待 10 秒
 
 compose 没有健康检查 gate，纯 `sleep 10` 后即进入路由初始化。
 
-### ③ scripts/setup_apisix.sh
+### ③ scripts/init-apisix-routes.sh
 
-传统模式（etcd + Admin API）初始化，共 4 步：
+传统模式（etcd + Admin API）初始化（Logto 版 `init-apisix-routes.sh`），共 5 步：
 
-1. 轮询 `http://localhost:7085/status` 直到 `{"status":"ok"}`（30 次 × 2s）；超时提示检查 `docker compose ps` / `docker logs app-apisix` / etcd。
-2. `PUT /apisix/admin/plugin_metadata/jwt-auth`：从 `JWKS_JSON` 提取 `k` 字段写入 HS256 元数据。
-3. `PUT` 业务路由：`jwks`、`user_login_sso`、`refresh_token_rtr`、`api_v1_public`（`/api/v1/sys/*`）、`api_v1_sales`、`api_v1_inventory`、`rpc_all`（`/rpc/*`）、`catch_all`（`/*`）。
-4. `PUT /apisix/admin/global_rules/1`：全局 CORS（allow_origins `*`）。
+1. 幂等清理 Casdoor 时代旧路由（jwks / user_login_sso / refresh_token_rtr / casdoor_proxy / api_v1_sys / api_v1_sales / api_v1_inventory）。
+2. 轮询 `http://localhost:7085/status` 直到 `{"status":"ok"}`（15 次 × 1s）。
+3. 从 Logto OIDC discovery（:3001）拉取 JWKS，`PUT /apisix/admin/plugin_metadata/jwt-auth`（RS256）。
+4. `PUT` 业务路由 7 条：`logto_jwks`、`logto_proxy`（`/logto/*`）、`webhook_logto`（`/rpc/webhook_logto`，HMAC 验签）、`ensure_user`（`/rpc/ensure_user`）、`api_v1_public`（`/api/v1/sys/*`）、`rpc_all`（`/rpc/*`）、`catch_all`（`/*`）。
+5. `PUT /apisix/admin/global_rules/1`：全局 CORS（含 `logto-signature-sha-256` header）。
 
-> ⚠️ 代码事实：`setup_apisix.sh` 仍是 Casdoor 时代脚本——`jwks` 路由上游写死 `app-casdoor:8000`，`user_login_sso` / `refresh_token_rtr` / `api_v1_sales` / `api_v1_inventory` 等路由与当前栈不符（compose 无 Casdoor，sales/inventory 模块已退役）。**Logto 版路由初始化脚本是 `scripts/init-apisix-routes.sh`**（清理旧路由、写 Logto JWKS（RS256）、`/logto/*` 同源代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`、`/api/v1/sys/*` 重写为 `/$1`）。**尚未接入部署链**（`make dev` 不会自动运行它）；需要 Logto 完整路由（尤其 webhook）时手动执行：
+> ✅ 2026-08-19：部署链（`make dev`）已切换为 Logto 版 `scripts/init-apisix-routes.sh`（清理旧路由、Logto JWKS RS256、`/logto/*` 同源代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`、`/api/v1/sys/*` 重写为 `/$1`）；Casdoor 时代 `setup_apisix.sh` 已删除。
 
 ```bash
 bash scripts/init-apisix-routes.sh   # 需要 gateway/.env 含 LOGTO_WEBHOOK_SIGNING_KEY
@@ -101,7 +102,7 @@ bash scripts/init-apisix-routes.sh   # 需要 gateway/.env 含 LOGTO_WEBHOOK_SIG
 
 ### 前置条件检查
 
-- `gateway/.env` 不存在时，`setup_apisix.sh` 因 `APISIX_ADMIN_KEY` 为空直接退出（❌）。
+- `gateway/.env` 不存在时，`init-apisix-routes.sh` 因 `APISIX_ADMIN_KEY` 或 `LOGTO_WEBHOOK_SIGNING_KEY` 缺失直接退出（fail-closed，❌）。
 - APISIX 起不来通常是 etcd 未就绪或镜像拉取失败。
 
 ## 第 4 步：make migrate

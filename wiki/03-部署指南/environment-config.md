@@ -58,7 +58,7 @@ OmniPG 的配置分两层：根目录 `.env.*`（部署/数据库/网关公共�
 | APISIX_HTTP_PORT / APISIX_HTTPS_PORT / APISIX_ADMIN_PORT | 9080 / 9443 / 9180 | APISIX 端口 |
 | APISIX_ADMIN_KEY | edd1c9f034335f136f87ad84b625c8f1 | Admin API Key（⚠️ 与根目录 development 默认 a1b2… 不一致，部署以 gateway/.env 实际值为准） |
 | PGRST_PORT | 3001 | ⚠️ 见「遗留不一致」 |
-| JWKS_JSON | HS256 开发密钥 | PostgREST `PGRST_JWT_SECRET` 与 setup_apisix.sh 的 jwt-auth 元数据同源 |
+| JWKS_JSON | HS256 开发密钥 | PostgREST `PGRST_JWT_SECRET`（开发环境） |
 | SWAGGER_PORT | 8082 | Swagger UI 宿主端口 |
 
 **缺失项（TODO）**：compose 中 Logto 使用 `LOGTO_DB_PASSWORD`（默认 `logto_dev_pass_2026`），`scripts/init-apisix-routes.sh` 要求 `LOGTO_WEBHOOK_SIGNING_KEY`（webhook 验签，fail-closed），前端 CSP 需要 `LOGTO_EXTRA_FRAME_ANCESTOR`（compose 默认 `http://localhost:3006 http://localhost:3007`）——这些变量未出现在 `gateway/.env.example` 与根目录 `.env.*` 中，使用 Logto webhook / 内嵌登录前需手工补充。
@@ -98,7 +98,7 @@ OmniPG 的配置分两层：根目录 `.env.*`（部署/数据库/网关公共�
 2. **Admin Key 默认值不一致**：根目录 `.env.development` 为 `a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6`，`gateway/.env.example` 与 compose 默认值为 `edd1c9f034335f136f87ad84b625c8f1`；deploy-gateway 复制后以 gateway/.env 为准，但 `verify-stack.sh` 的兜底默认是后者。建议统一。
 3. **PostgREST 端口**：compose 硬编码 `3100:3000`，`.env` 的 `PGRST_PORT` 未参与映射；Swagger/verify-stack 的 3001 引用属遗留。
 4. **Logto CSP**：compose 将 `LOGTO_EXTRA_FRAME_ANCESTOR` 注入 `logto-csp-patch.js`（容器启动时对编译产物打补丁）；改前端端口后需同步该变量并 `docker compose up -d --force-recreate logto`（补丁幂等，不会自动更新旧值）。
-5. **切换环境后必须重建网关**：`deploy-gateway.sh` 会 `docker compose down && up -d` 使新环境变量生效；APISIX 路由需重跑 `setup_apisix.sh`。
+5. **切换环境后必须重建网关**：`deploy-gateway.sh` 会 `docker compose down && up -d` 使新环境变量生效；APISIX 路由需重跑 `init-apisix-routes.sh`。
 6. **logto 库准备**：当前 infra 配置未创建 `logto` 库/用户，首次使用 Logto 前需在宿主 PG 手工创建（`CREATE DATABASE logto OWNER logto;`），并核对 compose `DB_URL` 端口。
 
 ## 相关页面

@@ -28,9 +28,9 @@
 | `src/public/` | public schema 幂等源码（**代码对象唯一权威**） | `functions/`(37)、`triggers/`(10)、`views/`(2 兼容视图)、`types/`(5 枚举)、`templates/`(审计字段模板)、`privileges/`(rls_policies.sql) |
 | `api_v1/` | 对外暴露层（运行态单 schema `api_v1_public`，compose 权威） | Schema 布局 = public / api_v1_public / api_v1_sys（027 兼容，新代码不用）/ net（pg_net 宿主），**无 extensions schema**；目录：`_shared/`(空)、`inventory/`(空 rpc 占位)、`public/`(views 29 / rpc 44 / privileges/zz_grant_all.sql GRANT 集中地)；api_v1_sales/api_v1_inventory 仅存在于 postgrest.conf 参考配置与历史空目录（2026-08-15 退役） |
 | `api_1_sys` / `api_1_sales` / `api_1_inventory` | 历史空目录（rpc/views 子目录占位） | 已废弃，勿使用 |
-| `init/` | 初始化脚本（bootstrap 阶段） | `01-extensions.sql`（最小集 pg_pwhash/pgcrypto/pg_net/pgtap；Pigsty 集群级 pg_cron/pg_graphql；pgaudit 不启用、pgsodium 2026-08-16 退役、plpython3u/pgjwt 不用）、`02-schemas.sql`（api_v1_public/api_v1_sys/net schema + 角色授权说明） |
+| `init/` | 初始化脚本（bootstrap 阶段） | `02-schemas.sql`（api_v1_public/api_v1_sys/net schema + 角色授权说明）；扩展已移交 Pigsty 管理（`db/init/01-extensions.sql` 2026-08-19 移除，权威见 infra/pigsty.yml） |
 | `tests/public/` | pgTAP 测试 | `01_schema_test.sql`、`02_function_test.sql`、`03_trigger_test.sql`、`05_rls_test.sql`、`test_casbin_view.sql`、`test_rls_isolation.sql` |
-| `extensions/` | 扩展说明 | `pgtap.md`、`pgcrypto.md` |
+| ~~`extensions/`~~ | 扩展说明（2026-08-19 已迁移至 [wiki/01-项目简介/extensions/](../01-项目简介/extensions/)） | 不再位于 db/ 下 |
 | `schema.sql` | pg_dump 整库结构快照（约 6400 行，dbmate dump 产物） | 仅作比对/审计，不是部署入口 |
 | `dbmate.toml` | dbmate 配置 | `migrations_dir = "./migrations/public"` |
 
@@ -40,7 +40,7 @@
 | --- | --- | --- |
 | `docker-compose.yml` | 五服务编排：etcd(app-etcd)、apisix(app-apisix)、postgrest(app-postgrest)、swagger-ui(app-swagger)、logto(app-logto) | 网络 `app-net`（172.20.0.0/16）；数据库走 `host.docker.internal` 连 Pigsty pgBouncer（6432/5433） |
 | `apisix/config.yaml` | APISIX traditional 模式配置（etcd 存储 + Admin API + Dashboard） | Admin API 9180、Status 7085、Control 9092 |
-| `apisix/apisix.yaml` | standalone 模式路由**过时残留**（当前不加载） | Casdoor 时代路由（user_login_sso/refresh_token_rtr/jwks/sales/inventory），`config.yaml` 注释明确"不再读取 apisix.yaml" |
+| ~~`apisix/apisix.yaml`~~ | standalone 模式路由过时残留 | 2026-08-19 已删除 |
 | `postgrest/postgrest.conf` | PostgREST **参考文件**（与运行态不一致） | `db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"`（多 schema 列表，api_v1_sales/inventory 已退役）；运行态权威 = compose 环境变量（`PGRST_DB_SCHEMAS: api_v1_public`、`jwt-role-claim-key: .pg_role`） |
 | `logto-csp-patch.js` | Logto CSP frame-ancestors 补丁（启动时注入） | 供 OmniAdmin 3006/3007 嵌入登录页 |
 | `.env.example` | 网关环境变量模板 | `APISIX_ADMIN_KEY`、`JWKS_JSON`、`AUTHENTICATOR_PASSWORD`、`LOGTO_DB_PASSWORD` 等 |
@@ -55,9 +55,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `pigsty.yml` | Pigsty 主配置（集群/节点/组件；pg_cron、pg_graphql 集群级安装） | ⚠️ 仍列出 pgaudit/pgsodium（12/14/46/48 行），与 01-extensions.sql 最小集冲突——**以 01-extensions.sql 为准，待收敛（TODO）** |
-| `pigsty.db.yml` | 数据库节点配置 |
-| `pigsty.gateway.yml` | 网关节点配置 |
+| `pigsty.yml` | Pigsty **唯一**配置（集群/节点/组件；**扩展权威**：pg_extensions + pg_databases[].extensions） | ✅ 2026-08-19 方案 A：单文件 inventory + 官方多剧本；已清理 pgaudit/pgsodium；pg_cron、pg_graphql 集群级安装 |
 | `pg_hba.conf` | PostgreSQL 客户端认证 |
 | `pgbouncer.ini` | 连接池配置（PostgREST 经 6432 连接） |
 | `postgresql.conf` | PostgreSQL 服务端参数 |
@@ -73,8 +71,8 @@
 | `deploy-infra.sh` / `deploy-all.sh` | 基础设施/全栈部署 |
 | `apply-src.sh` | **全量幂等重放**（含 §6.3 迁移代码对象扫描 + 3 遍收敛）；`--bootstrap` 子集 |
 | `migrate.sh` | dbmate 快捷入口（up/down/status/create） |
-| `setup_apisix.sh` | APISIX 初始化（被 Makefile `dev` / deploy-all.sh / deploy-gateway.sh / CI 引用）——⚠️ **内部仍是 Casdoor 时代路由**（jwks→app-casdoor 已死、user_login_sso/refresh_token_rtr、api_v1_sales/inventory 重写），与 Logto 部署不一致，待收敛 |
-| `init-apisix-routes.sh` | **Logto 时代目标路由初始化**：logto_jwks（→app-logto）、logto_proxy（/logto/*）、webhook_logto（HMAC 验签）、ensure_user、api_v1_public（/api/v1/sys/*→/$1）、rpc_all、catch_all | ⚠️ 当前未接入部署链（仅 e2e-test.sh 注释提及），为目标事实标准 |
+| ~~`setup_apisix.sh`~~ | Casdoor 时代 APISIX 初始化 | 2026-08-19 已删除 |
+| `init-apisix-routes.sh` | **唯一路由初始化脚本（Logto 版）**：logto_jwks（→app-logto）、logto_proxy（/logto/*）、webhook_logto（HMAC 验签）、ensure_user、api_v1_public（/api/v1/sys/*→/$1）、rpc_all、catch_all | ✅ 2026-08-19 起部署链唯一入口 |
 | `start.sh` / `stop.sh` | 一键启停开发环境 |
 | `e2e-test.sh` | 端到端测试（Logto OIDC code flow 登录 → APISIX/PostgREST 全链路） |
 | `verify-stack.sh` | 全栈冒烟验证（10 项） |
@@ -82,7 +80,7 @@
 | `import-geolite2.sh` / `import-ip2region.sh` | IP 归属地数据导入 |
 | `wsl-portproxy.ps1` | WSL 端口转发辅助 |
 | `phase2/` | Logto 初始化/对账脚本（`init-logto.py`、`reconcile-logto.py`） |
-| `verify-webhook/` | webhook 调试工具（`01_receiver.py`、`02_role_events.sh`、`03_inspect_payloads.sh`、`04_jwt_claims.sh`） |
+| ~~`verify-webhook/`~~ | ~~Casdoor 时代 webhook 调试工具~~ | 2026-08-19 已删除 |
 | `055-t1-precheck.sql` | 历史迁移前置核查 SQL（留档） |
 | `README.md` | 脚本使用说明 |
 
@@ -90,7 +88,7 @@
 
 | 目标 | 作用 |
 | --- | --- |
-| `make dev` / `make dev-down` | 启动/停止本地环境（gateway compose + setup_apisix） |
+| `make dev` / `make dev-down` | 启动/停止本地环境（gateway compose + init-apisix-routes.sh） |
 | `make migrate` / `make migrate-rollback` / `make migrate-status` | 迁移应用/回滚/状态（dbmate，目录 migrations/public） |
 | `make test` | 全部测试（test-db + test-e2e） |
 | `make test-db` | pgTAP（pg_prove -r tests/） |

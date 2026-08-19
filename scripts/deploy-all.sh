@@ -2,7 +2,7 @@
 # =============================================================================
 # 测试环境一键部署脚本
 # 用法: ./scripts/deploy-all.sh <environment>
-# 功能: 编排 deploy-infra.sh → deploy-db.sh → deploy-gateway.sh → setup_apisix.sh
+# 功能: 编排 deploy-infra.sh → deploy-db.sh → deploy-gateway.sh → init-apisix-routes.sh
 # 适用场景:
 #   - ⚠️ 仅适用于 Phase 1 单机环境（DB + 网关在同一服务器）
 #   - WSL2 开发环境初始化
@@ -53,10 +53,10 @@ cd "$PROJECT_DIR/gateway"
 if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 fi
-if ! bash "$SCRIPT_DIR/setup_apisix.sh"; then
+if ! bash "$SCRIPT_DIR/init-apisix-routes.sh"; then
     echo "❌ APISIX 初始化失败，请检查:"
-    echo "   1. APISIX Admin API 是否可达 (curl http://localhost:9180)"
-    echo "   2. APISIX_ADMIN_KEY 是否与 config.yaml 一致"
+    echo "   1. Logto 是否运行（init-apisix-routes.sh 需从 :3001 拉取 JWKS）"
+    echo "   2. gateway/.env 的 APISIX_ADMIN_KEY / LOGTO_WEBHOOK_SIGNING_KEY 是否配置"
     echo "   3. 运行 'docker logs app-apisix' 查看详细错误"
     exit 1
 fi

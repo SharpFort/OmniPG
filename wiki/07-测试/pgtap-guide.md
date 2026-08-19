@@ -4,16 +4,13 @@ pgTAP 是 PostgreSQL 的单元测试框架，负责验证数据库对象的存�
 
 ## pgTAP 安装与启用
 
-pgTAP 的安装入口是 `db/init/01-extensions.sql`（幂等，`IF NOT EXISTS`），与 `pg_pwhash`、`pgcrypto`、`pg_net` 一同安装：
+pgTAP 由 **Pigsty 统一管理**（权威 = `infra/pigsty.yml`：`pg_extensions` 装包 + `pg_databases[].extensions` 库内启用；`db/init/01-extensions.sql` 已于 2026-08-19 移除）。本地验证环境如需手动补建：
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS "pg_pwhash";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "pg_net";
 CREATE EXTENSION IF NOT EXISTS "pgtap";
 ```
 
-环境策略（见 `db/extensions/pgtap.md`）：
+环境策略（见 [wiki/01-项目简介/extensions/pgtap.md](../01-项目简介/extensions/pgtap.md)）：
 
 | 环境 | pgtap 安装 | 说明 |
 | --- | --- | --- |
@@ -40,8 +37,8 @@ psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT extname, extversion FROM pg_
 
 | 文件 | 计划断言数 | 主题 |
 | --- | ---: | --- |
-| `01_schema_test.sql` | 64 | 表/列/索引/外键/视图/扩展存在性；`sys_*` 与 Casdoor 时代表已移除 |
-| `02_function_test.sql` | 13 | 函数存在性与基础行为（sha256、JWT helper、pg_pwhash 等） |
+| `01_schema_test.sql` | 63 | 表/列/索引/外键/视图存在性；`sys_*` 与 Casdoor 时代表已移除 |
+| `02_function_test.sql` | 11 | 函数存在性与基础行为（sha256、JWT helper、RLS helper 等） |
 | `03_trigger_test.sql` | 4 | 触发器存在与行为（审计、updated_at） |
 | `05_rls_test.sql` | 12 | RLS 启用状态、055 单表化后的表删除断言 |
 | `test_casbin_view.sql` | 8 | `casbin_rule` 视图结构/输出/过滤 |
@@ -70,7 +67,7 @@ ROLLBACK;
 
 | 断言 | 作用 | 仓库内示例 |
 | --- | --- | --- |
-| `plan(N)` | 声明用例数 | `SELECT plan(64);`（01_schema_test.sql） |
+| `plan(N)` | 声明用例数 | `SELECT plan(63);`（01_schema_test.sql） |
 | `ok(expr, desc)` | 布尔断言 | `ok((SELECT count(*) >= 1 FROM pg_indexes ...), 'users.username 有索引')` |
 | `is(actual, expected, desc)` | 等值断言 | `is(current_user_id(), NULL, '无 JWT 时 user_id 为 NULL')` |
 | `results_eq(sql, ARRAY[...], desc)` | SQL 结果与期望数组比较 | `results_eq($$ SELECT DISTINCT ptype FROM casbin_rule $$, ARRAY['p'::varchar], ...)` |
@@ -81,7 +78,6 @@ ROLLBACK;
 | `has_function` | 函数存在 | `has_function('update_updated_at')`、`has_function('current_user_id', ARRAY[]::text[])` |
 | `has_trigger` | 触发器存在 | `has_trigger('department', 'trg_audit_department')` |
 | `fk_ok(table, col, ref_table, ref_col)` | 外键存在 | `fk_ok('user_tenants', 'user_id', 'users', 'id')` |
-| `has_extension` | 扩展存在 | `has_extension('pg_pwhash')` |
 | `function_lang_is` | 函数语言 | `function_lang_is('is_super_admin', 'sql')` |
 
 ## 测试数据准备与清理

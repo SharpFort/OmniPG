@@ -48,13 +48,13 @@ JWT payload 样例（组织 token）：内置 claim `sub`（Logto 用户 id，21
 
 | 层 | 组件 | 校验内容 | 配置 |
 | --- | --- | --- | --- |
-| 网关 | APISIX jwt-auth 插件 | 签名验签（开发：HS256 对称密钥，.env.example 占位；staging/production：Logto JWKS 公钥 **RS256**——05 文档与 init-apisix-routes.sh 口径；compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实） | jwt-auth 插件元数据：目标 = scripts/init-apisix-routes.sh（RS256 + 从 Logto /.well-known/openid-configuration 拉取 JWKS）；部署链现状 = scripts/setup_apisix.sh（HS256 旧配置，待收敛）；gateway/.env 的 JWKS_JSON |
+| 网关 | APISIX jwt-auth 插件 | 签名验签（开发：HS256 对称密钥，.env.example 占位；staging/production：Logto JWKS 公钥 **RS256**——05 文档与 init-apisix-routes.sh 口径；compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实） | jwt-auth 插件元数据：scripts/init-apisix-routes.sh（RS256 + 从 Logto /.well-known/openid-configuration 拉取 JWKS，2026-08-19 起唯一入口）；开发环境 gateway/.env 的 JWKS_JSON（HS256） |
 | API 层 | PostgREST | 再次验签（PGRST_JWT_SECRET = JWKS_JSON）并把 claims 注入 request.jwt.claims | gateway/docker-compose.yml（env 优先） |
-| 角色切换 | PostgREST | 按 JWT claim 切换 PG 角色：docker-compose 运行时为 .pg_role（JSPath），postgrest.conf 留档为 roles[0] | PGRST_JWT_ROLE_CLAIM_KEY |
+| 角色切换 | PostgREST | 按 JWT claim 切换 PG 角色：.pg_role（JSPath），postgrest.conf 参考文件已对齐（2026-08-19） | PGRST_JWT_ROLE_CLAIM_KEY |
 
 说明：
 
-- **运行态以 gateway/docker-compose.yml 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=".pg_role"`、`PGRST_DB_PRE_REQUEST=""`（黑名单预请求已退役）、extra search path = api_v1_public,public、max-rows 1000、宿主 3100。gateway/postgrest/postgrest.conf 为**参考文件**：db-schemas 多 schema（api_v1_public, api_v1_sales, api_v1_inventory）与 jwt-role-claim-key=roles[0] 均与运行态不一致；api_v1_sales / api_v1_inventory schema 当前不存在（063 退役，仅 conf 声明残留）；db-anon-role = "web_anon"、jwt-secret = "$(JWKS_JSON)"。
+- **运行态以 gateway/docker-compose.yml 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=".pg_role"`、`PGRST_DB_PRE_REQUEST=""`（黑名单预请求已退役）、extra search path = api_v1_public,public、max-rows 1000、宿主 3100。gateway/postgrest/postgrest.conf 为**参考文件**（2026-08-19 已与运行态对齐：单 schema api_v1_public、jwt-role-claim-key=.pg_role、无 pre-request）；db-anon-role = "web_anon"、jwt-secret = "$(JWKS_JSON)"。
 - `db/src/public/functions/logto_ts.sql` 的 `logto_ts(text)` 是 **webhook 时间戳解析器**（13 位毫秒 / 10 位秒 / ISO 字符串 → timestamptz），与 token 校验无关。
 - 已知审查项（历史审查 33 号 N8/N9b，已归档）：claims 脚本的 pg_role 映射表只覆盖 role_super_admin / role_admin / role_editor / role_guest，组织角色 tenant_admin / editor / viewer 不在映射内会落到 role_guest——如需 PostgREST 侧按租户角色提权，需扩展映射（当前以代码为准，未修）。
 
@@ -155,7 +155,7 @@ PostgREST 把 JWT claims 注入 `request.jwt.claims`（GUC），策略直接消�
 
 ## 6. webhook 同步（Logto → PG 单向）
 
-接收端 `api_v1_public.webhook_logto(payload jsonb)`（db/api_v1/public/rpc/rpc_webhook_logto.sql，GRANT EXECUTE TO web_anon），按 event 分发。入口路由目标为 `POST /rpc/webhook_logto`（scripts/init-apisix-routes.sh：无 jwt-auth，serverless-pre-function 做 HMAC-SHA256(rawBody) 验签，缺 LOGTO_WEBHOOK_SIGNING_KEY 时 fail-closed）；部署链当前调用的 setup_apisix.sh 未含此路由，收敛待办（见 [架构概览](./architecture-overview.md) 的「已知不一致 / 待收敛」）：
+接收端 `api_v1_public.webhook_logto(payload jsonb)`（db/api_v1/public/rpc/rpc_webhook_logto.sql，GRANT EXECUTE TO web_anon），按 event 分发。入口路由为 `POST /rpc/webhook_logto`（scripts/init-apisix-routes.sh：无 jwt-auth，serverless-pre-function 做 HMAC-SHA256(rawBody) 验签，缺 LOGTO_WEBHOOK_SIGNING_KEY 时 fail-closed；2026-08-19 起为唯一部署链入口）：
 
 | Logto 事件 | 调用的同步函数 | 镜像表 |
 | --- | --- | --- |

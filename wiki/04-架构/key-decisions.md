@@ -72,8 +72,8 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 
 ### 决策
 
-- PostgREST v14（gateway/docker-compose.yml postgrest 服务）暴露对外层 schema：docker-compose env 运行时为 `api_v1_public`（env 覆盖 conf），postgrest.conf 声明多 schema（db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"，sales/inventory 已退役按需重建），extra search path = api_v1_public, public。
-- JWT 验签（PGRST_JWT_SECRET = JWKS_JSON），把 claims 注入 `request.jwt.claims`，按 `.pg_role` claim 切换 PG 角色（docker-compose 为运行态权威；postgrest.conf 参考文件写 roles[0]，与运行态不一致）。算法口径：开发 = HS256、staging/production = Logto JWKS RS256（compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实）。
+- PostgREST v14（gateway/docker-compose.yml postgrest 服务）暴露对外层 schema：docker-compose env 运行时为 `api_v1_public`（env 覆盖 conf），postgrest.conf 参考文件已对齐单 schema api_v1_public（2026-08-19），extra search path = api_v1_public, public。
+- JWT 验签（PGRST_JWT_SECRET = JWKS_JSON），把 claims 注入 `request.jwt.claims`，按 `.pg_role` claim 切换 PG 角色（docker-compose 为运行态权威；postgrest.conf 参考文件已对齐 .pg_role（2026-08-19））。算法口径：开发 = HS256、staging/production = Logto JWKS RS256（compose/.env 注释写 ES384，口径不一致，需以 Logto 实际配置核实）。
 - RLS 是数据级唯一安全边界；写/管理操作经 /rpc/* SECURITY DEFINER 函数 + has_permission。
 - E1 决策：pg_session_jwt 扩展不采纳（PostgREST 已做 PG 端解析，功能重复；仅未来出现非 PostgREST 入口时按需评估）。
 
@@ -100,14 +100,14 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 ### 决策
 
 - Pigsty 统一管理 PostgreSQL 集群、pgbouncer（6432）、Redis 与扩展（infra/pigsty.yml 声明 pg_extensions / pg_users / pg_databases）。
-- 扩展权威清单：db/init/01-extensions.sql（pg_pwhash、pgcrypto、pg_net、pgtap，幂等兜底）；pg_cron / pg_graphql 由 Pigsty 集群级安装。
+- 扩展权威清单：infra/pigsty.yml（唯一 inventory，2026-08-19 方案 A；pg_extensions 装包 + pg_databases[].extensions 库内启用），说明文档见 wiki/01-项目简介/extensions/；db/init/01-extensions.sql 已于 2026-08-19 移除。
 - 数据库角色（authenticator / web_anon / authenticated / super_admin / role_admin / role_editor / role_guest / role_super_admin / tenant_admin）为集群级对象，由 Pigsty 管理；参考配置见 db/init/02-schemas.sql 头注。
 - 开发环境：Pigsty 部署在 WSL2 宿主，gateway/docker-compose.yml 只跑无状态网关服务（PostgREST 经 host.docker.internal:6432 连 pgbouncer）。
 
 ### 影响与代价
 
-- 角色/扩展变更属集群级操作（ADMIN OPTION）；扩展口径：pgaudit 不启用、pgsodium 2026-08-16 退役、plpython3u/pgjwt 不使用；⚠️ infra/pigsty.yml 仍列 pgaudit/pgsodium 等与最小集（01-extensions.sql：pg_pwhash/pgcrypto/pg_net/pgtap + Pigsty 集群级 pg_cron/pg_graphql）冲突——TODO，以 db/init/01-extensions.sql 为准。
-- 部署链固化：deploy-db.sh（bootstrap → dbmate up → apply-src）+ deploy-gateway.sh + setup_apisix.sh。
+- 角色/扩展变更属集群级操作（ADMIN OPTION）；扩展口径：pgaudit 不启用、pgsodium 2026-08-16 退役（二者已于 2026-08-19 从 infra/*.yml 移除，节点包卸载待环境就绪后人工执行）、plpython3u/pgjwt 不使用；CI extensions-check（scripts/check-extensions.sh）防退役扩展回归。
+- 部署链固化：deploy-db.sh（bootstrap → dbmate up → apply-src）+ deploy-gateway.sh + init-apisix-routes.sh（2026-08-19 起，Casdoor 时代 setup_apisix.sh 已删除）。
 
 ## ADR 5：业务逻辑下沉到数据库（RPC / 触发器 / RLS）
 
@@ -150,8 +150,8 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 ### 决策
 
 - `public`：核心业务（镜像表 + 自主表 + 授权 + 审计 + 日志）；`api_v1_public`：对外 API 暴露层（视图 + RPC，只放投影不放物理表）；`api_v1_sys`：027 改名链兼容（历史迁移引用）；net/cron：扩展宿主 schema。
-- 027 迁移把 api_v1_sys 收敛为 api_v1_public（视图名 = 底层表名）；对外暴露层为多 schema 形态（postgrest.conf 声明 api_v1_public / api_v1_sales / api_v1_inventory；api_v1_sys 为遗留空 schema）；063 迁移退役 inventory/sales 测试模块（路由已移除、目录保留为空、按需重建）。
-- dbmate 迁移按 schema 分目录（db/migrations/public/）；PostgREST 暴露层：docker-compose env 运行时为 api_v1_public，postgrest.conf 声明三 schema。
+- 027 迁移把 api_v1_sys 收敛为 api_v1_public（视图名 = 底层表名）；对外暴露层为单 schema api_v1_public（postgrest.conf 已于 2026-08-19 对齐；api_v1_sys 为遗留空 schema）；063 迁移退役 inventory/sales 测试模块（路由已移除、postgrest.conf 声明与占位目录已清理、按需重建时再补）。
+- dbmate 迁移按 schema 分目录（db/migrations/public/）；PostgREST 暴露层：docker-compose env 运行时为 api_v1_public；postgrest.conf 参考文件已对齐（2026-08-19）。
 
 ### 影响与代价
 

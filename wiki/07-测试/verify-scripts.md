@@ -6,10 +6,10 @@
 
 | 脚本 | 职责 | 执行方式 | 退出码 |
 | --- | --- | --- | --- |
-| `scripts/verify-stack.sh` | 全栈 10 项组件健康检查 | `bash scripts/verify-stack.sh` | 0 = 全过，1 = 有失败项 |
+| `scripts/verify-stack.sh` | 全栈 8 项组件健康检查（2026-08-19 更新） | `bash scripts/verify-stack.sh` | 0 = 全过，1 = 有失败项 |
 | `scripts/verify-fresh-db.sh` | 全新数据库冷启动验证（8 步） | `bash scripts/verify-fresh-db.sh [dbname]` | 0 = 通过，1 = 失败 |
 | `scripts/055-t1-precheck.sql` | 055 迁移 T1 数据前置核查（只读） | `psql -U app_owner -d app_db -f scripts/055-t1-precheck.sql` | —（SQL 脚本） |
-| `scripts/verify-webhook/` | webhook payload/JWT 验证工具集（**历史遗留**，Casdoor 时代） | 见下文 | — |
+| ~~`scripts/verify-webhook/`~~ | ~~webhook payload/JWT 验证工具集（Casdoor 时代）~~ | 2026-08-19 已删除 | — |
 
 ## verify-stack.sh：组件健康检查
 
@@ -27,17 +27,13 @@
 | 1 | 网络链路 | 容器 → 宿主 pgbouncer(6432) 可达（app-net + host.docker.internal） | 现行 |
 | 2 | 宿主 pgbouncer | `authenticator` 角色经 127.0.0.1:6432 登录成功 | 现行 |
 | 3 | PostgREST OpenAPI | `http://localhost:3001/` 返回 >2000 字符 | 现行 |
-| 4 | Casdoor 健康 | `http://localhost:8000/api/health` | ⚠️ 过时（Casdoor 已退役） |
-| 5 | APISIX Status | `http://localhost:7085/status` 返回 `{"status":"ok"}` | 现行 |
-| 6 | Dashboard UI | `http://localhost:9180/ui` 返回 HTML | 现行 |
-| 7 | 路由清单 | Admin API 路由数 = 8 | ⚠️ 过时（Logto 版 `init-apisix-routes.sh` 为 7 条） |
-| 8 | 登录链路 | `POST /rpc/user_login_sso` 拿到 access_token | ⚠️ 过时（该 RPC 已退役） |
-| 9 | Policy Syncer | `policy-syncer` 容器运行且近 20 行日志无错误 | ⚠️ 过时（Syncer 已退役） |
-| 10 | 架构校验 | compose 服务清单无 docker PG 残留（pgsql/pgbouncer/casdoor-db） | 现行 |
+| 4 | APISIX Status | `http://localhost:7085/status` 返回 `{"status":"ok"}` | 现行 |
+| 5 | Dashboard UI | `http://localhost:9180/ui` 返回 HTML | 现行 |
+| 6 | 路由清单 | Admin API 路由数 = 7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all） | 现行 |
+| 7 | Logto OIDC | `http://localhost:3001/oidc/.well-known/openid-configuration` 含 `jwks_uri` | 现行 |
+| 8 | 架构校验 | compose 服务清单无 docker PG 残留（pgsql/pgbouncer/casdoor-db） | 现行 |
 
-### 已知过时项（TODO）
-
-第 4/7/8/9 项基于 Casdoor 时代设计（Casdoor、`user_login_sso`、policy-syncer、路由数 8），与当前 Logto 架构不一致：当前网关容器为 etcd/apisix/postgrest/swagger-ui/logto；目标路由集 = `scripts/init-apisix-routes.sh` 的 7 条（logto_jwks、logto_proxy、webhook_logto、ensure_user、api_v1_public、rpc_all、catch_all），该脚本尚未接入部署链（部署链仍调用 Casdoor 时代 `setup_apisix.sh`，见 [网关路由](../06-API参考/gateway-routing.md) 的「已知不一致」）。更新方向：改为检查 Logto 容器与 OIDC discovery、Logto JWKS、webhook 路由、`e2e-test.sh` 登录链路。
+> ✅ 2026-08-19 已更新：verify-stack.sh 已按 Logto 架构重写（8 项检查，路由预期 7 条，登录链路改为 Logto OIDC Discovery）；Casdoor/Syncer 时代项（Casdoor 健康、user_login_sso、policy-syncer）已移除。
 
 ## verify-fresh-db.sh：全新数据库冷启动验证
 
@@ -50,7 +46,7 @@
 | 步骤 | 内容 | 说明 |
 | --- | --- | --- |
 | 1 | 重建 scratch 库 | 超级用户 `DROP DATABASE ... WITH (FORCE)` + `CREATE DATABASE ... OWNER app_owner` |
-| 2 | 建扩展 | 超级用户执行 `db/init/01-extensions.sql`（pg_pwhash/pgcrypto/pg_net/pgtap；pg_cron/pg_graphql 由 Pigsty 集群级安装；pgaudit 不启用、pgsodium 已退役，infra/pigsty.yml 仍列出——以 01-extensions.sql 为准，TODO 收敛；app_owner 非超管不能建扩展） |
+| 2 | 建扩展 | 超级用户内联建最小集（pgcrypto/pg_net/pgtap，SQL 见 verify-fresh-db.sh；扩展权威 = Pigsty infra/*.yml；pgaudit/pgsodium 已于 2026-08-19 从 yml 移除；app_owner 非超管不能建扩展） |
 | 3 | bootstrap 子集 | `02-schemas.sql` + `db/src/public/types/*.sql`（枚举前置） |
 | 4 | dbmate up | 基线迁移（`--no-dump-schema`，防止 scratch 快照覆盖 `db/schema.sql`） |
 | 5 | apply-src 全量 | 幂等重放（脚本 CRLF，先做 LF 临时副本再执行） |
@@ -99,25 +95,11 @@ bash scripts/verify-fresh-db.sh my_check # 自定义库名
 psql -U app_owner -d app_db -f scripts/055-t1-precheck.sql
 ```
 
-## verify-webhook/（历史遗留）
+## verify-webhook/（历史遗留，已删除）
 
-`scripts/verify-webhook/` 是历史文档（04.7-§10-扩展验证清单，已归档）的配套脚本集，针对 **Casdoor**（`CASDOOR_URL`）的 webhook payload 结构与 JWT claims 语义验证。当前认证授权已迁移到 Logto，本目录为历史保留，**不再参与当前链路**。
+`scripts/verify-webhook/` 是历史文档（04.7-§10-扩展验证清单，已归档）的配套脚本集，针对 **Casdoor**（`CASDOOR_URL`）的 webhook payload 结构与 JWT claims 语义验证。**2026-08-19 已随 Casdoor 清理删除**——当前认证授权已迁移到 Logto，webhook 验证由 e2e Phase 6 与 `reconcile-logto.py` 覆盖。
 
-| 脚本 | 作用 | 对应验证项 |
-| --- | --- | --- |
-| `01_receiver.py` | webhook 接收器：请求原样落盘 `out/`，返回 200（端口默认 8099） | 全部（payload 采集） |
-| `02_role_events.sh` | 管理员会话驱动 add/update(挂摘用户)/改名/delete/失败请求 | V1–V7 |
-| `03_inspect_payloads.sh` | 汇总解析 `out/` payload（action/operator/requestUri/response/users 完整性） | V1–V7 判定 |
-| `04_jwt_claims.sh` | password grant 取 token → 解码检查 roles 结构/顺序/isEnabled/凭据泄漏 | V8–V10、V13 |
-| `README.md` | 运行顺序、注意事项、手工验证项（V4 UI 保存、V11 SingleOrgOnly、V12 重试/Replay、V10 tokenFormat） | — |
-
-运行顺序（历史用法）：
-
-```bash
-cd scripts/verify-webhook
-python3 01_receiver.py 8099      # 另开终端
-export CASDOOR_URL=... ORG=... ADMIN_USER=... ADMIN_PASS=... TEST_USER=...
-export CLIENT_ID=... CLIENT_SECRET=... USERNAME=... PASSWORD=...
+（原目录内容：01_receiver.py / 02_role_events.sh / 03_inspect_payloads.sh / 04_jwt_claims.sh / README.md，历史用法见 git 历史。）
 bash 02_role_events.sh            # 触发角色事件
 bash 03_inspect_payloads.sh       # 解析 payload
 bash 04_jwt_claims.sh             # JWT claims 检查
@@ -128,10 +110,10 @@ bash 04_jwt_claims.sh             # JWT claims 检查
 ## 在 CI/部署中的使用
 
 - `.github/workflows/` 下（ci.yml / deploy-gateway.yml / deploy-infra.yml）**均未调用** `verify-stack.sh`、`verify-fresh-db.sh` 或 `055-t1-precheck.sql`（已核对）。
-- `deploy-gateway.yml`（workflow_dispatch，`skip_tests` 输入）：SSH 到服务器 → `scripts/deploy-gateway.sh <env>` → `scripts/setup_apisix.sh` → `scripts/e2e-test.sh`（后两步可用 `skip_tests=true` 跳过）。
+- `deploy-gateway.yml`（workflow_dispatch，`skip_tests` 输入）：SSH 到服务器 → `scripts/deploy-gateway.sh <env>` → `scripts/init-apisix-routes.sh` → `scripts/e2e-test.sh`（后两步可用 `skip_tests=true` 跳过）。
 - `deploy-infra.yml`：仅 `scripts/deploy-infra.sh`，无验证步骤。
 - `verify-fresh-db.sh` + `make test` 作为发布双闸是文档约定（见上），尚未固化为 workflow。
-- TODO 建议：① 更新 `verify-stack.sh` 过时项（Logto 容器/JWKS/路由数）；② 将 `deploy-gateway.yml` 的路由初始化切到 Logto 版 `init-apisix-routes.sh`；③ 在 `ci.yml` 增加 pgTAP/E2E job。
+- TODO 建议：① 在 `ci.yml` 增加 pgTAP/E2E job（verify-stack.sh 与 deploy-gateway.yml 已于 2026-08-19 更新/切换）。
 
 ---
 

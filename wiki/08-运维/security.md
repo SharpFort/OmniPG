@@ -23,7 +23,7 @@
   - 从 Logto OIDC discovery（http://localhost:3001/oidc/.well-known/openid-configuration）拉取 jwks_uri，将 JWKS 写入 APISIX plugin_metadata/jwt-auth（algorithm: RS256）。
   - 业务路由 /api/v1/sys/*、/rpc/*、/* 均挂 jwt-auth；/.well-known/jwks 与 /logto/* 为公开代理（指向 app-logto:3001）。
 - 算法口径（统一）：开发环境 JWKS_JSON 为 **HS256 对称密钥**（gateway/.env.example / .env.development）；staging/production 指向 Logto JWKS 公钥 **RS256**（05 文档与 init-apisix-routes.sh 口径）。gateway compose 注释与 .env.staging / .env.production 注释写 **ES384** —— 口径不一致，需以 Logto 实际配置核实（TODO）。
-- ⚠️ scripts/setup_apisix.sh 是 **Casdoor 时代的遗留脚本**（HS256、指向 app-casdoor、user_login_sso/refresh_token_rtr 路由），当前不应使用；deploy-all.sh / deploy-gateway.yml 仍调用它，属于待清理的已知不一致（TODO）。
+- ✅ 2026-08-19：Casdoor 时代 `scripts/setup_apisix.sh` 已删除，部署链统一 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS）。
 
 ### 1.3 PostgREST 角色映射
 
@@ -107,7 +107,7 @@ PostgREST 只接受预定义视图/RPC 调用，HTTP 参数作为绑定值传递
 | 127.0.0.1/32、::1/128 | scram-sha-256 | 本地 TCP |
 | 172.17.0.0/16 | scram-sha-256 | Docker 默认桥接 |
 | 172.20.0.0/16 | scram-sha-256 | Docker app-net（compose 网段） |
-| 10.0.0.0/8（pigsty.db.yml） | scram-sha-256 | Phase 2 内网 |
+| 10.0.0.0/8（pigsty.yml，2026-08-19 单文件合并） | scram-sha-256 | Phase 2 内网 |
 
 pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_hba.conf 一致。
 
@@ -133,13 +133,14 @@ pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_
 
 - 宿主端口 3100:3000（compose），Swagger 浏览器端直连拉 spec 因此 PGRST_CORS_ORIGINS: "*"。
 - 生产环境 3100 应仅允许 APISIX 所在网段访问（webhook 入口依赖 APISIX 验签）。
-- ⚠️ gateway/postgrest/postgrest.conf 仍引用已退役的 api_v1_sales / api_v1_inventory 与 check_token_blacklist —— 该文件已被 compose 环境变量覆盖，仅作参考，勿据其排查（TODO 清理）。
+- ✅ 2026-08-19：gateway/postgrest/postgrest.conf 已清理 api_v1_sales / api_v1_inventory / check_token_blacklist，与 compose 运行态对齐（单 schema api_v1_public、.pg_role、无 pre-request）。
 
-### 4.6 数据库扩展面（最小集）
+### 4.6 数据库扩展面（Pigsty 管理）
 
-- bootstrap 最小集（db/init/01-extensions.sql）：**pg_pwhash / pgcrypto / pg_net / pgtap**；pg_cron / pg_graphql 由 Pigsty 集群级安装（infra/pigsty.yml 扩展列表）。
-- pgaudit **不启用**、pgsodium 2026-08-16 **退役**、plpython3u / pgjwt 不使用。
-- ⚠️ infra/pigsty.yml 扩展列表仍列 pgaudit / pgsodium 等与最小集冲突 —— 以 01-extensions.sql 为准，清理列为 TODO。
+- **扩展权威** = infra/pigsty.yml（唯一 inventory，2026-08-19 方案 A；pg_extensions 装包 + pg_databases[].extensions 库内启用）；逐扩展说明见 wiki/01-项目简介/extensions/；db/init/01-extensions.sql 已于 2026-08-19 移除。
+- 已启用：pgcrypto / pg_net / pgtap / pg_cron / pg_graphql；已拍板待启用：safeupdate 等 9 个（24 号文档批次）。
+- pgaudit **不启用**、pgsodium 2026-08-16 **退役**（二者 2026-08-19 从 yml 移除，节点包卸载待环境就绪后人工执行）、plpython3u / pgjwt 不使用。
+- CI extensions-check（scripts/check-extensions.sh）自动校验"yml 声明 ↔ 说明页"一致并禁止退役扩展回归。
 
 ## 5. RLS 作为数据访问的最后防线
 
@@ -203,7 +204,7 @@ pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_
 - [ ] 密钥定期轮换（Logto JWKS + APISIX plugin_metadata 刷新）
 - [ ] 审计日志保留策略与归档任务已建立
 - [ ] 迁移/发布前备份完成（见 [备份与恢复](backup-restore.md)）
-- [ ] 遗留清理：setup_apisix.sh、postgrest.conf 中的 sales/inventory、verify-stack.sh 的 Casdoor/Syncer 检查均已对齐 Logto 现状
-- [ ] 扩展面与 01-extensions.sql 最小集对齐（infra/pigsty.yml 冲突清单清理，TODO）
+- [x] 网关侧遗留清理（2026-08-19）：setup_apisix.sh / apisix.yaml / verify-webhook/ 已删除，部署链统一 init-apisix-routes.sh，verify-stack.sh / start.sh 已更新，ci.yml syncer-check 已移除；postgrest.conf 参考文件残留已于 2026-08-19 清理
+- [x] 扩展面对齐（2026-08-19：扩展权威 = infra/pigsty.yml，01-extensions.sql 已移除，pgaudit/pgsodium 已清理；CI extensions-check 防回归）
 
 > 参考：[认证与授权设计](../04-架构/auth-design.md) · [数据流](../04-架构/data-flow.md) · [网关路由](../06-API参考/gateway-routing.md) · [Logto Webhook](../06-API参考/logto-webhook.md) · [审计与日志](audit-logging.md) · [生产问题排查](production-troubleshooting.md)

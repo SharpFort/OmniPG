@@ -84,8 +84,8 @@ APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 | `/rpc/*` | 40 | jwt-auth | app-postgrest:3000 |
 | `/*` | 10 | jwt-auth | 兜底 → PostgREST |
 
-> 路由初始化见 [一键搭建本地开发环境](one-click-dev.md) 第 3 步；`setup_apisix.sh`（make dev 自动运行）仍为旧版路由，Logto 版以 `init-apisix-routes.sh` 为准。
-> 注：`api_v1_sales` / `api_v1_inventory` 路由已于 2026-08-15 退役（init-apisix-routes.sh 不再创建；setup_apisix.sh 仍含它们，属旧时代残留）。
+> 路由初始化见 [一键搭建本地开发环境](one-click-dev.md) 第 3 步；`make dev` 自动运行 Logto 版 `scripts/init-apisix-routes.sh`（2026-08-19 起）。
+> 注：`api_v1_sales` / `api_v1_inventory` 路由已于 2026-08-15 退役（init-apisix-routes.sh 不再创建，且开头会清理其残留）。
 
 ## 4. 示例：查询一个公开视图（经 APISIX）
 

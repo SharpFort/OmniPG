@@ -25,7 +25,7 @@ APISIX 配置存在 compose 内 etcd（traditional 模式）。升级网关前�
 
 ```bash
 curl -s http://localhost:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_KEY" > backups/apisix_routes_$(date +%Y%m%d).json
-# 恢复：setup_apisix.sh（或 init-apisix-routes.sh）重放
+# 恢复：init-apisix-routes.sh 重放
 ```
 
 ### 3. 代码与版本快照
@@ -102,10 +102,10 @@ bash scripts/migrate.sh create <migration_name>   # 新建迁移
 
 | 场景 | 重跑行为 | 安全前提 |
 | --- | --- | --- |
-| `deploy-all.sh` 整体重跑 | infra（已安装检测）→ db（bootstrap 幂等 + dbmate 跳过 + apply-src 重放）→ gateway（重建容器）→ setup_apisix（PUT 覆盖）→ e2e | 迁移幂等、网关 .env 已就绪 |
+| `deploy-all.sh` 整体重跑 | infra（已安装检测）→ db（bootstrap 幂等 + dbmate 跳过 + apply-src 重放）→ gateway（重建容器）→ init-apisix-routes（PUT 覆盖）→ e2e | 迁移幂等、网关 .env 已就绪 |
 | `deploy-db.sh` 重跑 | bootstrap 不炸（IF NOT EXISTS）；dbmate 跳过已应用；apply-src 二遍验证 | 代码对象全部归 src；迁移无代码对象 |
-| `deploy-gateway.sh` 重跑 | down/up 重建容器；⚠️ `docker compose build syncer` 遗留会失败（见 [script-deploy.md](script-deploy.md)） | 先移除遗留行 |
-| `setup_apisix.sh` 重跑 | Admin API PUT 幂等，路由/元数据覆盖 | 与 Logto 版 init-apisix-routes.sh 二选一，勿混用 |
+| `deploy-gateway.sh` 重跑 | down/up 重建容器 | ✅ 2026-08-19：syncer build 段已移除 |
+| `init-apisix-routes.sh` 重跑 | Admin API PUT 幂等，路由/元数据覆盖；开头清理 Casdoor 时代残留路由 | 2026-08-19 起唯一路由脚本 |
 | 数据导入（ip2region/geolite2） | TRUNCATE + 全量重灌 | 会清空再导入，非增量 |
 
 ## 回滚演练清单

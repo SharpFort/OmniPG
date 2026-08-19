@@ -12,7 +12,7 @@
 | dbmate | 已安装（`make migrate` 直接调用） | `dbmate --version` |
 | pgTAP / pg_prove | 数据库测试（`make test-db`） | `pg_prove --version` |
 | psql | 宿主 Pigsty 自带 | `psql --version` |
-| python3 | `setup_apisix.sh` 解析 JWKS JSON 需要 | `python3 -c "import json"` |
+| python3 | `init-apisix-routes.sh` 解析 JWKS JSON 需要 | `python3 -c "import json"` |
 | PowerShell 5.1+ | 仅 Windows 侧运行 `scripts/wsl-portproxy.ps1` 需要 | `$PSVersionTable.PSVersion` |
 
 > 仓库当前没有前端工程（`frontend/` 不存在），本地开发不需要 Node.js 工具链。Go syncer 已退役——`.github/workflows/ci.yml` 中的 `syncer-check` 作业为历史遗留（代码事实），本地无需安装 Go。
@@ -82,18 +82,27 @@ Pigsty 负责集群级资源，开发环境要求以下组件已就绪：
 
 ### 数据库扩展
 
-`db/init/01-extensions.sql` 维护最小集（幂等，已装即跳过）：
+扩展由 **Pigsty 统一管理**（权威 = `infra/pigsty.yml`，唯一 inventory：`pg_extensions` 节点级装包 + `pg_databases[].extensions` 库内启用），逐扩展说明见 [wiki/01-项目简介/extensions/](../01-项目简介/extensions/)：
 
-| 扩展 | 用途 |
-| --- | --- |
-| pg_pwhash | 密码哈希（Argon2id，OWASP 首选） |
-| pgcrypto | 辅助加密函数（sha256 等） |
-| pg_net | 异步 HTTP（webhook 回调等） |
-| pgtap | pgTAP 单元测试框架 |
+| 扩展 | 用途 | 状态 |
+| --- | --- | --- |
+| pgcrypto | 辅助加密（sha256/HMAC/UUID，非密码场景） | 已启用 |
+| pg_net | 异步 HTTP（webhook 回调等），宿主 net | 已启用 |
+| pgtap | pgTAP 单元测试框架 | 已启用（测试环境） |
+| pg_cron / pg_graphql | 定时任务 / GraphQL（预留） | 已启用（Pigsty 集群级） |
+| safeupdate 等 9 个 | 24 号文档批次（防误删/静态检查/JSON Schema/CSV/审计/mock/jsquery/索引建议/膨胀治理） | 已拍板待启用 |
 
-`pg_cron` / `pg_graphql` 由 Pigsty 集群级安装（不在该文件内）；`pgaudit` 不启用、`pgsodium` 已于 2026-08-16 退役、`plpython3u` / `pgjwt` 不使用。
+运行态查看：
 
-> ⚠️ TODO（代码事实）：`infra/pigsty.yml` 与 `infra/pigsty.db.yml` 仍列有 `pgaudit` / `pgsodium` 等扩展，与 01-extensions.sql 的最小集冲突——以 `db/init/01-extensions.sql` 为准。
+```sql
+-- ① 节点已装包（可用）
+SELECT name, default_version, installed_version, comment
+FROM pg_available_extensions WHERE installed_version IS NOT NULL ORDER BY name;
+-- ② 当前库已启用（CREATE EXTENSION）
+SELECT extname, extversion, extnamespace::regnamespace AS schema FROM pg_extension ORDER BY extname;
+```
+
+> ✅ 2026-08-19：`db/init/01-extensions.sql` 已移除；`pgaudit` / `pgsodium` 已从 yml 清理（节点包卸载待环境就绪后人工执行）；CI `extensions-check`（`scripts/check-extensions.sh`）防回归。
 
 ## 网络与镜像源注意事项
 

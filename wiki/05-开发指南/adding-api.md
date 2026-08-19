@@ -1,6 +1,8 @@
 # 新增一个 API 的完整流程
 
 > 定位：从迁移到 RPC/视图 → 权限 → 暴露 → 测试的端到端清单。适用于在 api_v1_public 中新增一个对外视图或 RPC（含底层表、函数、RLS、权限点）。
+>
+> 📌 若要**新建一个业务域模块**（新开目录 + 配置声明），请先看 [新建业务模块完整指南](adding-module.md)。
 
 OmniPG 是「数据库即后端」架构：**API = `api_v1_public` 中的视图/RPC + PostgREST 自动暴露 + APISIX 路由/鉴权**。新增 API 没有代码层，只有 SQL。整个流程受 **17 号铁律（代码型对象归位）** 约束：表结构与数据变更进 `db/migrations/`，函数/视图/触发器/枚举/RLS 一律以幂等源文件归位 `db/src/` 或 `db/api_v1/`。
 
@@ -196,7 +198,7 @@ SELECT * FROM api_v1_public.rpc_set_role_menus(
 
 | 配置项 | 当前值 | 说明 |
 | --- | --- | --- |
-| `PGRST_DB_SCHEMAS` | `api_v1_public`（单 schema，compose 运行态权威） | 暴露的 schema；postgrest.conf 的多 schema 列表为参考文件（与运行态不一致） |
+| `PGRST_DB_SCHEMAS` | `api_v1_public`（单 schema，compose 运行态权威） | 暴露的 schema；postgrest.conf 参考文件已对齐（2026-08-19） |
 | `PGRST_DB_EXTRA_SEARCH_PATH` | `api_v1_public,public` | 额外搜索路径（运行态） |
 | `PGRST_DB_ANON_ROLE` | `web_anon` | 匿名角色（默认无表权限） |
 | `PGRST_JWT_ROLE_CLAIM_KEY` | `.pg_role` | Logto customizer 注入的 PG 角色 claim |
@@ -205,7 +207,7 @@ SELECT * FROM api_v1_public.rpc_set_role_menus(
 | `PGRST_MAX_ROWS` | `1000` | 单次最大返回行数 |
 | 宿主端口 | `3100 → 容器 3000` | PostgREST 直连地址 |
 
-> 注① schema：运行态以 `gateway/docker-compose.yml` 为权威（`PGRST_DB_SCHEMAS=api_v1_public` 单 schema）；`gateway/postgrest/postgrest.conf` 是**参考文件**，其 `db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"`、`jwt-role-claim-key = roles[0]` 与运行态不一致（api_v1_sales/inventory 模块 2026-08-15 已退役）。新增模块时同步 compose `PGRST_DB_SCHEMAS` + `apply-src.sh` 的 `API_MODULES`，改配置后需 `docker compose up -d postgrest` 重建。
+> 注① schema：运行态以 `gateway/docker-compose.yml` 为权威（`PGRST_DB_SCHEMAS=api_v1_public` 单 schema）；`gateway/postgrest/postgrest.conf` 是**参考文件**（2026-08-19 已与运行态对齐：单 schema api_v1_public、.pg_role）。新增模块时同步 compose `PGRST_DB_SCHEMAS` + `apply-src.sh` 的 `API_MODULES`，改配置后需 `docker compose up -d postgrest` 重建。
 > 注② JWT 算法：开发环境 HS256（`JWKS_JSON` 对称密钥）；staging/production 指向 Logto JWKS 公钥 RS256（05 文档与 init-apisix-routes.sh 口径；compose 注释与 .env.staging/.production 注释写 ES384——口径不一致，**需以 Logto 实际配置核实**）。
 
 应用 SQL 后验证：
@@ -256,12 +258,12 @@ curl -s -X PUT http://localhost:9180/apisix/admin/routes/xxx_route \
 
 | 脚本/文件 | 现状 | 说明 |
 | --- | --- | --- |
-| `scripts/setup_apisix.sh` | **Casdoor 时代残留，但仍在部署链中被调用** | 被 `Makefile` 的 `dev` 目标、`scripts/deploy-all.sh`、`scripts/deploy-gateway.sh`（注释）、`.github/workflows/deploy-gateway.yml` 引用；内部路由仍是旧集：`/well-known/jwks` → `app-casdoor:8000`（已死）、`user_login_sso`、`refresh_token_rtr`、`/api/v1/sales/*`、`/api/v1/inventory/*`（后两者 2026-08-15 已退役）——与 Logto 部署不一致 |
-| `scripts/init-apisix-routes.sh` | **Logto 时代目标脚本，未接入部署链** | 本页路由集的事实来源；当前仅被 `scripts/e2e-test.sh` 以注释前置条件提及（N15 fail-closed 前提），Makefile/部署链未调用 |
-| `gateway/apisix/apisix.yaml` | **过时残留** | standalone 模式路由留档（Casdoor 时代），`gateway/apisix/config.yaml` 注释明确说明"不再读取 apisix.yaml"，勿按此部署 |
-| `scripts/verify-stack.sh` | 预期 **8 条路由**（jwks/login/refresh/sys/sales/inventory/rpc/catch-all） | 该预期来自 setup_apisix.sh 旧语义，与 Logto 目标路由集（7 条）不一致，收敛时需同步 |
+| ~~`scripts/setup_apisix.sh`~~ | **Casdoor 时代残留** | 2026-08-19 已删除（部署链统一 init-apisix-routes.sh） |
+| `scripts/init-apisix-routes.sh` | **唯一路由初始化脚本（Logto 版）** | 本页路由集的事实来源；2026-08-19 起为部署链唯一入口（Makefile dev / deploy-all / deploy-gateway.yml） |
+| ~~`gateway/apisix/apisix.yaml`~~ | **过时残留** | 2026-08-19 已删除 |
+| `scripts/verify-stack.sh` | 预期 **7 条路由**（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all） | ✅ 2026-08-19 已同步 Logto 路由集 |
 
-**收敛方向**：以 `init-apisix-routes.sh` 的路由集为事实标准；若实际运行环境由 setup_apisix.sh 初始化，请以 Admin API（9180）实际配置为准，并推动部署链切换脚本。
+**现状（2026-08-19）**：部署链已统一 `init-apisix-routes.sh`，以其路由集为事实标准（7 条）。
 
 ## Step 7：pgTAP 测试 + 手动 curl 验证
 
@@ -309,7 +311,7 @@ curl -s -X POST http://localhost:9080/rpc/rpc_get_position_tree \
 | 5 | GRANT | 视图/RPC 已授 authenticated（zz_grant_all.sql 或文件尾部 GRANT） |
 | 6 | 权限点 | 写/管理 RPC 有 `has_permission`/`require_permission` 门槛；button 行已注册 `public:` 权限码并绑定角色 |
 | 7 | PostgREST | OpenAPI 可见新端点；curl 直连 3100 可调（RLS 生效） |
-| 8 | APISIX | 按 init-apisix-routes.sh 目标路由集核对（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all）；setup_apisix.sh 为旧残留，勿以其为准 |
+| 8 | APISIX | 按 init-apisix-routes.sh 路由集核对（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all，共 7 条） |
 | 9 | 测试 | `make test-db` 通过；`make test-e2e` 通过（如涉及全链路） |
 | 10 | 文档 | rpc-reference.md 已更新 |
 

@@ -35,7 +35,7 @@ cd ~/OmniPG/scripts   # 或 cd /mnt/e/Projects/OmniPG/scripts
 2. 启动 Redis + etcd
 3. 启动 Grafana
 4. 检查并启动 Docker
-5. 启动 Docker Compose 服务（APISIX/PostgREST/Casdoor）
+5. 启动 Docker Compose 服务（APISIX/PostgREST/Logto）
 6. 验证所有服务健康状态
 
 ---
@@ -94,10 +94,9 @@ cd ~/pigsty
 # 创建用户和数据库
 su - postgres -c "psql -c \"CREATE USER app_owner WITH PASSWORD 'dev_password_change_me' CREATEDB;\""
 su - postgres -c "psql -c \"CREATE USER authenticator WITH PASSWORD 'authenticator_dev_pass';\""
-su - postgres -c "psql -c \"CREATE USER casdoor WITH PASSWORD 'casdoor_dev_pass';\""
+
 su - postgres -c "psql -c \"CREATE ROLE web_anon NOLOGIN;\""
 su - postgres -c "psql -c \"CREATE DATABASE app_db OWNER app_owner;\""
-su - postgres -c "psql -c \"CREATE DATABASE casdoor OWNER casdoor;\""
 
 # 安装扩展
 su - postgres -c "psql -d app_db -c \"CREATE EXTENSION IF NOT EXISTS pgcrypto, pgsodium, pgaudit, pgtap, pg_graphql, pg_cron;\""
@@ -117,7 +116,6 @@ sudo mkdir -p /etc/pgbouncer
 sudo tee /etc/pgbouncer/pgbouncer.ini > /dev/null <<EOF
 [databases]
 app_db = host=127.0.0.1 port=5432 dbname=app_db
-casdoor = host=127.0.0.1 port=5432 dbname=casdoor
 
 [pgbouncer]
 listen_addr = 0.0.0.0
@@ -132,7 +130,7 @@ EOF
 sudo tee /etc/pgbouncer/userlist.txt > /dev/null <<EOF
 "app_owner" "dev_password_change_me"
 "authenticator" "authenticator_dev_pass"
-"casdoor" "casdoor_dev_pass"
+
 EOF
 
 sudo chown postgres:postgres /etc/pgbouncer/*
@@ -186,7 +184,7 @@ curl -s http://localhost:3000/api/health
 | 8428 | VictoriaMetrics | http://localhost:8428 |
 | 9428 | VictoriaLogs | http://localhost:9428 |
 | 9080 | APISIX (Docker) | http://localhost:9080 |
-| 8000 | Casdoor (Docker) | http://localhost:8000 |
+| 3001 | Logto (Docker) | http://localhost:3001 (Console 3002) |
 | 8082 | Swagger UI (Docker) | http://localhost:8082 |
 
 ---
@@ -242,8 +240,6 @@ E:\Projects\OmniPG\
 │   └── postgrest\
 ├── infra\                # Pigsty 基础设施配置
 │   ├── pigsty.yml
-│   ├── pigsty.db.yml
-│   ├── pigsty.gateway.yml
 │   ├── pg_hba.conf
 │   ├── pgbouncer.ini
 │   ├── redis.conf

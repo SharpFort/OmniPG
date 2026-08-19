@@ -1,5 +1,6 @@
 #!/bin/bash
-# APISIX route init — Logto 版（Phase 2: 替代 Casdoor）
+# APISIX route init — Logto 版（2026-08-19 起为唯一部署链路由脚本；
+#   Makefile dev / deploy-all.sh / deploy-gateway.yml 均已接入；Casdoor 时代 setup_apisix.sh 已删除）
 # 变更: jwt-auth HS256→RS256（Logto JWKS）；移除 Casdoor 路由；
 #       新增 /logto/* 同源代理；新增 /rpc/webhook_logto（webhook 接收入口）
 #       新增 POST /rpc/ensure_user（JIT 建档，authenticated 调）
@@ -13,7 +14,7 @@ AUTH="X-API-KEY: ${ADMIN_KEY}"
 #     含 api_v1_sys（027 schema 重命名后的残留，指向已删 schema）
 # ---------------------------------------------------------------------------
 echo "[0] Cleanup Casdoor routes..."
-for rid in jwks user_login_sso refresh_token_rtr casdoor_proxy api_v1_sys; do
+for rid in jwks user_login_sso refresh_token_rtr casdoor_proxy api_v1_sys api_v1_sales api_v1_inventory; do
   curl -s -X DELETE "http://localhost:9180/apisix/admin/routes/${rid}" -H "$AUTH" || true
 done
 echo "  OK"

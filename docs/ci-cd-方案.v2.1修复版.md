@@ -1,5 +1,7 @@
 # OmniPG CI/CD 方案设计文档
 
+> 📌 **2026-08-19 网关侧更新**：Casdoor / Go Syncer 已完全退役清理——`scripts/setup_apisix.sh`、`gateway/apisix/apisix.yaml`、`scripts/verify-webhook/` 已删除，部署链统一为 Logto 版 `scripts/init-apisix-routes.sh`；ci.yml 的 `syncer-check` 作业与 deploy-gateway.sh 的 syncer build 段已移除；本文档中下方 Casdoor / Syncer 相关段落均为**历史方案记录**，不再作为当前依据。官方参考：[剧本列表](http://pigsty.cc/docs/ref/playbook/) · [配置清单](https://doc.pigsty.cc/docs/concept/iac/inventory/)
+
 > **版本**: v2.0  
 > **创建日期**: 2026-07-24  
 > **更新日期**: 2026-07-25  
@@ -31,9 +33,14 @@
 
 | 文件 | 是否必须 | 作用 | 更新频率 |
 |:---|:---|:---|:---|
-| `pigsty.yml` | ✅ 必须 | Phase 1 单机完整配置（PostgreSQL、pgBocker、Redis、etcd、Grafana、VictoriaMetrics、Docker、VIBE） | 仅在基础设施变更时 |
-| `pigsty.db.yml` | ✅ 必须 | Phase 2 DB 服务器配置（含全量 INFRA 模块用于监控） | 仅在基础设施变更时 |
-| `pigsty.gateway.yml` | ✅ 必须 | Phase 2 网关服务器配置（Docker + Redis），VIBE 部署在 DB 服务器 | 仅在基础设施变更时 |
+| `pigsty.yml` | ✅ 必须 | **唯一 inventory**（2026-08-19 方案 A：单文件 + 官方多剧本模式；Phase 1 单机全栈 / Phase 2 按官方剧本 + `-l` 主机限制分角色部署） | 仅在基础设施变更时 |
+
+> 📚 **官方参考**（方案 A 依据）：
+> - [配置清单 / Inventory（唯一配置文件模型）](https://doc.pigsty.cc/docs/concept/iac/inventory/)
+> - [剧本列表（pgsql / redis / docker 等模块剧本）](http://pigsty.cc/docs/ref/playbook/)
+> - [生产环境安装（Install for Production）](https://doc.pigsty.io/docs/deploy/install/)
+> - [官方 pigsty.yml 模板（多组声明示例）](https://github.com/pgsty/pigsty/blob/main/pigsty.yml)
+> - **2026-08-19 变更**：`pigsty.db.yml` / `pigsty.gateway.yml` 已合并删除；多角色通过单文件内不同组 + 官方剧本 `-l LIMIT` 表达（db → pgsql/infra/etcd/vibe；gateway → node/docker/redis）
 | `pg_hba.conf` | ✅ 必须 | PostgreSQL 客户端认证规则（scram-sha-256 + Docker 网桥 + 内网） | 新增网络段时 |
 | `pgbouncer.ini` | ✅ 必须 | pgBouncer 连接池配置（认证方式、池化模式、数据库路由） | 新增数据库时 |
 | `redis.conf` | ✅ 必须 | Redis 服务端配置（绑定地址、持久化、内存策略） | 调整性能参数时 |
@@ -105,18 +112,19 @@
 │  └────────┬────────┘                                                 │
 │           │                                                          │
 │           ├─→ ① 检测 Pigsty 是否安装，未安装则下载 v4.4.0            │
-│           ├─→ ② 复制 infra/pigsty.yml → ~/pigsty/pigsty.yml          │
+│           ├─→ ② 复制唯一配置 infra/pigsty.yml → ~/pigsty/pigsty.yml │
 │           ├─→ ③ 复制 infra/pg_hba.conf → 覆盖 Pigsty 配置            │
-│           ├─→ ④ 复制 infra/pgbouncer.ini → /etc/pgbouncer/           │
-│           ├─→ ⑤ 复制 infra/redis.conf → /etc/redis/                  │
-│           ├─→ ⑥ 复制 infra/userlist.txt → /etc/pgbouncer/            │
-│           ├─→ ⑦ 执行 ~/pigsty/deploy.yml（部署所有 PG/Redis/etcd）   │
-│           ├─→ ⑧ 执行 ~/pigsty/etcd.yml（部署 etcd 集群）             │
-│           └─→ ⑨ 验证所有服务健康状态                                 │
+│           ├─→ ④ 复制 infra/pgbouncer.ini → /etc/pgbouncer/（all/db）  │
+│           ├─→ ⑤ 复制 infra/redis.conf → /etc/redis/（all/db）        │
+│           ├─→ ⑥ 复制 infra/userlist.txt → /etc/pgbouncer/（all/db）  │
+│           ├─→ ⑦ 执行官方剧本（单文件 + LIMIT 主机限制）              │
+│           │      all: deploy.yml/install.yml + etcd.yml              │
+│           │      db:  pgsql.yml + infra.yml + etcd.yml + vibe.yml    │
+│           │      gw:  node.yml + docker.yml + redis.yml              │
+│           └─→ ⑧ 验证所有服务健康状态                                 │
 │                                                                      │
-│  Phase 2 时：                                                        │
-│  deploy-infra.sh db      → 调用 infra/pigsty.db.yml                  │
-│  deploy-infra.sh gateway → 调用 infra/pigsty.gateway.yml             │
+│  Phase 2 时：单一 infra/pigsty.yml（2026-08-19 方案 A），             │
+│  按官方剧本 + -l LIMIT 分角色：db / gateway                          │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -186,9 +194,7 @@ OmniPG/
 │       └── postgrest.conf
 │
 ├── infra/                                   # Pigsty 基础设施
-│   ├── pigsty.yml                           # Phase 1: 完整配置（单机）
-│   ├── pigsty.db.yml                        # Phase 2: DB 服务器配置
-│   ├── pigsty.gateway.yml                   # Phase 2: 网关服务器配置
+│   ├── pigsty.yml                           # 唯一 inventory（2026-08-19 方案 A：单文件 + 官方多剧本）
 │   ├── pg_hba.conf                          # PG 客户端认证规则
 │   ├── pgbouncer.ini                        # pgBouncer 连接池配置
 │   ├── redis.conf                           # Redis 服务端配置
@@ -244,8 +250,7 @@ OmniPG/
 | `docker-compose.yml` | `gateway/docker-compose.yml` | 移动 |
 | `apisix/` | `gateway/apisix/` | 移动 |
 | `postgrest/` | `gateway/postgrest/` | 移动 |
-| `infra/pigsty.db.yml` | 不变 | — |
-| `infra/pigsty.gateway.yml` | 不变 | — |
+| `infra/pigsty.db.yml` / `infra/pigsty.gateway.yml` | 已删除（2026-08-19 方案 A 合并入 `infra/pigsty.yml`） | 合并 |
 
 ---
 
@@ -271,12 +276,12 @@ OmniPG/
 ```bash
 #!/bin/bash
 # =============================================================================
-# 基础设施部署脚本
-# 用法: 
-#   首次部署: ./scripts/deploy-infra.sh <environment>
-#   Phase 2 DB: ./scripts/deploy-infra.sh db <environment>
-#   Phase 2 GW: ./scripts/deploy-infra.sh gateway <environment>
-# 示例: ./scripts/deploy-infra.sh development
+# 基础设施部署脚本（2026-08-19 方案 A：单文件 pigsty.yml + 官方多剧本模式）
+# 用法:
+#   ./scripts/deploy-infra.sh all <environment>        # Phase 1 单机全栈
+#   ./scripts/deploy-infra.sh db <environment>         # Phase 2 DB 服务器（pgsql/infra/etcd/vibe）
+#   ./scripts/deploy-infra.sh gateway <environment>    # Phase 2 网关服务器（node/docker/redis）
+# 多机部署时用 LIMIT 环境变量指定本机 IP（ansible -l 主机限制，默认 127.0.0.1）
 # =============================================================================
 
 # 执行流程:
@@ -284,15 +289,13 @@ OmniPG/
 # 2. 检测 Pigsty 是否已安装（~/pigsty/ 目录是否存在）
 #    - 未安装: curl -fsSL https://pigsty.cc/get | bash -s v4.4.0
 #    - 已安装: 检查版本是否匹配 v4.4.0
-# 3. 复制配置文件到 Pigsty 目录
-#    - cp infra/pigsty.yml ~/pigsty/pigsty.yml
-#    - cp infra/pg_hba.conf ~/pigsty/pg_hba.conf  
-#    - cp infra/pgbouncer.ini /etc/pgbouncer/pgbouncer.ini
-#    - cp infra/redis.conf /etc/redis/redis.conf
-#    - cp infra/userlist.txt /etc/pgbouncer/userlist.txt
-# 4. 执行 Pigsty 部署
-#    - cd ~/pigsty && ./deploy.yml
-#    - cd ~/pigsty && ./etcd.yml
+# 3. 复制唯一配置文件到 Pigsty 目录
+#    - cp infra/pigsty.yml ~/pigsty/pigsty.yml   # 唯一 inventory（2026-08-19 方案 A）
+#    - all/db 模式另复制 pgbouncer.ini / userlist.txt / redis.conf
+# 4. 执行 Pigsty 官方剧本（单文件 inventory + ansible 主机限制）
+#    - all:     cd ~/pigsty && ./deploy.yml（或 install.yml）+ ./etcd.yml
+#    - db:      ./pgsql.yml -l $LIMIT; ./infra.yml -l $LIMIT; ./etcd.yml -l $LIMIT; ./vibe.yml -l $LIMIT
+#    - gateway: ./node.yml -l $LIMIT; ./docker.yml -l $LIMIT; ./redis.yml -l $LIMIT
 # 5. 验证服务健康
 #    - PostgreSQL: psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1"
 #    - pgBouncer: psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1"
@@ -303,10 +306,11 @@ OmniPG/
 **关键设计决策**：
 - **幂等性**：可以重复执行。如果 Pigsty 已安装且版本正确，则跳过安装
 - **配置覆盖**：每次执行都会同步最新配置，确保基础设施状态一致
-- **Phase 2 支持**：通过参数指定部署模式
-  - `deploy-infra.sh db` → 使用 `infra/pigsty.db.yml`，复制 `pg_hba.conf`、`pgbouncer.ini`、`userlist.txt`、`redis.conf`
-  - `deploy-infra.sh gateway` → 使用 `infra/pigsty.gateway.yml`，仅 Docker 模块，**不复制** pg_hba/pgbouncer/userlist
-  - `deploy-infra.sh`（无参数）→ 默认单机模式，使用 `infra/pigsty.yml`
+- **Phase 2 支持**：单文件 inventory + 官方多剧本（2026-08-19 方案 A，详见 [剧本列表](http://pigsty.cc/docs/ref/playbook/)）
+  - `deploy-infra.sh db` → 复制唯一 `infra/pigsty.yml`，执行 `pgsql.yml` / `infra.yml` / `etcd.yml` / `vibe.yml` 剧本（`-l $LIMIT` 主机限制），复制 `pgbouncer.ini` / `userlist.txt` / `redis.conf`
+  - `deploy-infra.sh gateway` → 复制唯一 `infra/pigsty.yml`，执行 `node.yml` / `docker.yml` / `redis.yml` 剧本（`-l $LIMIT` 主机限制），**不复制** pg_hba/pgbouncer/userlist
+  - `deploy-infra.sh`（无参数）→ 默认单机 all：`./deploy.yml`（或 install.yml）+ `./etcd.yml` 全量部署
+  - 多机时传 `LIMIT=<本机IP>`（如 `LIMIT=10.0.0.10 ./scripts/deploy-infra.sh db production`）
 
 #### deploy-db.sh
 
@@ -787,7 +791,7 @@ WantedBy=multi-user.target
 | `DBMATE_DATABASE_URL` | dbmate 连接 URL | staging / production |
 | `DB_URI` | 应用数据库 URI | staging / production |
 | `APISIX_ADMIN_KEY` | APISIX Admin Key | staging / production |
-| `CASDOOR_DB_PASSWORD` | Casdoor 数据库密码 | staging / production |
+| ~~`CASDOOR_DB_PASSWORD`~~ | ~~Casdoor 数据库密码~~（Casdoor 已退役，Logto 时代不再需要，待清理） | — |
 | `JWKS_JSON` | JWT 签名密钥 | staging / production |
 | `REDIS_PASSWORD` | Redis 密码 (可选) | staging / production |
 

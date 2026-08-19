@@ -150,7 +150,7 @@ curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_webhook_events' \
 ### 5.1 模式与配置
 
 - APISIX 为 **traditional 模式**：路由/插件元数据存 compose 内 etcd（app-etcd:2379），Admin API 9180 + 内置 Dashboard（/ui），Status API 7085，Control API 9092。
-- 路由初始化：**scripts/init-apisix-routes.sh（Logto 版，当前唯一有效）**；⚠️ scripts/setup_apisix.sh 与 gateway/apisix/apisix.yaml 为 Casdoor 时代遗留（HS256 / app-casdoor / user_login_sso），勿用于排查。
+- 路由初始化：**scripts/init-apisix-routes.sh（Logto 版，2026-08-19 起唯一入口）**；Casdoor 时代 setup_apisix.sh 与 apisix.yaml 已删除。
 - 当前路由（7 条）：100 /.well-known/jwks（代理 Logto）· 95 POST /rpc/webhook_logto（HMAC 验签，无 jwt-auth）· 80 POST /rpc/ensure_user · 60 /logto/* · 50 /api/v1/sys/*（重写至 api_v1_public）· 40 /rpc/* · 10 /*。api_v1_sales / api_v1_inventory 路由 2026-08-15 已退役。
 - 当前**未配置 limit-req 限流插件**（历史安全分析的建议尚未实施，TODO）；全局规则只有 CORS。
 

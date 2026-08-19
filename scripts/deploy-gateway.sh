@@ -28,11 +28,10 @@ else
     echo "  警告: 未找到 .env.$ENV，使用默认配置"
 fi
 
-# 2. 拉取最新镜像（syncer 为 build-only 服务，忽略拉取失败并单独构建）
+# 2. 拉取最新镜像（Syncer 已退役（Logto 同步经 webhook），compose 无 syncer 服务）
 echo ""
 echo "[2/5] 拉取最新镜像..."
 docker compose pull --ignore-pull-failures || true
-docker compose build syncer
 
 # 3. 重启服务
 echo ""
@@ -40,7 +39,7 @@ echo "[3/5] 重启服务..."
 docker compose down
 docker compose up -d
 
-# 4. 加载环境变量（供 setup_apisix.sh 使用）
+# 4. 加载环境变量（供 init-apisix-routes.sh 使用）
 if [ -f .env ]; then
     export $(grep -v '^#' .env | xargs)
 fi
@@ -68,10 +67,6 @@ check_service() {
 check_service "APISIX" "http://localhost:7085/status"
 check_service "PostgREST" "http://localhost:3100/"
 check_service "Logto" "http://localhost:3001/oidc/.well-known/openid-configuration"
-# Syncer 已退役（Logto 同步经 webhook；容器不再要求运行）
-if docker inspect --format='{{.State.Status}}' policy-syncer 2>/dev/null | grep -q running; then
-    echo "  ✅ Syncer（遗留容器，忽略）"
-fi
 check_service "Swagger" "http://localhost:8082/"
 
 echo ""

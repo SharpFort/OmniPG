@@ -63,7 +63,7 @@ backups/ **不是自动化备份目录**，而是手工执行的**迁移/重建�
 ### 3.3 其他数据
 
 - Redis：AOF everysec，冷备直接复制 dump/appendonly 文件；生产建议加 requirepass 并定期 RDB 快照。
-- APISIX 路由：存在 etcd（compose 卷 etcd_data）；恢复 = 重建容器后重跑 bash scripts/init-apisix-routes.sh（Logto 版）。⚠️ setup_apisix.sh 为遗留脚本，勿用。
+- APISIX 路由：存在 etcd（compose 卷 etcd_data）；恢复 = 重建容器后重跑 bash scripts/init-apisix-routes.sh（Logto 版，2026-08-19 起唯一入口）。
 - 环境配置：infra/ 与 gateway/ 均为代码，git 即备份；敏感值在 .env / Secrets，需另行保管。
 
 ## 4. 恢复流程

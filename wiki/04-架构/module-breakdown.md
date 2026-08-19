@@ -8,13 +8,13 @@
 | --- | --- | --- | --- |
 | public | 核心业务：镜像表、自主表、授权、审计、日志、IP 归属；全部业务函数/触发器/视图/RLS | db/src/public/、db/migrations/public/ | 物理表 24 张（064 镜像 6 + 065 业务 18），另含 schema_migrations |
 | api_v1_public | 对外 API 暴露层（现行）：视图投影（视图名 = 底层表名）+ RPC 包装函数 | db/api_v1/public/ | 只放投影与包装，不放物理表；29 视图 + 44 RPC 全部在此 |
-| api_v1_sales / api_v1_inventory | 对外 API 暴露层声明（仅 postgrest.conf db-schemas）；**schema 当前不存在**（063 已退役），路由已移除，目录保留为空，按需重建 | db/api_v1/inventory/（空） | 运行态以 compose 为权威：只暴露 api_v1_public |
+| ~~api_v1_sales / api_v1_inventory~~ | ~~对外 API 暴露层声明~~ | 2026-08-15 退役；2026-08-19 从 postgrest.conf 移除、占位目录已清理；运行态只暴露 api_v1_public |
 | api_v1_sys | 027 改名链兼容（历史迁移引用），遗留空 schema | db/init/02-schemas.sql | init 幂等创建 |
 | net | pg_net 扩展宿主 schema | 扩展管理 | owner=postgres；已对 authenticated REVOKE EXECUTE（SSRF 防护，02-schemas） |
 | cron | pg_cron 扩展宿主 schema | 扩展管理（Pigsty 集群级） | cron.job / cron.job_run_details |
-| 扩展（非 schema） | **不存在 extensions schema**：pg_pwhash/pgcrypto/pgtap 装在 public，pg_net 宿主 net，pg_cron 宿主 cron；ip2region/GeoLite2 离线表在 public；db/extensions/ 为说明文档目录 | db/extensions/、db/init/01-extensions.sql | 以 01-extensions.sql 为权威（pg_pwhash/pgcrypto/pg_net/pgtap） |
+| 扩展（非 schema） | **不存在 extensions schema**：pgcrypto/pgtap 装在 public，pg_net 宿主 net，pg_cron 宿主 cron；ip2region/GeoLite2 离线表在 public；说明文档见 wiki/01-项目简介/extensions/ | wiki/01-项目简介/extensions/、infra/pigsty.yml | 以 infra/pigsty.yml 为权威 |
 
-> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、api_v1_sys（027 改名链兼容，新代码不用）、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（仅 postgrest.conf 声明残留）。db/api_v1/ 下含 _shared（空，apply-src API 模块排序前缀 _shared 在前）、inventory（空，退役残留）、public（实际内容）。兼容视图 public.sys_user（users+user_profile 投影，password_hash 恒 NULL，Logto 管密码）与 public.casbin_rule（055 双段投影：API 段=iam_role_menu→iam_menu 按钮行端点、菜单段=router）是刻意保留的兼容层，非未清理的 sys_ 残留。
+> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、api_v1_sys（027 改名链兼容，新代码不用）、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（postgrest.conf 声明已于 2026-08-19 移除）。db/api_v1/ 下含 _shared（空，apply-src API 模块排序前缀 _shared 在前）、public（实际内容）。兼容视图 public.sys_user（users+user_profile 投影，password_hash 恒 NULL，Logto 管密码）与 public.casbin_rule（055 双段投影：API 段=iam_role_menu→iam_menu 按钮行端点、菜单段=router）是刻意保留的兼容层，非未清理的 sys_ 残留。
 
 ## public：核心业务层
 
@@ -68,14 +68,11 @@
 
 ## extensions：扩展与辅助数据
 
-- **权威扩展清单**（db/init/01-extensions.sql，apply-src bootstrap 安装，IF NOT EXISTS 幂等）：
-  - `pg_pwhash`：Argon2id 密码哈希（generate_user_password 使用）
-  - `pgcrypto`：辅助加密（sha256 等，仅非密码场景）
-  - `pg_net`：异步 HTTP（webhook 回调/增强预留；02-schemas 已收紧：REVOKE EXECUTE FROM authenticated，调用须经 SECURITY DEFINER 封装；当前 src 层未见业务调用）
-  - `pgtap`：数据库单元测试框架（db/tests/public/）
-- **Pigsty 集群级安装**：pg_cron（定时任务，cron schema）、pg_graphql（GraphQL 补充）；infra/pigsty.yml 另声明 safeupdate/plpgsql_check/pg_jsonschema/omni_csv/pgmemento 等（安装清单，与 01-extensions.sql 的差异以 01 文件为准）。
-- **不启用/退役扩展**：pgaudit 不启用、pgsodium 2026-08-16 退役、plpython3u/pgjwt 不使用；⚠️ infra/pigsty.yml 仍列 pgaudit/pgsodium 等与最小集冲突——TODO，以 db/init/01-extensions.sql 为准。
-- **辅助数据**：`ip_region_v4`（ip2region 离线库，import-ip2region.sh 导入）、`ip_geolite2_*`（GeoLite2-City staging + 终表，import-geolite2.sh 导入）；db/extensions/ 下有 pgcrypto.md / pgtap.md 说明文档。
+- **权威扩展清单**：infra/pigsty.yml（唯一 inventory，2026-08-19 方案 A；pg_extensions 节点级装包 + pg_databases[].extensions 库内启用；db/init/01-extensions.sql 已于 2026-08-19 移除），逐扩展说明见 wiki/01-项目简介/extensions/：
+  - 已启用：pgcrypto（辅助加密，sha256 等非密码场景）、pg_net（异步 HTTP，宿主 net；02-schemas 已收紧 REVOKE EXECUTE FROM authenticated，调用须经 SECURITY DEFINER 封装）、pgtap（单元测试框架，db/tests/public/）、pg_cron（定时任务，cron schema）、pg_graphql（GraphQL 补充，预留）
+  - 已拍板待启用：safeupdate / plpgsql_check / pg_jsonschema / omni_csv / pgmemento / pg_mockable / jsquery / index_advisor / pg_repack（24 号文档批次，yml 已列）
+- **不启用/退役扩展**：pgaudit 不启用、pgsodium 2026-08-16 退役（二者 2026-08-19 从 yml 移除，节点包卸载待环境就绪后人工执行）、plpython3u/pgjwt 不使用。
+- **辅助数据**：`ip_region_v4`（ip2region 离线库，import-ip2region.sh 导入）、`ip_geolite2_*`（GeoLite2-City staging + 终表，import-geolite2.sh 导入）；扩展说明文档见 wiki/01-项目简介/extensions/（pgcrypto.md / pgtap.md / pg_net.md 等）。
 
 ## 各业务模块归属
 
@@ -102,7 +99,7 @@
 3. **apply-src 重放顺序**（scripts/apply-src.sh）：bootstrap（init 扩展/schema + src types 枚举）→ src/public（types → 其余，多遍收敛）→ api_v1（API_MODULES="_shared public"：rpc → views → privileges/zz_grant_all.sql 最后）→ init → migrations；后置模块可依赖前置模块，反之不可。
 4. **跨 schema 依赖**：api_v1_public 只依赖 public（视图投影 public 表、RPC 调用 public 函数）；api_v1_public 不写 public 表（除 SECURITY DEFINER 内部）。
 5. **权限面**：db/api_v1/public/privileges/zz_grant_all.sql 按角色分层（authenticated SELECT、role_guest/role_editor/role_admin 递增、super_admin ALL）；RLS 是数据级最终边界；角色（PG 系统角色）由 Pigsty 管理（02-schemas 头注参考）。
-6. **退役对象与新旧并存**：iam_api / iam_role_api 已删（055 单表化）；inventory/sales 测试模块已退役（063），但 postgrest.conf 仍声明 api_v1_sales / api_v1_inventory、db/api_v1/inventory 目录保留为空、init-apisix-routes.sh 已移除对应路由（按需重建）；net.request_status 等旧遗留已清理——模块归属以当前 db/ 为准，暴露层以「多 schema 声明 + 当前 api_v1_public 实际承载」为准。
+6. **退役对象与新旧并存**：iam_api / iam_role_api 已删（055 单表化）；inventory/sales 测试模块已退役（063），postgrest.conf 声明与占位目录已于 2026-08-19 清理、init-apisix-routes.sh 已移除对应路由（按需重建）；net.request_status 等旧遗留已清理——模块归属以当前 db/ 为准，暴露层以「api_v1_public 单 schema（compose 运行态权威）」为准。
 
 ---
 

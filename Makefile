@@ -34,7 +34,7 @@ dev:
 	cd gateway && docker compose up -d
 	@echo "等待服务启动..."
 	@sleep 10
-	cd gateway && bash -c '[ -f .env ] && export $$(grep -v "^#" .env | xargs); bash ../scripts/setup_apisix.sh'
+	cd gateway && bash -c '[ -f .env ] && export $$(grep -v "^#" .env | xargs); bash ../scripts/init-apisix-routes.sh'
 
 dev-down:
 	cd gateway && docker compose down

@@ -63,7 +63,7 @@ jobs:
             [ -f gateway/.env ] && export $(grep -v '^#' gateway/.env | xargs)
             
             # 初始化 APISIX 路由和插件
-            bash scripts/setup_apisix.sh
+            bash scripts/init-apisix-routes.sh
           EOF
       
       - name: Run E2E Tests

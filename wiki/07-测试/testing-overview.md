@@ -1,6 +1,6 @@
 # 测试体系总览
 
-OmniPG 的测试分为三层：**pgTAP 数据库测试**（`db/tests/`）、**E2E 集成测试**（`scripts/e2e-test.sh`）与**冒烟/验证脚本**（`scripts/verify-stack.sh`、`scripts/verify-fresh-db.sh`、`scripts/055-t1-precheck.sql`、`scripts/verify-webhook/`）。本文给出分层、入口命令、运行时机、覆盖范围与盲区；各层的详细用法见对应分册。
+OmniPG 的测试分为三层：**pgTAP 数据库测试**（`db/tests/`）、**E2E 集成测试**（`scripts/e2e-test.sh`）与**冒烟/验证脚本**（`scripts/verify-stack.sh`、`scripts/verify-fresh-db.sh`、`scripts/055-t1-precheck.sql`）。本文给出分层、入口命令、运行时机、覆盖范围与盲区；各层的详细用法见对应分册。
 
 ## 测试分层
 
@@ -8,7 +8,7 @@ OmniPG 的测试分为三层：**pgTAP 数据库测试**（`db/tests/`）、**E2
 | --- | --- | --- | --- | --- |
 | 数据库单元测试 | pgTAP | `db/tests/public/*.sql`（6 个文件，计划断言合计 115 条） | `make test-db` | 表/列/索引/外键/函数/触发器/RLS/casbin_rule 视图的存在性与基础行为 |
 | E2E 集成测试 | bash + curl + jq + python3 | `scripts/e2e-test.sh` | `make test-e2e` | Logto OIDC 登录、镜像表只读保障、API 鉴权、租户 RLS 隔离、webhook 同步链路、异常恢复 |
-| 冒烟/验证脚本 | bash / SQL | `scripts/verify-stack.sh`、`scripts/verify-fresh-db.sh`、`scripts/055-t1-precheck.sql`、`scripts/verify-webhook/` | 直接执行 `bash scripts/...` | 组件健康、冷启动可复现性、迁移前置核查、webhook payload 语义（历史遗留） |
+| 冒烟/验证脚本 | bash / SQL | `scripts/verify-stack.sh`、`scripts/verify-fresh-db.sh`、`scripts/055-t1-precheck.sql` | 直接执行 `bash scripts/...` | 组件健康、冷启动可复现性、迁移前置核查 |
 
 ## 各层入口与命令
 
@@ -32,19 +32,18 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 | --- | --- | --- |
 | 本地开发 | `make test` | 先 `make dev` 起网关栈并完成数据库迁移（`make migrate`），再跑全量测试 |
 | PR CI | `ci.yml` 各 job | 按变更路径过滤触发，见下方 CI 现状 |
-| 网关部署 | `deploy-gateway.yml` | 部署后执行 `setup_apisix.sh` + `e2e-test.sh`，`skip_tests=true` 可跳过 |
+| 网关部署 | `deploy-gateway.yml` | 部署后执行 `init-apisix-routes.sh` + `e2e-test.sh`，`skip_tests=true` 可跳过 |
 | 发布硬门槛（文档约定） | `bash scripts/verify-fresh-db.sh` + `make test` | 迁移/部署链变更后的双闸验证（历史文档 18-迁移基线 Squash 指南，已归档；目前为人工执行，未固化到 workflow） |
 
 ### CI 现状（`.github/workflows/ci.yml`，PR 到 dev/main 触发）
 
 | Job | 触发条件（paths-filter） | 内容 | 是否实跑测试 |
 | --- | --- | --- | --- |
-| `detect-changes` | 总是 | 输出 db / gateway / syncer / infra 四个变更标记 | — |
+| `detect-changes` | 总是 | 输出 db / gateway / infra / extensions 四个变更标记 | — |
 | `db-lint` | db 路径变更 | `sqlfluff lint db/migrations/ db/src/ --dialect postgres`（`|| true`，不阻断） | 否 |
 | `db-migrate-test` | db 路径变更 | postgres:18 service + `dbmate up --dry-run` | 否（仅迁移 SQL 干跑） |
 | `gateway-check` | gateway 路径变更 | `docker compose config --quiet` + `docker compose build` | 否 |
-| `syncer-check` | `db/syncer/**` 变更 | Go build + test | 历史遗留：Go syncer 已退役（webhook 同步在库内完成），`db/syncer` 目录当前不存在，job 实际不触发 |
-| `infra-check` | infra 路径变更 | yamllint 检查 3 个 pigsty yml | 否 |
+| `infra-check` | infra 路径变更 | yamllint 检查唯一 `infra/pigsty.yml` | 否 |
 
 结论：**CI 目前不实跑 pgTAP 与 E2E**，两者主要在本地与部署流水线中执行（盲区，见下）。
 
@@ -54,8 +53,8 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 
 | 文件 | 计划断言数 | 覆盖内容 |
 | --- | ---: | --- |
-| `01_schema_test.sql` | 64 | 表/列/索引/外键/视图/扩展存在性；`sys_*`、Casdoor 时代表已移除断言 |
-| `02_function_test.sql` | 13 | sha256、`current_user_id/current_tenant_id/current_user_roles`、`update_updated_at`、`is_super_admin`、pg_pwhash 函数 |
+| `01_schema_test.sql` | 63 | 表/列/索引/外键/视图存在性；`sys_*`、Casdoor 时代表已移除断言 |
+| `02_function_test.sql` | 11 | sha256、`current_user_id/current_tenant_id/current_user_roles`、`update_updated_at`、`is_super_admin` |
 | `03_trigger_test.sql` | 4 | 审计触发器 `trg_audit_department`、`audit_trigger_func`、`updated_at` 自动更新 |
 | `05_rls_test.sql` | 12 | 关键表 RLS 启用状态；`iam_api`/`iam_role_api` 已删除（055 单表化） |
 | `test_casbin_view.sql` | 8 | `casbin_rule` 视图列、ptype/v0 输出格式、is_active 过滤（其中 3 条依赖运行时绑定数据） |
@@ -67,10 +66,10 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 
 ### 冒烟/验证脚本
 
-- `verify-stack.sh`：10 项组件健康检查（依赖预检、网络链路、pgbouncer、PostgREST、APISIX、登录链路等）；其中 4/8/9 项与路由数 8 的校验仍指向 Casdoor 时代组件，与当前 Logto 架构不一致（见 [冒烟验证脚本](verify-scripts.md)）。
+- `verify-stack.sh`：8 项组件健康检查（依赖预检、网络链路、pgbouncer、PostgREST、APISIX Status、Dashboard、路由 7 条、Logto OIDC、无 docker PG 残留；2026-08-19 已按 Logto 架构更新，见 [冒烟验证脚本](verify-scripts.md)）。
 - `verify-fresh-db.sh`：8 步全新库冷启动验证（重建 scratch 库 → 建扩展 → dbmate up → apply-src 两遍幂等 → 结构比对 → pgTAP），迁移/部署链变更后的发布硬门槛。
 - `055-t1-precheck.sql`：055 菜单权限单表化迁移的 T1 数据前置核查（只读，11 段）。
-- `verify-webhook/`：Casdoor 时代 webhook payload/JWT 验证工具集（历史遗留，Logto 架构下由 e2e Phase 6 与 `reconcile-logto.py` 覆盖）。
+- ~~`verify-webhook/`~~：Casdoor 时代 webhook 验证工具集（2026-08-19 已删除）。
 
 ## 盲区（当前未覆盖）
 

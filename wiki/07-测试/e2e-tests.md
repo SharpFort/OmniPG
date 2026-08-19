@@ -110,9 +110,9 @@ E2E 集成测试的唯一入口是 `scripts/e2e-test.sh`（Logto 版），覆盖
 | `verify-stack.sh` | 组件级健康冒烟（10 项） | 哪个组件没起来（端口/进程/路由数） |
 | `e2e-test.sh` | 业务级链路（8 阶段） | 整条业务链路是否可用（登录→鉴权→同步） |
 
-部署流水线 `.github/workflows/deploy-gateway.yml` 中两者衔接：`deploy-gateway.sh` 部署并做健康检查 → `setup_apisix.sh` 初始化路由 → `e2e-test.sh`；`skip_tests=true` 可跳过路由初始化与 E2E。
+部署流水线 `.github/workflows/deploy-gateway.yml` 中两者衔接：`deploy-gateway.sh` 部署并做健康检查 → `init-apisix-routes.sh` 初始化路由 → `e2e-test.sh`；`skip_tests=true` 可跳过路由初始化与 E2E。
 
-> 注意：`deploy-gateway.yml` 引用的 `setup_apisix.sh` 仍是 Casdoor 时代脚本，Logto 版路由初始化是 `scripts/init-apisix-routes.sh`（工作流引用未同步，TODO）。
+> ✅ 2026-08-19：`deploy-gateway.yml` 已引用 Logto 版 `scripts/init-apisix-routes.sh`（Casdoor 时代 setup_apisix.sh 已删除）。
 
 ---
 

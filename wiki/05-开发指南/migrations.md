@@ -103,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_xxx_tenant ON public.xxx USING btree (tenant_id);
 | 表/列/约束/索引结构变更、数据变更（无论幂等与否） | `db/migrations/<module>/` 新编号文件 |
 | 枚举创建/加值 | `db/src/<schema>/types/<name>.sql`（bootstrap 前置） |
 | 底层函数 / 触发器 / 视图 / RLS | `db/src/public/`（functions/triggers/views/privileges） |
-| 对外视图 / RPC（api_v1_public.*） | `db/api_v1/<域>/`（views/rpc；目录按域组织 `_shared`/`inventory`/`public`，当前活跃模块 public；运行态仅暴露 api_v1_public——新模块须同步 `apply-src.sh` 的 `API_MODULES` 与 compose `PGRST_DB_SCHEMAS`，postgrest.conf 多 schema 仅作参考） |
+| 对外视图 / RPC（api_v1_public.*） | `db/api_v1/<域>/`（views/rpc；目录按域组织 `_shared`/`inventory`/`public`，当前活跃模块 public；运行态仅暴露 api_v1_public——新模块须同步 `apply-src.sh` 的 `API_MODULES` 与 compose `PGRST_DB_SCHEMAS`，postgrest.conf 参考文件已对齐（2026-08-19）） |
 | GRANT | `db/api_v1/public/privileges/zz_grant_all.sql` 集中管理 |
 
 `scripts/apply-src.sh` 全量幂等重放顺序（**迁移最后执行**；模块清单 `MODULES="public"`、`API_MODULES="_shared public"`，新增域模块在此声明）：

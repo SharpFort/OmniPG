@@ -21,7 +21,7 @@ OmniPG 采用「宿主基础设施 + 容器网关」两层部署形态：
 | 项 | 说明 |
 | --- | --- |
 | 入口 | `bash scripts/deploy-all.sh <environment>`，默认 development |
-| 编排顺序 | deploy-infra（all）→ deploy-db → deploy-gateway → setup_apisix → e2e-test |
+| 编排顺序 | deploy-infra（all）→ deploy-db → deploy-gateway → init-apisix-routes → e2e-test |
 | 环境参数 | 第一参数传给所有子脚本（加载 `.env.$ENV`） |
 | 失败行为 | `set -euo pipefail`，任一步失败立即退出并提示排查方向 |
 | 优点 | 快、可重复，适合标准单机环境与 CI（`.github/workflows/deploy-all.yml`） |
@@ -129,7 +129,7 @@ psql -U app_owner -d app_db -f scripts/055-t1-precheck.sql
 1. deploy-infra.sh all <env>   # Pigsty：PG 集群 / pgBouncer / Redis / etcd / 监控
 2. deploy-db.sh <env>          # bootstrap（init + src types）→ dbmate up → apply-src → dbmate status
 3. deploy-gateway.sh <env>     # gateway/.env → compose pull/build/up → 健康检查
-4. APISIX 路由初始化           # 目标：init-apisix-routes.sh（Logto 路由集）；部署链现状仍调 setup_apisix.sh（旧脚本，见 script-deploy.md）
+4. APISIX 路由初始化           # init-apisix-routes.sh（Logto 路由集，2026-08-19 起唯一部署链入口）
 5. e2e-test.sh                 # Logto OIDC code flow 端到端验收（deploy-all 第 5 步）
 ```
 
@@ -141,15 +141,15 @@ GitHub Actions（`.github/workflows/`）：
 
 | Workflow | 触发 | 职责 |
 | --- | --- | --- |
-| ci.yml | PR（dev/main） | 路径过滤（db/gateway/syncer/infra）→ sqlfluff 静态检查、dbmate dry-run、compose 校验/构建、Go 构建测试、yamllint |
+| ci.yml | PR（dev/main） | 路径过滤（db/gateway/infra/extensions）→ sqlfluff 静态检查、dbmate dry-run、compose 校验/构建、yamllint、扩展一致性检查 |
 | deploy-all.yml | workflow_dispatch（staging/production） | SSH 到服务器 → git pull → `bash scripts/deploy-all.sh <env>` → e2e |
 | deploy-db.yml | workflow_dispatch | SSH → git pull → `deploy-db.sh` → `dbmate status` + 函数存在性验证 |
-| deploy-gateway.yml | workflow_dispatch | SSH → git pull → `deploy-gateway.sh` → `setup_apisix.sh` → e2e |
+| deploy-gateway.yml | workflow_dispatch | SSH → git pull → `deploy-gateway.sh` → `init-apisix-routes.sh` → e2e |
 | deploy-infra.yml | workflow_dispatch（mode: all/db/gateway） | SSH → git pull → `deploy-infra.sh <mode> <env>` |
 
 所需 Secrets：`SSH_PRIVATE_KEY`、`DB_SERVER_HOST`、`GATEWAY_SERVER_HOST`、`SERVER_USER`、`DBMATE_DATABASE_URL`、`DB_URI`、`APISIX_ADMIN_KEY`。
 
-> ⚠️ 遗留：ci.yml 中 `syncer-changed` 过滤与 `syncer-check` 任务引用 `db/syncer/`（目录已不存在）；deploy-db.yml 验证查询使用 `api_v1_sys`（对外暴露层为多 schema：api_v1_public / api_v1_sales / api_v1_inventory，api_v1_sys 为遗留空 schema）。这些检查项会失败或失效，属待清理的遗留配置。
+> ✅ 2026-08-19：ci.yml 的 `syncer-changed` 过滤与 `syncer-check` 任务已移除；`infra-check` 只检查唯一 `infra/pigsty.yml`。✅ deploy-db.yml 验证查询已改为 `api_v1_public`（2026-08-19）。
 
 ## 相关页面
 

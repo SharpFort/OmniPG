@@ -67,7 +67,7 @@ Logto（事件源）              APISIX               PostgREST                
 | 兜底对账 | scripts/phase2/reconcile-logto.py（每日 crontab）：Management API 拉全量 → sync_* diff upsert |
 | 重放 | rpc_list_webhook_events（超管查询）+ rpc_replay_webhook_event（超管重放 payload，重新走 webhook_logto 分发） |
 
-> ⚠️ 网关路由注意（目标 vs 现状）：目标路由集（scripts/init-apisix-routes.sh）为 webhook_logto 单独建公开路由（POST /rpc/webhook_logto，priority 95，无 jwt-auth，serverless-pre-function 用 LOGTO_WEBHOOK_SIGNING_KEY 对 rawBody 做 HMAC-SHA256 验签，缺 key fail-closed N15）；而部署链当前调用的 scripts/setup_apisix.sh 仍是 Casdoor 时代路由（/rpc/* 与 /* 全挂 jwt-auth、无 webhook 路由），init-apisix-routes.sh 尚未接入部署链（仅 e2e-test.sh 注释引用）——webhook 可送达的前提是部署侧已按目标路由配置，收敛待办（见 [架构概览](./architecture-overview.md) 的「已知不一致 / 待收敛」与 [Logto webhook](../06-API参考/logto-webhook.md)）。
+> ✅ 2026-08-19：网关路由已统一为 `scripts/init-apisix-routes.sh`——webhook_logto 单独建公开路由（POST /rpc/webhook_logto，priority 95，无 jwt-auth，serverless-pre-function 用 LOGTO_WEBHOOK_SIGNING_KEY 对 rawBody 做 HMAC-SHA256 验签，缺 key fail-closed N15）；Casdoor 时代 setup_apisix.sh 已删除。
 
 ## 数据流 3：菜单 / 角色 / 数据范围权限判定
 

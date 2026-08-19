@@ -12,7 +12,7 @@ bash scripts/deploy-all.sh development
 bash scripts/deploy-infra.sh all development   # 1 基础设施
 bash scripts/deploy-db.sh development          # 2 数据库
 bash scripts/deploy-gateway.sh development     # 3 网关
-bash scripts/setup_apisix.sh                   # 4 APISIX 初始化
+bash scripts/init-apisix-routes.sh               # 4 APISIX 路由初始化（Logto 版）
 bash scripts/e2e-test.sh                       # 5 端到端验收
 ```
 
@@ -23,7 +23,7 @@ bash scripts/e2e-test.sh                       # 5 端到端验收
 | [1/5] 基础设施 | `bash scripts/deploy-infra.sh all $ENV` | 检查 Pigsty 安装/部署日志 |
 | [2/5] 数据库 | `bash scripts/deploy-db.sh $ENV` | 检查 bootstrap/迁移/apply-src 日志 |
 | [3/5] 网关 | `bash scripts/deploy-gateway.sh $ENV` | 检查 docker compose 与健康检查输出 |
-| [4/5] APISIX 初始化 | `cd gateway && bash ../scripts/setup_apisix.sh`（部署链现状，旧脚本；目标为 init-apisix-routes.sh，见下方「网关路由初始化（新旧并存）」） | APISIX Admin API 可达性、`APISIX_ADMIN_KEY` 与 config.yaml 一致、`docker logs app-apisix` |
+| [4/5] APISIX 路由初始化 | `cd gateway && bash ../scripts/init-apisix-routes.sh`（Logto 版，2026-08-19 起唯一部署链入口） | Logto 运行（:3001 JWKS）、`APISIX_ADMIN_KEY` / `LOGTO_WEBHOOK_SIGNING_KEY`、`docker logs app-apisix` |
 | [5/5] E2E 测试 | `bash scripts/e2e-test.sh` | 服务状态与 Logto 登录链路 |
 
 > 注：第 4 步前会 `export $(grep -v '^#' .env | xargs)` 加载 `gateway/.env`（`APISIX_ADMIN_KEY`、`JWKS_JSON` 等）。
@@ -37,7 +37,7 @@ bash scripts/deploy-infra.sh [all|db|gateway] [environment]
 | 步骤 | 动作 | 说明 |
 | --- | --- | --- |
 | [1/5] | 检测/安装 Pigsty | `$HOME/pigsty` 不存在则 `curl https://pigsty.cc/get | bash -s v4.4.0` |
-| [2/5] | 选择配置文件 | all→`infra/pigsty.yml`；db→`infra/pigsty.db.yml`；gateway→`infra/pigsty.gateway.yml` |
+| [2/5] | 复制唯一配置文件 | `infra/pigsty.yml`（唯一 inventory；db/gateway 模式经官方剧本 + `LIMIT` 主机限制） |
 | [3/5] | 复制配置 | pigsty.yml 复制到 `~/pigsty/`；db/all 模式额外复制 `pgbouncer.ini`、`userlist.txt`（/etc/pgbouncer，chmod 640）、`redis.conf`（/etc/redis）；pg_hba 由 pigsty.yml 的 `pg_hba_rules` 生成 |
 | [4/5] | 执行部署 | `~/pigsty/deploy.yml`，随后 `./etcd.yml` |
 | [5/5] | 验证 | PG 5432 / pgBouncer 6432（app_owner 登录）、`redis-cli ping`、etcd `https://127.0.0.1:2379/health` |
@@ -78,12 +78,12 @@ bash scripts/deploy-gateway.sh [environment]
 | 步骤 | 动作 | 说明 |
 | --- | --- | --- |
 | [1/5] | 复制环境配置 | `cp .env.$ENV gateway/.env`（⚠️ 占位符不展开，见 [environment-config.md](environment-config.md)） |
-| [2/5] | 拉取/构建镜像 | `docker compose pull --ignore-pull-failures` + `docker compose build syncer` |
+| [2/5] | 拉取镜像 | `docker compose pull --ignore-pull-failures`（syncer 已退役移除） |
 | [3/5] | 重启服务 | `docker compose down && docker compose up -d` |
 | [4/5] | 等待 | sleep 15 + 加载 gateway/.env |
 | [5/5] | 健康检查 | APISIX `http://localhost:7085/status`、PostgREST `http://localhost:3100/`、Logto `http://localhost:3001/oidc/.well-known/openid-configuration`、Swagger `http://localhost:8082/` |
 
-> ⚠️ 遗留（TODO）：`docker compose build syncer` 引用 compose 中已不存在的 `syncer` 服务（当前服务仅 etcd/apisix/postgrest/swagger-ui/logto），该步会报错；健康检查里 `policy-syncer` 容器检查同样失效。运行前需移除该行（或忽略构建失败）。
+> ✅ 2026-08-19：`docker compose build syncer` 与 `policy-syncer` 容器检查已从 deploy-gateway.sh 移除（Syncer 退役）。
 
 ## 网关路由初始化（新旧并存）
 
@@ -101,24 +101,25 @@ bash scripts/deploy-gateway.sh [environment]
 
 同时写入 RS256 + Logto JWKS 的 `plugin_metadata/jwt-auth` 与全局 CORS（global_rules/1）。执行：`bash scripts/init-apisix-routes.sh`（需 `gateway/.env` 的 `APISIX_ADMIN_KEY` 与 `LOGTO_WEBHOOK_SIGNING_KEY`，后者缺失 fail-closed `exit 1`）。完整路由表与优先级说明见 [网关路由](../06-API参考/gateway-routing.md)。
 
-> ⚠️ **已知不一致 / 待收敛**：`setup_apisix.sh` 与 `gateway/apisix/apisix.yaml` 仍是 Casdoor 时代残留（standalone 留档，不再加载）；`init-apisix-routes.sh` 目前**未接入** Makefile / deploy-all / deploy-gateway / deploy-gateway.yml（仅 e2e-test.sh 注释提及），属“预期新脚本、尚未接线”——部署链仍调用下方旧脚本。详见 [网关路由](../06-API参考/gateway-routing.md) 的「已知不一致 / 待收敛（新旧并存）」与 [测试体系总览](../07-测试/testing-overview.md)。
+> ✅ 2026-08-19 已收敛：`setup_apisix.sh` 与 `apisix.yaml`（Casdoor 时代残留）已删除，部署链（Makefile / deploy-all / deploy-gateway / deploy-gateway.yml）统一为 `init-apisix-routes.sh`。详见 [网关路由](../06-API参考/gateway-routing.md)。
 
-### setup_apisix.sh（Casdoor 时代旧残留，部署链仍在调用）
+### init-apisix-routes.sh（Logto 版路由初始化，2026-08-19 起唯一部署链入口）
 
 ```bash
-bash scripts/setup_apisix.sh   # 依赖 gateway/.env 的 APISIX_ADMIN_KEY 与 JWKS_JSON，缺任一即退出
+bash scripts/init-apisix-routes.sh   # 依赖 gateway/.env 的 APISIX_ADMIN_KEY 与 LOGTO_WEBHOOK_SIGNING_KEY（缺 signing key 时 webhook 路由 fail-closed）
 ```
 
 | 步骤 | 动作 |
 | --- | --- |
-| [1/4] | 等待 APISIX Status API（http://localhost:7085/status 返回 ok，30 次 × 2s） |
-| [2/4] | PUT `plugin_metadata/jwt-auth`：HS256 + `JWKS_JSON` 的 `k` 字段（base64_secret） |
-| [3/4] | 创建 8 条业务路由（jwks / user_login_sso / refresh_token_rtr / api_v1_public / api_v1_sales / api_v1_inventory / rpc_all / catch_all，均为 Admin API PUT，幂等） |
-| [4/4] | PUT `global_rules/1`：全局 CORS |
+| [0] | 幂等清理 Casdoor 时代旧路由（jwks / user_login_sso / refresh_token_rtr / casdoor_proxy / api_v1_sys / api_v1_sales / api_v1_inventory） |
+| [1] | 等待 APISIX Status API（http://localhost:7085/status 返回 ok，15 次 × 1s） |
+| [2] | 从 Logto OIDC discovery（:3001）拉取 JWKS，PUT `plugin_metadata/jwt-auth`（RS256） |
+| [3] | PUT `global_rules/1`：全局 CORS（含 `logto-signature-sha-256` header） |
+| [4] | 创建 7 条业务路由（logto_jwks / logto_proxy / webhook_logto / ensure_user / api_v1_public / rpc_all / catch_all，均为 Admin API PUT，幂等） |
 
 完成后输出 Dashboard（http://localhost:9180/ui）、Admin API（http://localhost:9180/apisix/admin）、Status API（http://localhost:7085/status）与路由数量。
 
-> ⚠️ 遗留（TODO）：本脚本 jwks 路由的上游仍是 `app-casdoor:8000`，且 `user_login_sso`/`refresh_token_rtr` 为 Casdoor 时代字段名；Logto 架构应改用 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS、`/logto/*` 代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`）。两脚本并存，deploy-all 目前调用的是 setup_apisix.sh。
+> ✅ 2026-08-19：Casdoor 时代 `setup_apisix.sh` 已删除，部署链统一为 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS、`/logto/*` 代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`）。
 
 ## 初始化数据
 
@@ -139,9 +140,9 @@ bash scripts/setup_apisix.sh   # 依赖 gateway/.env 的 APISIX_ADMIN_KEY 与 JW
 bash scripts/verify-stack.sh
 ```
 
-覆盖：依赖预检（docker/curl/psql/python3）、容器→宿主 pgbouncer 网络链路、宿主 pgbouncer（authenticator 登录）、PostgREST OpenAPI、APISIX Status、Dashboard、路由清单（预期 8 条）、登录链路（user_login_sso）、Syncer、无 docker PG 残留。
+覆盖：依赖预检（docker/curl/psql/python3）、容器→宿主 pgbouncer 网络链路、宿主 pgbouncer（authenticator 登录）、PostgREST OpenAPI、APISIX Status、Dashboard、路由清单（预期 7 条，Logto 版）、Logto OIDC Discovery、无 docker PG 残留。
 
-> ⚠️ 遗留：第 4 项 Casdoor（:8000）与第 9 项 Syncer（policy-syncer 容器）在当前 Logto 架构下**必然失败**——以 [e2e-test.sh](../07-测试/e2e-tests.md) 与手工冒烟为准，脚本待更新。
+> ✅ 2026-08-19：verify-stack.sh 已按 Logto 架构重写（Casdoor/Syncer 检查移除，8 项）。
 
 ### verify-fresh-db.sh（全新库冷启动）
 
@@ -149,7 +150,7 @@ bash scripts/verify-stack.sh
 bash scripts/verify-fresh-db.sh [dbname]   # 默认 app_db_verify，参照库 app_db
 ```
 
-8 步：DROP+CREATE scratch 库（WITH FORCE）→ superuser 建扩展（01-extensions）→ 02-schemas + src types → `dbmate up`（--no-dump-schema）→ apply-src 全量 → apply-src 二遍（幂等验证）→ 与参照库结构比对（表/列/约束/种子/函数/视图/触发器/策略/索引，排除 pg_cron）→ pgTAP。
+8 步：DROP+CREATE scratch 库（WITH FORCE）→ superuser 建扩展（内联最小集，权威 = Pigsty infra/*.yml）→ 02-schemas + src types → `dbmate up`（--no-dump-schema）→ apply-src 全量 → apply-src 二遍（幂等验证）→ 与参照库结构比对（表/列/约束/种子/函数/视图/触发器/策略/索引，排除 pg_cron）→ pgTAP。
 
 生产无 sudo 时用 `PG_SUPER_CMD` / `PG_SUPER_POSTGRES_CMD` 覆盖超级用户执行方式。
 
@@ -167,8 +168,8 @@ bash scripts/e2e-test.sh
 | --- | --- | --- |
 | deploy-infra.sh | Pigsty 已安装检测；playbook 可重跑 | 配置变更后重跑会覆盖 `~/pigsty/pigsty.yml` 与 /etc 下配置文件 |
 | deploy-db.sh | bootstrap 全 IF NOT EXISTS；dbmate 跳过已应用；apply-src 全量重放两遍不炸（DDL 均幂等）；§6.3 扫描零容忍 | 迁移若含非幂等 DDL 会在 apply-src 重放时暴露；先 `dbmate status` 确认账本 |
-| deploy-gateway.sh | `down`+`up` 重建容器，环境变量即配置 | `docker compose build syncer` 遗留会失败；healthcheck 中 Syncer 项失效 |
-| setup_apisix.sh | Admin API PUT 幂等（同 id 覆盖） | 与 Logto 版 init-apisix-routes.sh 混用会导致 jwt-auth 元数据/路由互相覆盖，二选一 |
+| deploy-gateway.sh | `down`+`up` 重建容器，环境变量即配置 | ✅ 2026-08-19：syncer build/检查段已移除 |
+| init-apisix-routes.sh | Admin API PUT 幂等（同 id 覆盖），开头清理 Casdoor 时代残留路由 | 唯一路由脚本（2026-08-19 起） |
 | import-*.sh | TRUNCATE 后全量重灌 | 会清空 ip_region_v4 / ip_geolite2_* 再导入，非增量 |
 | verify-fresh-db.sh | scratch 库 DROP+重建 | 参照库 app_db 需与目标版本一致，否则结构比对差异属预期 |
 

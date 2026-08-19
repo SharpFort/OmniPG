@@ -7,7 +7,7 @@
 1. `docker compose ps` 确认容器状态（app-etcd / app-apisix / app-postgrest / app-swagger / app-logto）
 2. `docker compose logs <svc> --tail 50` 看具体报错
 3. 数据库问题查宿主 Pigsty（pg_hba / pgbouncer / userlist）
-4. 网关问题查 `gateway/apisix/config.yaml` 与初始化脚本（`setup_apisix.sh` / `init-apisix-routes.sh`）
+4. 网关问题查 `gateway/apisix/config.yaml` 与路由初始化脚本 `init-apisix-routes.sh`
 5. Logto 问题查 `docker logs app-logto`（db seed / CSP patch / 启动）
 
 ## 1. 端口被占用 / 容器起不来
@@ -110,14 +110,14 @@ curl -s http://localhost:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_K
 #    预期脚本（Logto 路由）：
 bash scripts/init-apisix-routes.sh          # 需要 gateway/.env 含 LOGTO_WEBHOOK_SIGNING_KEY
 #    部署链现状（make dev 自动运行的是旧脚本，见下方警告）：
-# bash scripts/setup_apisix.sh
+# bash scripts/init-apisix-routes.sh
 ```
 
 - 路由存 etcd（traditional 模式，`gateway/apisix/config.yaml`：`config_provider: etcd`）。etcd 未启动/配置不对 → Admin API 报错、路由为空。
-- `gateway/apisix/apisix.yaml` 已不再加载（standalone 遗留，文件头有说明），改它无效。
+- `gateway/apisix/apisix.yaml`（standalone 遗留）已于 2026-08-19 删除，改它无效。
 - 401 全挂通常是 jwt-auth 元数据问题：`gateway/.env` 的 `JWKS_JSON` 不是 Logto JWKS（默认 HS256 dev key 验不了 Logto 签发的 token），或 `APISIX_ADMIN_KEY` 与 compose 不一致。staging/production 的 JWKS 应为 Logto RS256 公钥（compose 与 .env.staging/.production 注释写 ES384，口径不一致——需以 Logto 实际配置核实）。
 
-> ⚠️ **新旧脚本不一致（代码事实，已知问题）**：当前部署链调用的 `scripts/setup_apisix.sh`（`make dev` 自动运行）仍是 **Casdoor 时代旧脚本**——`jwks` 路由指向已不存在的 `app-casdoor:8000`，并包含 `user_login_sso` / `refresh_token_rtr` 等死路由，与 Logto 架构不一致。**预期的新脚本是 `scripts/init-apisix-routes.sh`**（Logto 路由：`logto_jwks` / `logto_proxy` / `webhook_logto` / `ensure_user` / `api_v1_public` / `rpc_all` / `catch_all`），但它**尚未接入部署链**（`make dev` 不会自动运行，需手动执行）。排查路由问题以「检查 APISIX Admin API 中实际路由（http://localhost:9180/ui 或 GET /apisix/admin/routes）→ 重跑路由初始化脚本」为准。
+> ✅ 2026-08-19：部署链（`make dev` 等）已统一为 Logto 版 `scripts/init-apisix-routes.sh`（7 条路由：logto_jwks / logto_proxy / webhook_logto / ensure_user / api_v1_public / rpc_all / catch_all）；Casdoor 时代 `setup_apisix.sh` 已删除。排查路由问题以「检查 APISIX Admin API 中实际路由（http://localhost:9180/ui 或 GET /apisix/admin/routes）→ 重跑 `scripts/init-apisix-routes.sh`」为准。
 
 ## 5. Logto 登录回调 / CORS
 
@@ -156,10 +156,10 @@ Test-NetConnection 127.0.0.1 -Port 6432
 | 项 | 现状 | 影响 |
 | --- | --- | --- |
 | PostgREST 端口 | compose 映射 `3100:3000`，但 `.env.example` 的 `PGRST_PORT=3001` | Swagger `API_URL=http://localhost:${PGRST_PORT:-3001}/` 会打到 Logto（3001）；文档/脚本混用 3001/3100 |
-| `setup_apisix.sh`（部署链） vs `init-apisix-routes.sh`（Logto 版） | 部署链仍调旧脚本（Casdoor 时代：jwks→app-casdoor、user_login_sso/refresh_token_rtr 死路由）；新脚本（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all）尚未接入部署链 | `make dev` 后 Logto 路由不完整，需手动 `init-apisix-routes.sh`；排查先查 Admin API 实际路由 |
-| `verify-stack.sh` | 仍检查 :3001、Casdoor :8000、Syncer 容器 | 全栈验证结果不完全可信，以 `e2e-test.sh` 为准 |
+| ~~`setup_apisix.sh`~~ | Casdoor 时代旧脚本 | 2026-08-19 已删除，部署链统一 `init-apisix-routes.sh`（7 条 Logto 路由） |
+| `verify-stack.sh` | 8 项检查（2026-08-19 更新：无 Casdoor/Syncer，路由预期 7 条，Logto OIDC） | ✅ 现行 |
 | `gateway/.env.example` | 缺 `LOGTO_DB_PASSWORD` / `LOGTO_WEBHOOK_SIGNING_KEY` | 复制后直接跑 `init-apisix-routes.sh` 会 fail-closed；Logto DB 密码用 compose 默认值 `logto_dev_pass_2026` |
-| `start.sh` / `stop.sh` 输出 | 仍打印 Casdoor/Syncer 字样 | 仅提示信息，不影响功能 |
+| `start.sh` / `stop.sh` 输出 | 已更新（Casdoor→Logto 3001/3002，无 Syncer） | ✅ 现行 |
 
 ---
 
