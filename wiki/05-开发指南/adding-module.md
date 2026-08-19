@@ -52,7 +52,7 @@ db/
 │       ├── functions/                  #    模块内部函数（schema <module>）
 │       ├── triggers/                   #    CREATE TRIGGER
 │       ├── views/                      #    内部视图（非对外）
-│       ├── templates/                  #    审计字段模板参考（按需）
+│       ├── templates/                  #    审计字段模板参考（按需，详见 [审计字段模板参考](audit-fields-reference.md)）
 │       └── privileges/                 #    RLS 策略集中清单
 │           └── rls_policies.sql
 ├── api_v1/

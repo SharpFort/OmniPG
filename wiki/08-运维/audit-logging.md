@@ -169,4 +169,4 @@ public.webhook_event_log（id uuidv7、hook_id、event、logto_created、payload
 3. **流式对接**：若需实时，可基于表上的触发器把变更写入 pg_net 回调（pg_net 已装，注意 SSRF 风险面：net schema 已 REVOKE 给 authenticated，调用必须经 SECURITY DEFINER 封装）或外部 WAL 捕获工具。
 4. **告警联动**：webhook_event_log.result='error' 与 login_log 失败次数可在 Grafana/Pigsty 监控上做指标（Grafana 已由 Pigsty 提供，端口 3000）。
 
-> 参考：[安全设计](security.md) · [RPC 参考](../06-API参考/rpc-reference.md) · [Logto Webhook](../06-API参考/logto-webhook.md) · [迁移指南](../05-开发指南/migrations.md) · [生产问题排查](production-troubleshooting.md)
+> 参考：[安全设计](security.md) · [RPC 参考](../06-API参考/rpc-reference.md) · [Logto Webhook](../06-API参考/logto-webhook.md) · [迁移指南](../05-开发指南/migrations.md) · [审计字段模板参考](../05-开发指南/audit-fields-reference.md) · [生产问题排查](production-troubleshooting.md)
