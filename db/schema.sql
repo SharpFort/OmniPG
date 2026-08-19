@@ -106,18 +106,6 @@ CREATE EXTENSION IF NOT EXISTS pg_graphql WITH SCHEMA graphql;
 COMMENT ON EXTENSION pg_graphql IS 'pg_graphql: GraphQL support';
 
 
---
--- Name: pg_pwhash; Type: EXTENSION; Schema: -; Owner: -
---
-
-CREATE EXTENSION IF NOT EXISTS pg_pwhash WITH SCHEMA public;
-
-
---
--- Name: EXTENSION pg_pwhash; Type: COMMENT; Schema: -; Owner: -
---
-
-COMMENT ON EXTENSION pg_pwhash IS 'pg_pwhash - An extension for advanced password hashing';
 
 
 --
@@ -2664,22 +2652,6 @@ $$;
 COMMENT ON FUNCTION public.derive_route_name(p_router text) IS '路由名称推导（056 B2：router 末段首字母大写，如 /system/user→User；仿 SharpFort/vue-element-admin 惯例；p_router 为 NULL 或末段为空返回 NULL）';
 
 
---
--- Name: generate_user_password(text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.generate_user_password(p_password text) RETURNS text
-    LANGUAGE sql STRICT
-    AS $$
-    SELECT pwhash_crypt(p_password, pwhash_gen_salt('argon2id'));
-$$;
-
-
---
--- Name: FUNCTION generate_user_password(p_password text); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.generate_user_password(p_password text) IS '使用 Argon2id 算法生成密码哈希。用于创建用户时自动生成 password_hash';
 
 
 --

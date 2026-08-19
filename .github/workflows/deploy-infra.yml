@@ -47,6 +47,6 @@ jobs:
             git checkout ${{ github.ref_name }}
             git pull origin ${{ github.ref_name }}
             
-            # 使用部署脚本
-            bash scripts/deploy-infra.sh ${{ inputs.mode }} ${{ inputs.environment }}
+            # 使用部署脚本（2026-08-19 方案 A：单文件 inventory；LIMIT 传本机 IP 供 -l 主机限制）
+            LIMIT=$SERVER_HOST bash scripts/deploy-infra.sh ${{ inputs.mode }} ${{ inputs.environment }}
           EOF

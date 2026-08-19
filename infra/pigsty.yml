@@ -1,3 +1,14 @@
+# =============================================================================
+# OmniPG 统一 Pigsty 配置（唯一 inventory，官方单文件模型，2026-08-19 方案 A 定稿）
+#   - 单机 Phase 1：所有组指向 127.0.0.1，./install.yml / ./deploy.yml 全量部署
+#   - 多机 Phase 2：各组 hosts 填不同服务器 IP，按官方剧本 + -l 主机限制分角色部署
+#     （db → pgsql/infra/etcd/vibe；gateway → node/docker/redis）
+#   官方文档: 配置清单 https://doc.pigsty.cc/docs/concept/iac/inventory/
+#            剧本列表 http://pigsty.cc/docs/ref/playbook/
+#            生产安装 https://doc.pigsty.io/docs/deploy/install/
+#   pgaudit/pgsodium 已于 2026-08-19 移除；pg_pwhash 已于 2026-08-19 退役
+#   已废弃: infra/pigsty.db.yml / infra/pigsty.gateway.yml（2026-08-19 合并删除）
+# =============================================================================
 all:
 
   children:
@@ -9,9 +20,7 @@ all:
         pg_cluster: pg_omnipg
         pg_extensions:
           - pgcrypto
-          - pgsodium
           - pg_net
-          - pgaudit
           - pgtap
           - pg_graphql
           - pg_cron
@@ -43,9 +52,7 @@ all:
             comment: 'OmniPG main database'
             extensions:
               - { name: pgcrypto }
-              - { name: pgsodium }
               - { name: pg_net }
-              - { name: pgaudit }
               - { name: pgtap }
               - { name: pg_graphql }
               - { name: pg_cron }
@@ -85,6 +92,12 @@ all:
             address: 172.20.0.0/16
             method: scram-sha-256
             comment: 'Docker app-net'
+          - type: host
+            database: all
+            user: all
+            address: 10.0.0.0/8
+            method: scram-sha-256
+            comment: '内网 (Phase 2)'
 
     infra:
       hosts:
@@ -150,7 +163,8 @@ all:
     node_etc_hosts: ['${admin_ip} i.pigsty sss.pigsty']
     node_repo_modules: 'node,infra,pgsql'
     node_repo_remove: true
-    node_firewall_public_port: [22, 80, 443, 5432, 3000, 9080, 9443, 9180, 8000, 8082, 6379]
+    # Phase 1 单机全栈 + Phase 2 分离（db: 6432/8428/2379；gw: 9080/9443/9180/8000/8082/6379）端口并集
+    node_firewall_public_port: [22, 80, 443, 5432, 6432, 3000, 8428, 2379, 9080, 9443, 9180, 8000, 8082, 6379]
 
     pg_version: 18
     pg_locale: C.UTF-8

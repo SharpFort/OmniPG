@@ -1,17 +1,21 @@
 #!/bin/bash
 # =============================================================================
-# 基础设施部署脚本
-# 用法: 
-#   首次部署: ./scripts/deploy-infra.sh <environment>
-#   Phase 2 DB: ./scripts/deploy-infra.sh db <environment>
-#   Phase 2 GW: ./scripts/deploy-infra.sh gateway <environment>
-# 示例: ./scripts/deploy-infra.sh development
+# 基础设施部署脚本（2026-08-19 方案 A：单文件 pigsty.yml + 官方多剧本模式）
+# 用法:
+#   ./scripts/deploy-infra.sh all <environment>        # Phase 1 单机全栈
+#   ./scripts/deploy-infra.sh db <environment>         # Phase 2 DB 服务器（pgsql/infra/etcd/vibe）
+#   ./scripts/deploy-infra.sh gateway <environment>    # Phase 2 网关服务器（node/docker/redis）
+# 多机部署时用 LIMIT 环境变量指定本机 IP（ansible -l 主机限制，默认 127.0.0.1）：
+#   LIMIT=10.0.0.10 ./scripts/deploy-infra.sh db production
+# 参考: 剧本列表 http://pigsty.cc/docs/ref/playbook/ ·
+#       配置清单 https://doc.pigsty.cc/docs/concept/iac/inventory/
 # =============================================================================
 
 set -euo pipefail
 
 MODE=${1:-all}  # all, db, gateway
 ENV=${2:-development}
+LIMIT=${LIMIT:-127.0.0.1}  # 多机部署时传本机 IP（ansible -l 主机限制）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -40,33 +44,17 @@ else
     echo "  ✅ Pigsty 下载完成"
 fi
 
-# 2. 选择配置文件
+# 2. 复制唯一配置文件（方案 A：官方单文件 inventory；pigsty.db.yml / pigsty.gateway.yml
+#    已于 2026-08-19 合并删除，多角色通过官方剧本 + -l 主机限制表达）
 echo ""
-echo "[2/5] 选择配置文件..."
-case "$MODE" in
-    db)
-        CONFIG_FILE="$PROJECT_DIR/infra/pigsty.db.yml"
-        echo "  使用 DB 服务器配置: pigsty.db.yml"
-        ;;
-    gateway)
-        CONFIG_FILE="$PROJECT_DIR/infra/pigsty.gateway.yml"
-        echo "  使用网关服务器配置: pigsty.gateway.yml"
-        ;;
-    all)
-        CONFIG_FILE="$PROJECT_DIR/infra/pigsty.yml"
-        echo "  使用单机完整配置: pigsty.yml"
-        ;;
-    *)
-        echo "  ❌ 未知模式: $MODE (可选: all, db, gateway)"
-        exit 1
-        ;;
-esac
-
-# 3. 复制配置文件
-echo ""
-echo "[3/5] 复制配置文件..."
+echo "[2/5] 复制唯一配置文件（infra/pigsty.yml）..."
+CONFIG_FILE="$PROJECT_DIR/infra/pigsty.yml"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "  ❌ 配置文件缺失: $CONFIG_FILE"
+    exit 1
+fi
 cp "$CONFIG_FILE" "$HOME/pigsty/pigsty.yml"
-echo "  ✅ pigsty.yml 已复制"
+echo "  ✅ pigsty.yml 已复制（唯一 inventory）"
 
 # 根据模式复制额外配置文件
 if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
@@ -88,23 +76,51 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
     fi
 fi
 
-# 4. 执行 Pigsty 部署
+# 4. 执行官方剧本（单文件 inventory + ansible 主机限制）
 echo ""
-echo "[4/5] 执行 Pigsty 部署..."
+echo "[4/5] 执行 Pigsty 官方剧本（模式: $MODE, LIMIT: $LIMIT）..."
 cd "$HOME/pigsty"
-if [ -f "./deploy.yml" ]; then
-    ./deploy.yml
-    echo "  ✅ deploy.yml 执行完成"
-else
-    echo "  ❌ deploy.yml 不存在"
-    exit 1
-fi
-
-# 部署 etcd
-if [ -f "./etcd.yml" ]; then
-    ./etcd.yml
-    echo "  ✅ etcd.yml 执行完成"
-fi
+case "$MODE" in
+    all)
+        if [ -f "./deploy.yml" ]; then
+            ./deploy.yml && echo "  ✅ deploy.yml 执行完成"
+        elif [ -f "./install.yml" ]; then
+            ./install.yml && echo "  ✅ install.yml 执行完成"
+        else
+            echo "  ❌ 未找到 deploy.yml / install.yml"
+            exit 1
+        fi
+        if [ -f "./etcd.yml" ]; then
+            ./etcd.yml && echo "  ✅ etcd.yml 执行完成"
+        fi
+        ;;
+    db)
+        for pb in pgsql.yml infra.yml etcd.yml vibe.yml; do
+            if [ -f "./$pb" ]; then
+                echo "  ▶ $pb -l $LIMIT ..."
+                ./$pb -l "$LIMIT"
+                echo "  ✅ $pb 执行完成"
+            else
+                echo "  ⚠️ $pb 不存在，跳过"
+            fi
+        done
+        ;;
+    gateway)
+        for pb in node.yml docker.yml redis.yml; do
+            if [ -f "./$pb" ]; then
+                echo "  ▶ $pb -l $LIMIT ..."
+                ./$pb -l "$LIMIT"
+                echo "  ✅ $pb 执行完成"
+            else
+                echo "  ⚠️ $pb 不存在，跳过"
+            fi
+        done
+        ;;
+    *)
+        echo "  ❌ 未知模式: $MODE (可选: all, db, gateway)"
+        exit 1
+        ;;
+esac
 
 # 5. 验证服务
 echo ""

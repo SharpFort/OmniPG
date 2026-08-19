@@ -6,7 +6,7 @@
 #   默认 scratch 库名: app_db_verify（保留复用，每次验证 DROP+重建）
 # 流程:
 #   [1] DROP+CREATE scratch 库（WITH FORCE 终止残留会话）
-#   [2] superuser 建扩展（01-extensions.sql：pg_pwhash/pgcrypto/pg_net/pgtap）
+#   [2] superuser 建扩展（内联最小集：pgcrypto/pg_net/pgtap；权威 = Pigsty infra/*.yml）
 #   [3] app_owner: 02-schemas.sql + src types（枚举前置，bootstrap 子集）
 #   [4] dbmate up（064-066 基线）
 #   [5] apply-src 全量（幂等重放，含 §6.3 扫描）
@@ -39,9 +39,15 @@ $SUPER_POSTGRES_CMD -q -c "DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE);"
 $SUPER_POSTGRES_CMD -q -c "CREATE DATABASE ${DB_NAME} OWNER app_owner;"
 
 # [2] superuser 建扩展（app_owner 非超管，CREATE EXTENSION 须超级用户）
+#   扩展权威 = Pigsty（infra/pigsty.yml：pg_extensions + pg_databases[].extensions）；
+#   旧的扩展引导文件已于 2026-08-19 移除，此处内联最小集仅供本地验证环境兜底
 echo ""
-echo "[2/8] superuser 建扩展（01-extensions）..."
-$SUPER_CMD -q -v ON_ERROR_STOP=1 -f "$REPO_DIR/db/init/01-extensions.sql"
+echo "[2/8] superuser 建扩展（内联最小集，权威 = Pigsty）..."
+$SUPER_CMD -q -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_net";
+CREATE EXTENSION IF NOT EXISTS "pgtap";
+SQL
 
 # [3] bootstrap 子集（02-schemas + src types）
 echo ""

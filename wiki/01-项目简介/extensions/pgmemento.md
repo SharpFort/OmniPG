@@ -1,0 +1,31 @@
+# pgmemento 扩展说明
+
+## 扩展信息
+
+| 项目 | 内容 |
+|:---|:---|
+| **扩展名称** | pgmemento |
+| **用途** | 表变更审计与时间旅行（P1 试点） |
+| **安装方式** | Pigsty 包安装（`pg_extensions`）+ 数据库启用（`pg_databases[].extensions`） |
+| **Pigsty 扩展页** | [pgmemento](https://pigsty.cc/ext/e/pgmemento/) |
+
+## 版本信息
+
+- **Pigsty 版本**: 随 Pigsty v4.4.0 扩展源安装；实际版本以 `pg_available_extensions` 查询为准
+- **声明位置**: `infra/pigsty.yml`
+
+## 主要功能
+
+1. 基于事件触发器记录表级变更历史，支持按时间点回放/查询历史状态（审计 schema）；
+2. P1 试点：审计时间旅行能力评估。
+
+## 注意事项
+
+- **自带审计体系**：pgmemento 通过事件触发器 + 审计 schema 记录变更，与项目自建 `audit_log` 表体系（`write_audit_log` / `audit_trigger_func`）并存会产生**双重审计**——试点时须明确边界（按表/按库启用范围）；
+- 事件触发器对全库 DDL/DML 有性能与行为影响，启用范围需谨慎；
+- 退役时需按官方流程卸载（事件触发器 + 审计 schema）。
+
+## 相关文件
+
+- 声明配置: `infra/pigsty.yml`
+- 项目自建审计: `db/src/public/functions/write_audit_log.sql`、`audit_trigger_func.sql`

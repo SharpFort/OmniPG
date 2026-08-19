@@ -6,12 +6,13 @@
 |:---|:---|
 | **扩展名称** | pgtap |
 | **用途** | PostgreSQL 数据库单元测试框架 |
-| **安装方式** | Pigsty 预装（仅测试/CI 环境） |
+| **安装方式** | Pigsty 包安装（`pg_extensions`）+ 数据库启用（`pg_databases[].extensions`，仅测试/CI 环境启用） |
+| **Pigsty 扩展页** | [pgtap](https://pigsty.cc/ext/e/pgtap/) |
 
 ## 版本信息
 
-- **Pigsty 预装版本**: 随 PostgreSQL 18 自带（测试/CI 环境）
-- **迁移文件启用**: 仅测试环境通过 `DBMATE_ENV=test` 条件加载
+- **Pigsty 版本**: 随 Pigsty v4.4.0 扩展源安装；实际版本以 `pg_available_extensions` 查询为准
+- **声明位置**: `infra/pigsty.yml`（`pg_extensions` + `pg_databases[].extensions`）
 
 ## 环境隔离策略
 
@@ -24,9 +25,10 @@
 
 ## 启用方式
 
+由 Pigsty 在数据库层创建（`pg_databases[].extensions` 含 pgtap 时自动执行 CREATE EXTENSION）；检查是否已启用：
+
 ```sql
--- 仅限测试环境执行（通过 DBMATE_ENV=test 条件加载）
-CREATE EXTENSION IF NOT EXISTS pgtap;
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pgtap';
 ```
 
 ## 相关文件

@@ -1,6 +1,6 @@
 -- 02_function_test.sql：函数行为测试（T7 更新：Logto claims 语义）
 BEGIN;
-SELECT plan(13);
+SELECT plan(11);
 
 -- sha256 函数测试（pgcrypto 内置，语言 internal）
 SELECT is(encode(sha256('hello'::bytea), 'hex'), encode(digest('hello', 'sha256'), 'hex'), 'sha256 正确计算');
@@ -22,10 +22,6 @@ SELECT has_function('audit_trigger_func');
 SELECT has_function('is_super_admin');
 SELECT function_lang_is('is_super_admin', 'sql');
 SELECT is(is_super_admin(), false, '无 JWT 时非超管');
-
--- pg_pwhash 函数
-SELECT has_function('pwhash_crypt');
-SELECT has_function('pwhash_gen_salt');
 
 SELECT * FROM finish();
 ROLLBACK;
