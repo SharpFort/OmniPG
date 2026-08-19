@@ -1,0 +1,32 @@
+name: Publish wiki
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'wiki/**'
+      - 'scripts/flatten_wiki.py'
+      - '.github/workflows/wiki-sync.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish-wiki
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 拍平 wiki（GitHub Wiki 不支持子目录）
+        run: python3 scripts/flatten_wiki.py wiki-flat
+
+      - name: 同步到 GitHub Wiki 仓库
+        uses: Andrew-Chen-Wang/github-wiki-action@v5
+        with:
+          path: wiki-flat
+          disable-empty-commits: true

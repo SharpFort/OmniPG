@@ -16,3 +16,6 @@ scripts/verify-webhook/out/
 
 # 本机 WSL/DSH 环境配置（个人环境，不入库）
 wsl-setup/
+
+# wiki 拍平输出（CI 临时生成，不入库）
+wiki-flat/
