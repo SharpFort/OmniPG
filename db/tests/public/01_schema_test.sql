@@ -1,6 +1,6 @@
 -- 01_schema_test.sql：表/列/约束存在性验证（T7 重写：Logto 镜像表 + 自主表；055 单表化调整）
 BEGIN;
-SELECT plan(63);
+SELECT plan(64);
 
 -- 1. 表存在性（12 张：镜像表 + 自主表 + 业务表；055: iam_api/iam_role_api 已删除 → hasnt_table）
 SELECT has_table('users');
@@ -98,6 +98,7 @@ SELECT ok(
     'api_v1_public.users 视图存在');
 
 SELECT has_view('casbin_rule');
+SELECT has_view('sys_user', 'public.sys_user 兼容视图存在');
 
 SELECT * FROM finish();
 ROLLBACK;

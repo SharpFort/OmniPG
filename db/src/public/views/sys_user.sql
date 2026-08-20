@@ -1,5 +1,8 @@
 -- src/public/views/sys_user.sql
--- VIEW: public.sys_user（17 号文档归位：迁移 012_sys_user_profile_logto.sql 删定义段，本文件为唯一权威）
+-- VIEW: public.sys_user —— 兼容视图（保留历史命名，非 sys 模块/非物理表）
+--   数据源 = public.users（Logto 镜像）+ public.user_profile（业务档案）
+--   对外请用 api_v1_public.users；本视图仅供历史查询兼容
+-- 17 号文档归位：迁移 012_sys_user_profile_logto.sql 删定义段，本文件为唯一权威
 -- 回放终态: 012_sys_user_profile_logto.sql；幂等写法（§9 模板）
 -- 061（2026-08-15）: 镜像表清理后列集保持稳定——updated_at 映射 logto_updated_at（同步水位），
 --   deleted_at/_by 恒 NULL（镜像表无软删/无 _by，兼容旧查询）
