@@ -27,9 +27,9 @@ LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
 
 def flat_name(rel: str) -> str:
-    """wiki-relative path -> 平铺页面名（不含扩展名；Home.md 固定为 Home）"""
+    """wiki-relative path -> 平铺页面名（不含扩展名；Home.md / 首页.md 固定为 Home）"""
     rel = rel.replace("\\", "/")
-    if rel == "Home.md":
+    if rel in ("Home.md", "首页.md"):
         return "Home"
     base, _ext = os.path.splitext(rel)
     return base.replace("/", "-")
@@ -46,7 +46,7 @@ def main() -> int:
             d = os.path.dirname(rel) or ""
             if d:
                 dirs.add(d)
-            if f == "Home.md":
+            if f in ("Home.md", "首页.md"):
                 pages[rel] = "Home"
             elif f.endswith(".md"):
                 pages[rel] = flat_name(rel)

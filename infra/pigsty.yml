@@ -17,7 +17,7 @@
 #     ⑤ 生产密码一致性 = CI 渲染（.env / pigsty.yml / userlist.txt 三处一致）+ GitHub Secrets
 #     ⑥ DNS 域名按环境区分（如 i.staging.pigsty / i.prod.pigsty）
 #     ⑦ 版本口径以仓库锁定版本为准（Pigsty v4.4.0）；pigsty.cc 在线文档可能更新（v4.5），机制通用
-#   多机拓扑与 CI/CD 演进说明：wiki/03-部署指南/multi-node-cicd-evolution.md
+#   多机拓扑与 CI/CD 演进说明：wiki/03-部署指南/多节点与CICD演进.md
 #   渲染说明：本文件为 development/单机字面值；staging/production 由 scripts/render-config.sh
 #             使用 infra/pigsty.yml.tpl + infra/userlist.txt.tpl 渲染（三处一致：.env / pigsty.yml / userlist.txt）
 # =============================================================================
@@ -185,7 +185,7 @@ all:
     node_repo_remove: true
     # Phase 1 单机全栈 + Phase 2 分离（db: 6432/8428/2379；gw: 9080/9180/8082/6379）端口并集
     # 2026-08-20 端口收敛：9080 为唯一对外端口；9180 仅内网管理（按内网来源放行）；9443 已从列表移除（预留，不映射）
-    # 2026-08-20 决策：单机阶段保留并集；分机后按角色组 vars 收敛（见 wiki/03-部署指南/multi-node-cicd-evolution.md §5.4）
+    # 2026-08-20 决策：单机阶段保留并集；分机后按角色组 vars 收敛（见 wiki/03-部署指南/多节点与CICD演进.md §5.4）
     node_firewall_public_port: [22, 80, 443, 5432, 6432, 3000, 8428, 2379, 9080, 9180, 8000, 8082, 6379]
 
     pg_version: 18

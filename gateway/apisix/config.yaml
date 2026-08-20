@@ -5,7 +5,7 @@
 #               新增: 内置 Dashboard UI / Status API(7085) / Control API(9092)
 #   2026-08-20 端口收敛: Control API 改绑 127.0.0.1；allow_admin 收窄为私网段（仅内网管理）
 #   配套文档: docs/审查文档/21-APISIX全栈部署可行性分析-网关AdminAPI与Dashboard.md
-#              wiki/08-运维/apisix-port-hardening.md
+#              wiki/08-运维/APISIX端口收敛.md
 #   路由管理: 不再读取 apisix.yaml，由 Admin API 管理（scripts/init-apisix-routes.sh 初始化，2026-08-19 起）
 # =============================================================================
 apisix:

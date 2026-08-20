@@ -31,7 +31,7 @@ jobs:
             extensions:
               - 'infra/**'
               - 'db/init/**'
-              - 'wiki/01-项目简介/extensions/**'
+              - 'wiki/01-项目简介/扩展/**'
               - 'scripts/check-extensions.sh'
 
   db-lint:
