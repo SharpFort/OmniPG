@@ -1,6 +1,6 @@
 # 模块划分
 
-> 本章按数据库 schema 划分模块边界：public 承载核心业务与授权，对外暴露层为多 schema（api_v1_public 现行 + api_v1_sales / api_v1_inventory 声明/退役），extensions（net/cron 等）是扩展宿主。表/对象清单以 db/ 下实际 SQL 为准。
+> 本章按数据库 schema 划分模块边界：public 承载核心业务与授权，对外暴露层为单 schema `api_v1_public`（sales/inventory 测试域已退役、占位目录已清理），extensions（net/cron 等）是扩展宿主。表/对象清单以 db/ 下实际 SQL 为准。
 
 ## schema 一览
 

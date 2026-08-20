@@ -31,7 +31,7 @@
 当前代码落地规模（以 `db/` 实际 SQL 为准）：
 
 - 表结构：`064_v010_mirror_tables.sql`（6 张 Logto 镜像表）+ `065_v010_baseline.sql`（18 张业务表），共 24 张；
-- 对外暴露：`db/api_v1/` 含 `_shared` / `inventory`（空目录） / `public`（当前有效暴露代码），`public` 下 **44 个 RPC**、**29 个视图**（v0.1.0 基线，文件数核实）；
+- 对外暴露：`db/api_v1/` 含 `_shared`（空） / `public`（当前有效暴露代码），`public` 下 **44 个 RPC**、**29 个视图**（v0.1.0 基线，文件数核实）；
 - 库内逻辑：`db/src/public/functions/` 37 个函数、10 个触发器、RLS 策略全表启用（`db/src/public/privileges/rls_policies.sql`）。
 
 ## 演进历史

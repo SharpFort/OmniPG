@@ -1,6 +1,6 @@
 # 仓库目录地图
 
-> 定位：OmniPG 仓库各目录职责速查。事实以当前 master 分支工作区为准（2026-08-18 核对）。
+> 定位：OmniPG 仓库各目录职责速查。事实以当前 master 分支工作区为准（2026-08-20 核对）。
 
 ## 顶层速查
 
@@ -24,10 +24,8 @@
 | 子目录/文件 | 职责 | 关键内容 |
 | --- | --- | --- |
 | `migrations/public/` | 表结构与数据迁移（dbmate） | 当前仅基线 `064_v010_mirror_tables.sql`（6 张镜像表）、`065_v010_baseline.sql`（18 张业务表）、`066_v010_seed_data.sql`（80 行种子）；新迁移从 067 起 |
-| `migrations/inventory`、`sales` | 历史模块迁移目录（暂空） | 测试模块已退役 |
 | `src/public/` | public schema 幂等源码（**代码对象唯一权威**） | `functions/`(37)、`triggers/`(10)、`views/`(2 兼容视图)、`types/`(5 枚举)、`templates/`(审计字段模板)、`privileges/`(rls_policies.sql) |
-| `api_v1/` | 对外暴露层（运行态单 schema `api_v1_public`，compose 权威） | Schema 布局 = public / api_v1_public / api_v1_sys（027 兼容，新代码不用）/ net（pg_net 宿主），**无 extensions schema**；目录：`_shared/`(空)、`inventory/`(空 rpc 占位)、`public/`(views 29 / rpc 44 / privileges/zz_grant_all.sql GRANT 集中地)；api_v1_sales/api_v1_inventory 仅存在于 postgrest.conf 参考配置与历史空目录（2026-08-15 退役） |
-| `api_1_sys` / `api_1_sales` / `api_1_inventory` | 历史空目录（rpc/views 子目录占位） | 已废弃，勿使用 |
+| `api_v1/` | 对外暴露层（运行态单 schema `api_v1_public`，compose 权威） | Schema 布局 = public / api_v1_public / api_v1_sys（027 兼容，新代码不用）/ net（pg_net 宿主），**无 extensions schema**；目录：`_shared/`(空，跨模块共享前缀)、`public/`(views 29 / rpc 44 / privileges/zz_grant_all.sql GRANT 集中地)；sales/inventory 测试模块已退役（2026-08-15），占位目录与 postgrest.conf 声明已于 2026-08-19 清理 |
 | `init/` | 初始化脚本（bootstrap 阶段） | `02-schemas.sql`（api_v1_public/api_v1_sys/net schema + 角色授权说明）；扩展已移交 Pigsty 管理（`db/init/01-extensions.sql` 2026-08-19 移除，权威见 infra/pigsty.yml） |
 | `tests/public/` | pgTAP 测试 | `01_schema_test.sql`、`02_function_test.sql`、`03_trigger_test.sql`、`05_rls_test.sql`、`test_casbin_view.sql`、`test_rls_isolation.sql` |
 | ~~`extensions/`~~ | 扩展说明（2026-08-19 已迁移至 [wiki/01-项目简介/extensions/](../01-项目简介/extensions/)） | 不再位于 db/ 下 |
@@ -41,7 +39,7 @@
 | `docker-compose.yml` | 五服务编排：etcd(app-etcd)、apisix(app-apisix)、postgrest(app-postgrest)、swagger-ui(app-swagger)、logto(app-logto) | 网络 `app-net`（172.20.0.0/16）；数据库走 `host.docker.internal` 连 Pigsty pgBouncer（6432/5433） |
 | `apisix/config.yaml` | APISIX traditional 模式配置（etcd 存储 + Admin API + Dashboard） | Admin API 9180、Status 7085、Control 9092 |
 | ~~`apisix/apisix.yaml`~~ | standalone 模式路由过时残留 | 2026-08-19 已删除 |
-| `postgrest/postgrest.conf` | PostgREST **参考文件**（与运行态不一致） | `db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"`（多 schema 列表，api_v1_sales/inventory 已退役）；运行态权威 = compose 环境变量（`PGRST_DB_SCHEMAS: api_v1_public`、`jwt-role-claim-key: .pg_role`） |
+| `postgrest/postgrest.conf` | PostgREST **参考文件**（2026-08-19 已与 compose 运行态对齐） | `db-schemas = "api_v1_public"`（单 schema）、`jwt-role-claim-key = .pg_role`、无 pre-request；运行态权威 = compose 环境变量（`PGRST_DB_SCHEMAS: api_v1_public`） |
 | `logto-csp-patch.js` | Logto CSP frame-ancestors 补丁（启动时注入） | 供 OmniAdmin 3006/3007 嵌入登录页 |
 | `.env.example` | 网关环境变量模板 | `APISIX_ADMIN_KEY`、`JWKS_JSON`、`AUTHENTICATOR_PASSWORD`、`LOGTO_DB_PASSWORD` 等 |
 
@@ -49,7 +47,7 @@
 
 组件版本：Pigsty v4.4.0 · PostgreSQL 18 · PostgREST v14.15（postgrest/postgrest:v14.15）· APISIX 3.17.0（apache/apisix:3.17.0-debian）· etcd 3.5.11（bitnamilegacy/etcd:3.5.11）· Logto OSS v1.42（compose 镜像 latest）· Swagger UI v5.2.0 · dbmate · pgTAP · GitHub Actions。
 
-**已知不一致 / 待收敛**：① 路由——`setup_apisix.sh`（部署链在用）与 `apisix.yaml`（留档）仍是 Casdoor 时代路由；Logto 时代目标路由（7 条）在 `scripts/init-apisix-routes.sh`（未接入部署链）；api_v1_sales/inventory 路由 2026-08-15 已退役。② Schema——postgrest.conf 参考配置声明多 schema（api_v1_public/api_v1_sales/api_v1_inventory），compose 运行态权威为单 schema api_v1_public。③ JWT 算法——开发 HS256，staging/production 指向 Logto JWKS（init-apisix-routes.sh 用 RS256；compose/.env 注释写 ES384，需以 Logto 实际配置核实）。④ CI——ci.yml 的 syncer-check 作业与 deploy-gateway.sh 的 syncer build 段为历史遗留（Go syncer 已退役，db/syncer 不存在）。详细路由集见 [../06-API参考/gateway-routing.md](../06-API参考/gateway-routing.md)（该页应以此为准）。
+**已知不一致 / 待收敛**：① 路由——Casdoor 时代的 `setup_apisix.sh` 与 `apisix.yaml` 已于 2026-08-19 删除；Logto 时代目标路由（7 条）在 `scripts/init-apisix-routes.sh`（部署链唯一入口）；api_v1_sales/inventory 路由 2026-08-15 已退役（脚本第 0 步幂等清理残留）。② Schema——postgrest.conf 参考配置已于 2026-08-19 对齐 compose 运行态（单 schema api_v1_public、`.pg_role`、无 pre-request），多 schema 不一致已消除。③ JWT 算法——开发 HS256，staging/production 指向 Logto JWKS（init-apisix-routes.sh 用 RS256；compose/.env 注释写 ES384，需以 Logto 实际配置核实）。④ CI——ci.yml 的 syncer-check 作业与 deploy-gateway.sh 的 syncer build 段为历史遗留（Go syncer 已退役，db/syncer 不存在）。详细路由集见 [../06-API参考/gateway-routing.md](../06-API参考/gateway-routing.md)（该页应以此为准）。
 
 ## infra/（Pigsty 基础设施配置）
 

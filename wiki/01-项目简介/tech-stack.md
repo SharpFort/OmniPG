@@ -27,7 +27,7 @@
 | `api_v1_sys` | 历史迁移引用承载 | 027 改名链兼容，遗留空 schema，新代码不再使用 |
 | `net` | pg_net 扩展宿主 schema | 权限收紧：`authenticated` 无 EXECUTE/USAGE，HTTP 调用一律经 SECURITY DEFINER 封装函数 |
 
-代码目录：`db/migrations/public`（dbmate 迁移）、`db/src/public`（函数/触发器/类型/视图/RLS）、`db/api_v1/`（`_shared` / `inventory`（空目录） / `public`（当前唯一有效暴露代码，44 RPC + 29 视图））、`db/init`（扩展 + schema 引导）、`db/tests`（pgTAP）。
+代码目录：`db/migrations/public`（dbmate 迁移）、`db/src/public`（函数/触发器/类型/视图/RLS）、`db/api_v1/`（`_shared`（空） / `public`（当前唯一有效暴露代码，44 RPC + 29 视图））、`db/init`（扩展 + schema 引导）、`db/tests`（pgTAP）。
 
 **刻意保留的兼容视图**（非"未清理的 sys_ 残留"）：`public.sys_user`（users + user_profile 投影，`password_hash` 恒 NULL——密码由 Logto 管理，兼容旧查询字段）与 `public.casbin_rule`（055 双段投影：API 段 = `iam_role_menu → iam_menu` 按钮行端点，菜单段 = router）是历史接口的兼容层，源码见 `db/src/public/views/`。
 

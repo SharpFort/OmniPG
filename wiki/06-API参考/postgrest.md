@@ -15,17 +15,17 @@ PostgREST 以 Docker 容器运行（`gateway/docker-compose.yml` 中 `postgrest`
 | 数据库连接 | `postgres://authenticator:***@host.docker.internal:6432/app_db?sslmode=disable`（经 Pigsty pgBouncer） | compose 环境变量 |
 | 匿名角色 | `web_anon` | `db-anon-role` |
 
-> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（其中 db-schemas 多 schema、`jwt-role-claim-key = roles[0]` 等与运行态不一致，见下）。另外 `gateway/.env.example` 与 `scripts/verify-stack.sh` 仍写着 `PGRST_PORT=3001`，那是 Logto 时代的旧值——**当前 PostgREST 宿主端口是 3100**（3001 已让给 Logto core）。
+> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_public、`.pg_role`、无 pre-request）。另外 `gateway/.env.example` 与 `scripts/verify-stack.sh` 仍写着 `PGRST_PORT=3001`，那是 Logto 时代的旧值——**当前 PostgREST 宿主端口是 3100**（3001 已让给 Logto core）。
 
 ### 实际生效的关键配置（compose 环境变量为准）
 
 | 配置 | compose 值 | conf 文件值 | 说明 |
 |:---|:---|:---|:---|
-| `PGRST_DB_SCHEMAS` | `api_v1_public` | `api_v1_public, api_v1_sales, api_v1_inventory` | **以 compose 为运行态权威**：只暴露 api_v1_public（单 schema）；conf 参考文件的多 schema 声明与运行态不一致（sales/inventory schema 未创建、路由已退役，见下节） |
-| `PGRST_DB_EXTRA_SEARCH_PATH` | `api_v1_public,public` | 含 sales/inventory | 函数解析路径，public 用于调用底层逻辑 |
+| `PGRST_DB_SCHEMAS` | `api_v1_public` | `api_v1_public`（2026-08-19 已对齐） | **以 compose 为运行态权威**：只暴露 api_v1_public 单 schema（sales/inventory 已退役，见下节） |
+| `PGRST_DB_EXTRA_SEARCH_PATH` | `api_v1_public,public` | `api_v1_public, public`（2026-08-19 已对齐） | 函数解析路径，public 用于调用底层逻辑 |
 | `PGRST_DB_PRE_REQUEST` | `""`（空） | `api_v1_public.check_token_blacklist` | **已退役**：`db/init/02-schemas.sql` 明确 token 黑名单/会话吊销交给 Logto（D12），pre-request 清空 |
 | `PGRST_JWT_SECRET` | `${JWKS_JSON}` | 同 | JWT 验签密钥：开发环境 = HS256 对称密钥（JWKS_JSON 的 oct key）；staging/production = Logto JWKS 公钥（RS256），算法口径见「鉴权」节 |
-| `PGRST_JWT_ROLE_CLAIM_KEY` | `.pg_role` | `roles[0]` | 运行态以 `.pg_role` 为准（Logto Custom Token Claims 脚本注入）；conf 的 `roles[0]` 与运行态不一致 |
+| `PGRST_JWT_ROLE_CLAIM_KEY` | `.pg_role` | `.pg_role`（2026-08-19 已对齐） | 运行态以 `.pg_role` 为准（Logto Custom Token Claims 脚本注入） |
 | `PGRST_OPENAPI_SERVER_PROXY_URI` | `http://localhost:3100` | `http://localhost:3000` | Swagger 展示用 |
 | `PGRST_CORS_ORIGINS` | `*` | `""` | CORS 由 APISIX 全局规则处理；Swagger 浏览器直连拉 spec 需要 |
 
@@ -54,7 +54,7 @@ curl -H 'Authorization: Bearer <logto-access-token>' \
 
 **Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 `api_v1_sys`）、`api_v1_sys`（027 改名链兼容，新代码不用）、`net`（pg_net 宿主）。**不存在 extensions schema**（早先方案的 extensions 域未落地）。
 
-**运行态（compose 为权威）**：`PGRST_DB_SCHEMAS=api_v1_public`——PostgREST 实际只暴露 `api_v1_public` 单 schema，`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`（public 仅供函数解析）。`gateway/postgrest/postgrest.conf` 是**参考文件**，其 `db-schemas = "api_v1_public, api_v1_sales, api_v1_inventory"` 与 `jwt-role-claim-key = roles[0]` 与运行态不一致（sales/inventory schema 未在 02-schemas.sql 创建、对应 URL 路由已于 2026-08-15 退役；角色映射以 `.pg_role` 为准）。`db/api_v1/` 目录按 `_shared` / `inventory` / `public` 分域，**当前仅 `public/` 下有实体 SQL**（44 个 RPC + 29 个视图）。
+**运行态（compose 为权威）**：`PGRST_DB_SCHEMAS=api_v1_public`——PostgREST 实际只暴露 `api_v1_public` 单 schema，`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`（public 仅供函数解析）。`gateway/postgrest/postgrest.conf` 是**参考文件**（2026-08-19 已对齐运行态：`db-schemas = "api_v1_public"`、`jwt-role-claim-key = .pg_role`、无 pre-request；sales/inventory schema 未在 02-schemas.sql 创建、对应 URL 路由已于 2026-08-15 退役）。`db/api_v1/` 目录按 `_shared` / `public` 分域，**当前仅 `public/` 下有实体 SQL**（44 个 RPC + 29 个视图）。
 
 其中：
 

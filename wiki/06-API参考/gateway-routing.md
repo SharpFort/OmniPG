@@ -64,7 +64,7 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 | PostgREST schema 配置 | **运行态以 `gateway/docker-compose.yml` 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=.pg_role`、`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`、`PGRST_MAX_ROWS=1000`、`PGRST_DB_PRE_REQUEST` 已清空、`PGRST_JWT_SECRET=$(JWKS_JSON)`；`gateway/postgrest/postgrest.conf` 仅为参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_public、.pg_role、无 pre-request） | ✅ compose 为运行态权威；引用 conf 时须注明“以 compose 为准” |
 | `scripts/verify-stack.sh` / `scripts/start.sh` | 已按 Logto 架构更新（2026-08-19）：8 项检查、路由预期 7 条、Logto OIDC、无 Casdoor/Syncer | ✅ 现行 |
 
-**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 api_v1_sys）、`api_v1_sys`（027 改名链兼容承载，新代码不用）、`net`（pg_net 扩展宿主）；**不存在 extensions schema**。PostgREST 运行态只暴露 `api_v1_public` 单 schema（compose 环境变量权威，见上表）。`db/api_v1/` 目录按 `_shared`/`inventory`/`public` 分域（当前仅 `public/` 下有实体 SQL 文件；sales/inventory 模块 2026-08-15 退役，其 URL 前缀路由已从 Logto 版路由集移除，按需重建）。URL 前缀 `/api/v1/sys/*` 重写 `^/api/v1/sys/(.*)` → `/$1`，落到 `api_v1_public`。
+**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 api_v1_sys）、`api_v1_sys`（027 改名链兼容承载，新代码不用）、`net`（pg_net 扩展宿主）；**不存在 extensions schema**。PostgREST 运行态只暴露 `api_v1_public` 单 schema（compose 环境变量权威，见上表）。`db/api_v1/` 目录按 `_shared`/`public` 分域（当前仅 `public/` 下有实体 SQL 文件；sales/inventory 模块已于 2026-08-15 退役、占位目录已清理，按需重建）。URL 前缀 `/api/v1/sys/*` 重写 `^/api/v1/sys/(.*)` → `/$1`，落到 `api_v1_public`。
 
 ## 鉴权与安全插件
 
