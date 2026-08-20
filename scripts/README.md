@@ -12,6 +12,7 @@
 |:---|:---|:---|
 | `start.sh` | 一键启动整个开发环境 | `cd scripts && ./start.sh` |
 | `stop.sh` | 一键停止 Docker Compose + 可选停止核心服务 | `cd scripts && ./stop.sh` |
+| `render-config.sh` | 渲染运行时配置（.env / pigsty.yml / userlist.txt 三处一致；CI Secrets 展开 `${VAR}` 占位符，残留令牌 fail-closed） | `bash scripts/render-config.sh <environment>` |
 
 ---
 

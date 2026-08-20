@@ -1,25 +1,18 @@
 # =============================================================================
-# OmniPG 统一 Pigsty 配置（唯一 inventory，官方单文件模型，2026-08-19 方案 A 定稿）
-#   - 单机 Phase 1：所有组指向 127.0.0.1，./install.yml / ./deploy.yml 全量部署
-#   - 多机 Phase 2：各组 hosts 填不同服务器 IP，按官方剧本 + -l 主机限制分角色部署
-#     （db → pgsql/infra/etcd/vibe；gateway → node/docker/redis）
-#   官方文档: 配置清单 https://doc.pigsty.cc/docs/concept/iac/inventory/
-#            剧本列表 http://pigsty.cc/docs/ref/playbook/
-#            生产安装 https://doc.pigsty.io/docs/deploy/install/
-#   pgaudit/pgsodium 已于 2026-08-19 移除；pg_pwhash 已于 2026-08-19 退役
-#   已废弃: infra/pigsty.db.yml / infra/pigsty.gateway.yml（2026-08-19 合并删除）
-#
-#   决策记录（2026-08-20 定稿；当前仍以单机 Phase 1 部署为准，Phase 2a/2b/3 仅文档补充）：
-#     ① Redis 始终由 Pigsty REDIS 模块管理（standalone 原生），不进 Docker（取代 ci-cd v2.1 决策 4）
-#     ② 多机后 logto 库与业务库/权限认证模块同机同集群；落地时在此文件 pg_databases/pg_users 声明
-#     ③ pg_hba 10.0.0.0/8 为 Phase 2 过渡网段，落地时按最小权限收窄（具体网段/主机）
-#     ④ node_firewall_public_port 为单机大并集；分机后按角色组 vars 收敛（见下方端口注释）
-#     ⑤ 生产密码一致性 = CI 渲染（.env / pigsty.yml / userlist.txt 三处一致）+ GitHub Secrets
-#     ⑥ DNS 域名按环境区分（如 i.staging.pigsty / i.prod.pigsty）
-#     ⑦ 版本口径以仓库锁定版本为准（Pigsty v4.4.0）；pigsty.cc 在线文档可能更新（v4.5），机制通用
-#   多机拓扑与 CI/CD 演进说明：wiki/03-部署指南/multi-node-cicd-evolution.md
-#   渲染说明：本文件为 development/单机字面值；staging/production 由 scripts/render-config.sh
-#             使用 infra/pigsty.yml.tpl + infra/userlist.txt.tpl 渲染（三处一致：.env / pigsty.yml / userlist.txt）
+# OmniPG Phase 2b 多机部署示例（草案，2026-08-20；**未启用**，仅供规划参考，不作为部署依据）
+#   - 以 infra/pigsty.yml 为基准派生，差异仅：各组 hosts 换成真实 IP、redis 归属网关机
+#   - 角色划分（占位 IP，落地时替换为实际内网 IP）：
+#       DB 机   10.0.0.10 : pg_omnipg / infra / etcd / vibe（兼管理节点，admin_ip）
+#       网关机  10.0.0.20 : redis / docker（compose 应用容器在其上运行，Redis 随网关机 2026-08-20 决策）
+#       前端机  10.0.0.30 : 不进 Pigsty（Nginx 静态站，见 wiki/03-部署指南/multi-node-cicd-evolution.md §5.2/§6.4）
+#   - 部署方式（管理节点集中执行，单文件 + 官方剧本 + -l 主机限制）：
+#       ./pgsql.yml -l 10.0.0.10 && ./infra.yml -l 10.0.0.10 && ./etcd.yml -l 10.0.0.10
+#       ./node.yml -l 10.0.0.20 && ./docker.yml -l 10.0.0.20 && ./redis.yml -l 10.0.0.20
+#   - 密码占位符（${DB_PASSWORD} 等）由 scripts/render-config.sh + CI GitHub Secrets 注入
+#   - 启用步骤：替换占位 IP → 校验 pg_hba 网段（按最小权限收窄，见 §7 决策 3）→
+#       node_firewall_public_port 按角色收敛（组级 vars，见 §5.4）→ 管理节点复制本文件为
+#       ~/pigsty/pigsty.yml → 按角色跑剧本 → 网关容器 DB_HOST 改 DB 机内网 IP
+#   权威说明：wiki/03-部署指南/multi-node-cicd-evolution.md
 # =============================================================================
 all:
 
@@ -27,7 +20,7 @@ all:
 
     pg_omnipg:
       hosts:
-        127.0.0.1: { pg_seq: 1, pg_role: primary }
+        10.0.0.10: { pg_seq: 1, pg_role: primary }
       vars:
         pg_cluster: pg_omnipg
         pg_extensions:
@@ -48,18 +41,18 @@ all:
           - pg_repack             # P1 膨胀治理
         pg_users:
           - name: app_owner
-            password: dev_password_change_me
+            password: ${DB_PASSWORD}
             pgbouncer: true
             privileges: CREATEDB
             comment: 'app owner'
           - name: authenticator
-            password: authenticator_dev_pass
+            password: ${AUTHENTICATOR_PASSWORD}
             pgbouncer: true
             comment: 'PostgREST auth role'
           - name: web_anon
             comment: 'PostgREST anonymous role (NOLOGIN)'
           - name: logto
-            password: logto_dev_pass_2026
+            password: ${LOGTO_DB_PASSWORD}
             comment: 'Logto OIDC service account（与业务库同机同集群，2026-08-20 决策）'
         pg_databases:
           - name: app_db
@@ -119,7 +112,7 @@ all:
 
     infra:
       hosts:
-        127.0.0.1: { infra_seq: 1 }
+        10.0.0.10: { infra_seq: 1 }
       vars:
         repo_enabled: false
         nginx_enabled: true
@@ -132,7 +125,7 @@ all:
 
     etcd:
       hosts:
-        127.0.0.1: { etcd_seq: 1 }
+        10.0.0.10: { etcd_seq: 1 }
       vars:
         etcd_cluster: etcd
         etcd_safeguard: false
@@ -141,7 +134,7 @@ all:
     # 多机时默认随网关机（与 deploy-infra.sh gateway 模式一致），Phase 2 定稿实际主机时确认
     redis:
       hosts:
-        127.0.0.1: { redis_node: 1, redis_instances: { 6379: {} } }
+        10.0.0.20: { redis_node: 1, redis_instances: { 6379: {} } }
       vars:
         redis_cluster: redis
         redis_mode: standalone
@@ -149,11 +142,11 @@ all:
 
     docker:
       hosts:
-        127.0.0.1: { docker_seq: 1 }
+        10.0.0.20: { docker_seq: 1 }
 
     vibe:
       hosts:
-        127.0.0.1: { vibe_seq: 1 }
+        10.0.0.10: { vibe_seq: 1 }
       vars:
         vibe_enabled: true
         vibe_packages:
@@ -165,7 +158,7 @@ all:
   vars:
 
     version: v4.4.0
-    admin_ip: 127.0.0.1
+    admin_ip: 10.0.0.10
     region: china
     proxy_env:
       no_proxy: "localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16,*.pigsty,*.aliyun.com,mirrors.*,*.myqcloud.com,*.tsinghua.edu.cn"

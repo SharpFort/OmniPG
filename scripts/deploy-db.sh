@@ -28,10 +28,13 @@ echo "  数据库部署"
 echo "  环境: $ENV    端口: $DB_PORT"
 echo "============================================"
 
-# 加载环境变量
-if [ -f "$PROJECT_DIR/.env.$ENV" ]; then
-    export $(grep -v '^#' "$PROJECT_DIR/.env.$ENV" | xargs)
-fi
+# 渲染并加载环境变量（.env / pigsty.yml / userlist.txt 三处一致；CI Secrets 注入）
+RENDER_DIR="$PROJECT_DIR/.deploy-render"
+bash "$SCRIPT_DIR/render-config.sh" "$ENV" "$RENDER_DIR"
+set -a
+# shellcheck disable=SC1090
+. "$RENDER_DIR/.env"
+set +a
 
 DB_USER=${DB_USER:-app_owner}
 DB_PASSWORD=${DB_PASSWORD:-dev_password_change_me}

@@ -1,3 +1,4 @@
 "app_owner" "dev_password_change_me"
 "authenticator" "authenticator_dev_pass"
+"logto" "logto_dev_pass_2026"
 "casdoor" "casdoor_dev_pass"

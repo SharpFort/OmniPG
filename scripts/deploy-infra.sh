@@ -7,6 +7,8 @@
 #   ./scripts/deploy-infra.sh gateway <environment>    # Phase 2 网关服务器（node/docker/redis）
 # 多机部署时用 LIMIT 环境变量指定本机 IP（ansible -l 主机限制，默认 127.0.0.1）：
 #   LIMIT=10.0.0.10 ./scripts/deploy-infra.sh db production
+# 2026-08-20：部署前自动执行 scripts/render-config.sh（.env / pigsty.yml / userlist.txt 三处一致，
+#            staging/production 的 ${VAR} 占位符由 CI GitHub Secrets 注入展开）
 # 参考: 剧本列表 http://pigsty.cc/docs/ref/playbook/ ·
 #       配置清单 https://doc.pigsty.cc/docs/concept/iac/inventory/
 # =============================================================================
@@ -25,10 +27,25 @@ echo "  模式: $MODE"
 echo "  环境: $ENV"
 echo "========================================"
 
-# 加载环境变量
-if [ -f "$PROJECT_DIR/.env.$ENV" ]; then
-    export $(grep -v '^#' "$PROJECT_DIR/.env.$ENV" | xargs)
+# 渲染运行时配置（.env / pigsty.yml / userlist.txt 三处一致；CI Secrets 注入到环境变量）
+echo ""
+echo "▶ 渲染运行时配置（scripts/render-config.sh）..."
+RENDER_DIR="$PROJECT_DIR/.deploy-render"
+if [ -f "$SCRIPT_DIR/render-config.sh" ]; then
+    bash "$SCRIPT_DIR/render-config.sh" "$ENV" "$RENDER_DIR"
+else
+    echo "  ⚠️ render-config.sh 不存在，回退直接使用 infra/ 字面值配置"
+    mkdir -p "$RENDER_DIR"
+    cp "$PROJECT_DIR/infra/pigsty.yml" "$RENDER_DIR/pigsty.yml"
+    cp "$PROJECT_DIR/infra/userlist.txt" "$RENDER_DIR/userlist.txt"
+    cp "$PROJECT_DIR/.env.$ENV" "$RENDER_DIR/.env"
 fi
+
+# 加载渲染后的环境变量（真实值来自 CI Secrets / .env.$ENV 字面值）
+set -a
+# shellcheck disable=SC1090
+. "$RENDER_DIR/.env"
+set +a
 
 # 1. 检测 Pigsty 是否已安装
 echo ""
@@ -47,14 +64,14 @@ fi
 # 2. 复制唯一配置文件（方案 A：官方单文件 inventory；pigsty.db.yml / pigsty.gateway.yml
 #    已于 2026-08-19 合并删除，多角色通过官方剧本 + -l 主机限制表达）
 echo ""
-echo "[2/5] 复制唯一配置文件（infra/pigsty.yml）..."
-CONFIG_FILE="$PROJECT_DIR/infra/pigsty.yml"
+echo "[2/5] 复制唯一配置文件（渲染产物 .deploy-render/pigsty.yml）..."
+CONFIG_FILE="$RENDER_DIR/pigsty.yml"
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "  ❌ 配置文件缺失: $CONFIG_FILE"
     exit 1
 fi
 cp "$CONFIG_FILE" "$HOME/pigsty/pigsty.yml"
-echo "  ✅ pigsty.yml 已复制（唯一 inventory）"
+echo "  ✅ pigsty.yml 已复制（唯一 inventory，已渲染）"
 
 # 根据模式复制额外配置文件
 if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
@@ -64,9 +81,9 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
         sudo cp "$PROJECT_DIR/infra/pgbouncer.ini" /etc/pgbouncer/pgbouncer.ini
         echo "  ✅ pgbouncer.ini 已复制"
     fi
-    if [ -f "$PROJECT_DIR/infra/userlist.txt" ]; then
+    if [ -f "$RENDER_DIR/userlist.txt" ]; then
         sudo mkdir -p /etc/pgbouncer
-        sudo cp "$PROJECT_DIR/infra/userlist.txt" /etc/pgbouncer/userlist.txt
+        sudo cp "$RENDER_DIR/userlist.txt" /etc/pgbouncer/userlist.txt
         sudo chmod 640 /etc/pgbouncer/userlist.txt
         echo "  ✅ userlist.txt 已复制"
     fi

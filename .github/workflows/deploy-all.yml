@@ -33,19 +33,14 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          AUTHENTICATOR_PASSWORD: ${{ secrets.AUTHENTICATOR_PASSWORD }}
+          LOGTO_DB_PASSWORD: ${{ secrets.LOGTO_DB_PASSWORD }}
+          APISIX_ADMIN_KEY: ${{ secrets.APISIX_ADMIN_KEY }}
+          JWKS_JSON: ${{ secrets.JWKS_JSON }}
+          LOGTO_WEBHOOK_SIGNING_KEY: ${{ secrets.LOGTO_WEBHOOK_SIGNING_KEY }}
         run: |
-          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
-            set -euo pipefail
-            
-            # 拉取最新代码
-            cd ~/OmniPG
-            git fetch origin
-            git checkout ${{ github.ref_name }}
-            git pull origin ${{ github.ref_name }}
-            
-            # 使用一键部署脚本
-            bash scripts/deploy-all.sh ${{ inputs.environment }}
-          EOF
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "export DB_PASSWORD='${DB_PASSWORD}' AUTHENTICATOR_PASSWORD='${AUTHENTICATOR_PASSWORD}' LOGTO_DB_PASSWORD='${LOGTO_DB_PASSWORD}' APISIX_ADMIN_KEY='${APISIX_ADMIN_KEY}' JWKS_JSON='${JWKS_JSON}' LOGTO_WEBHOOK_SIGNING_KEY='${LOGTO_WEBHOOK_SIGNING_KEY}'; set -euo pipefail; cd ~/OmniPG; git fetch origin; git checkout ${{ github.ref_name }}; git pull origin ${{ github.ref_name }}; bash scripts/deploy-all.sh ${{ inputs.environment }}"
       
       - name: Run E2E Tests
         if: ${{ inputs.skip_tests != true }}

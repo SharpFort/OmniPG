@@ -18,15 +18,13 @@ echo "========================================"
 
 cd "$PROJECT_DIR/gateway"
 
-# 1. 复制环境配置
+# 1. 渲染并复制环境配置（render-config.sh 展开 ${VAR} 占位符；CI Secrets 注入）
 echo ""
-echo "[1/5] 复制环境配置..."
-if [ -f "$PROJECT_DIR/.env.$ENV" ]; then
-    cp "$PROJECT_DIR/.env.$ENV" .env
-    echo "  已复制 .env.$ENV"
-else
-    echo "  警告: 未找到 .env.$ENV，使用默认配置"
-fi
+echo "[1/5] 渲染并复制环境配置..."
+RENDER_DIR="$PROJECT_DIR/.deploy-render"
+bash "$SCRIPT_DIR/render-config.sh" "$ENV" "$RENDER_DIR"
+cp "$RENDER_DIR/.env" .env
+echo "  ✅ gateway/.env 已生成（渲染自 .env.$ENV）"
 
 # 2. 拉取最新镜像
 echo ""

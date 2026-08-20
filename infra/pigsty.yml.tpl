@@ -48,18 +48,18 @@ all:
           - pg_repack             # P1 膨胀治理
         pg_users:
           - name: app_owner
-            password: dev_password_change_me
+            password: ${DB_PASSWORD}
             pgbouncer: true
             privileges: CREATEDB
             comment: 'app owner'
           - name: authenticator
-            password: authenticator_dev_pass
+            password: ${AUTHENTICATOR_PASSWORD}
             pgbouncer: true
             comment: 'PostgREST auth role'
           - name: web_anon
             comment: 'PostgREST anonymous role (NOLOGIN)'
           - name: logto
-            password: logto_dev_pass_2026
+            password: ${LOGTO_DB_PASSWORD}
             comment: 'Logto OIDC service account（与业务库同机同集群，2026-08-20 决策）'
         pg_databases:
           - name: app_db

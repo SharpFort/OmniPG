@@ -97,7 +97,13 @@ jobs:
       - name: YAML lint
         run: |
           pip install yamllint
-          yamllint infra/pigsty.yml
+          yamllint infra/pigsty.yml infra/pigsty.yml.tpl
+
+      - name: Render template sync check (development)
+        run: |
+          bash scripts/render-config.sh development /tmp/omnipg-render
+          diff -u infra/pigsty.yml /tmp/omnipg-render/pigsty.yml
+          diff -u infra/userlist.txt /tmp/omnipg-render/userlist.txt
 
   extensions-check:
     needs: detect-changes
