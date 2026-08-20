@@ -1,4 +1,4 @@
--- db/api_v1/sys/rpc/rpc_get_all_public_configs.sql
+-- db/api_v1/public/rpc/rpc_get_all_public_configs.sql
 -- 获取所有公开配置（前端初始化时调用）
 
 CREATE OR REPLACE FUNCTION api_v1_public.get_all_public_configs()

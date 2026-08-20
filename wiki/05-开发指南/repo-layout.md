@@ -24,9 +24,9 @@
 | 子目录/文件 | 职责 | 关键内容 |
 | --- | --- | --- |
 | `migrations/public/` | 表结构与数据迁移（dbmate） | 当前仅基线 `064_v010_mirror_tables.sql`（6 张镜像表）、`065_v010_baseline.sql`（18 张业务表）、`066_v010_seed_data.sql`（80 行种子）；新迁移从 067 起 |
-| `src/public/` | public schema 幂等源码（**代码对象唯一权威**） | `functions/`(37)、`triggers/`(10)、`views/`(2 兼容视图)、`types/`(5 枚举)、`templates/`(审计字段模板)、`privileges/`(rls_policies.sql) |
-| `api_v1/` | 对外暴露层（运行态单 schema `api_v1_public`，compose 权威） | Schema 布局 = public / api_v1_public / api_v1_sys（027 兼容，新代码不用）/ net（pg_net 宿主），**无 extensions schema**；目录：`_shared/`(空，跨模块共享前缀)、`public/`(views 29 / rpc 44 / privileges/zz_grant_all.sql GRANT 集中地)；sales/inventory 测试模块已退役（2026-08-15），占位目录与 postgrest.conf 声明已于 2026-08-19 清理 |
-| `init/` | 初始化脚本（bootstrap 阶段） | `02-schemas.sql`（api_v1_public/api_v1_sys/net schema + 角色授权说明）；扩展已移交 Pigsty 管理（`db/init/01-extensions.sql` 2026-08-19 移除，权威见 infra/pigsty.yml） |
+| `src/public/` | public schema 幂等源码（**代码对象唯一权威**） | `functions/`(37)、`triggers/`(10)、`types/`(5 枚举)、`templates/`(审计字段模板)、`privileges/`(rls_policies.sql)；`views/` 兼容视图（sys_user/casbin_rule）已于 2026-08-20 移除 |
+| `api_v1/` | 对外暴露层（运行态单 schema `api_v1_public`，compose 权威） | Schema 布局 = public / api_v1_public / net（pg_net 宿主），**无 extensions schema**；目录：`_shared/`(空，跨模块共享前缀)、`public/`(views 29 / rpc 44 / privileges/zz_grant_all.sql GRANT 集中地)；sales/inventory 测试模块已退役（2026-08-15），占位目录与 postgrest.conf 声明已于 2026-08-19 清理 |
+| `init/` | 初始化脚本（bootstrap 阶段） | `02-schemas.sql`（api_v1_public/net schema + 角色授权说明）；扩展已移交 Pigsty 管理（`db/init/01-extensions.sql` 2026-08-19 移除，权威见 infra/pigsty.yml） |
 | `tests/public/` | pgTAP 测试 | `01_schema_test.sql`、`02_function_test.sql`、`03_trigger_test.sql`、`05_rls_test.sql`、`test_casbin_view.sql`、`test_rls_isolation.sql` |
 | ~~`extensions/`~~ | 扩展说明（2026-08-19 已迁移至 [wiki/01-项目简介/extensions/](../01-项目简介/extensions/)） | 不再位于 db/ 下 |
 | `schema.sql` | pg_dump 整库结构快照（约 6400 行，dbmate dump 产物） | 仅作比对/审计，不是部署入口 |

@@ -86,7 +86,7 @@ SQL
 # 2) Schema 与授权（app_owner 执行）
 PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db \
   -v ON_ERROR_STOP=1 -f db/init/02-schemas.sql
-#    => api_v1_sys（027 改名链兼容，新代码不用）/ api_v1_public / net；USAGE 授权；pg_net 收紧（不存在 extensions schema）
+#    => api_v1_public / net；USAGE 授权；pg_net 收紧（不存在 extensions schema）
 
 # 3) 枚举前置（bootstrap 子集；迁移 059/060 引用 src 枚举）
 for f in db/src/public/types/*.sql; do
@@ -145,7 +145,7 @@ curl -sf http://localhost:3100/ | head -c 100   # OpenAPI JSON
 | PGRST_DB_PRE_REQUEST | （空） | （已退役移除，2026-08-19 对齐） |
 | 端口映射 | 3100:3000 | server-port 3000 |
 
-**暴露层（当前事实）**：运行态单 schema `api_v1_public`（`db/api_v1/` 目录含 `_shared`（模块排序前缀）/ `public`）。`db/init/02-schemas.sql` 还创建遗留空 schema `api_v1_sys`（027 改名链兼容，新代码不用）；**不存在 extensions schema**。sales/inventory 测试模块已退役（063；相关声明与占位目录已于 2026-08-19 清理，按需重建时再补）。
+**暴露层（当前事实）**：运行态单 schema `api_v1_public`（`db/api_v1/` 目录含 `_shared`（模块排序前缀）/ `public`）；**不存在 extensions schema**。sales/inventory 测试模块已退役（063；相关声明与占位目录已于 2026-08-19 清理，按需重建时再补）。
 
 **JWT 算法**：开发环境 HS256（`JWKS_JSON` 对称密钥）；staging/production 指向 Logto JWKS 公钥（RS256——compose 与 .env 注释写 ES384，口径不一致，需以 Logto 实际配置核实）。
 

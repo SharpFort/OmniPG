@@ -46,7 +46,7 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 
 ### 决策
 
-- 保留 `casbin_rule` 视图（db/src/public/views/casbin_rule.sql）为双段投影：API 段 = iam_role_menu→button 行（v1=api_url, v2=api_method）+ 菜单段（v1=router, v2='menu'），仅测试/兼容消费。
+- 保留 `casbin_rule` 视图（db/src/public/views/casbin_rule.sql）为双段投影：API 段 = iam_role_menu→button 行（v1=api_url, v2=api_method）+ 菜单段（v1=router, v2='menu'），仅测试/兼容消费（2026-08-20 已随兼容视图清理移除，不再借鉴 Casbin 模型）。
 - 授权判定单通道：`has_permission(p_code)` = claims roles ∩ iam_role_menu → iam_menu.api_code（055 D3 收敛，iam_api/iam_role_api 删除）。
 - 055 单表化借鉴 SharpFort：iam_menu 单表承载导航 + 权限点（api_code）+ 端点（api_url/api_method）；角色授权只走 iam_role_menu。
 - 用户数彻底退出授权路径（Role-in-JWT）：授权判定只读 claims + 角色×权限小表。
@@ -54,7 +54,7 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 ### 影响与代价
 
 - 无策略同步管道、无缓存失效问题；授权路径零用户查询。
-- casbin_rule 不再是运行时策略源，仅作兼容投影；若未来要恢复网关端点级拦截，iam_menu 的 api_url/api_method 就是现成策略数据源。
+- casbin_rule 不再是运行时策略源，仅作兼容投影（2026-08-20 兼容视图已移除）；若未来要恢复网关端点级拦截，iam_menu 的 api_url/api_method 就是现成策略数据源。
 
 ## ADR 3：选择 PostgREST 作为 API 层
 
@@ -149,8 +149,8 @@ casbin 的 RBAC 思想（角色 → 资源 → 动作的扁平策略行）有价
 
 ### 决策
 
-- `public`：核心业务（镜像表 + 自主表 + 授权 + 审计 + 日志）；`api_v1_public`：对外 API 暴露层（视图 + RPC，只放投影不放物理表）；`api_v1_sys`：027 改名链兼容（历史迁移引用）；net/cron：扩展宿主 schema。
-- 027 迁移把 api_v1_sys 收敛为 api_v1_public（视图名 = 底层表名）；对外暴露层为单 schema api_v1_public（postgrest.conf 已于 2026-08-19 对齐；api_v1_sys 为遗留空 schema）；063 迁移退役 inventory/sales 测试模块（路由已移除、postgrest.conf 声明与占位目录已清理、按需重建时再补）。
+- `public`：核心业务（镜像表 + 自主表 + 授权 + 审计 + 日志）；`api_v1_public`：对外 API 暴露层（视图 + RPC，只放投影不放物理表）；net/cron：扩展宿主 schema。
+- 027 迁移把 api_v1_sys 收敛为 api_v1_public（视图名 = 底层表名）；对外暴露层为单 schema api_v1_public（postgrest.conf 已于 2026-08-19 对齐；api_v1_sys 遗留 schema 已于 2026-08-20 移除）；063 迁移退役 inventory/sales 测试模块（路由已移除、postgrest.conf 声明与占位目录已清理、按需重建时再补）。
 - dbmate 迁移按 schema 分目录（db/migrations/public/）；PostgREST 暴露层：docker-compose env 运行时为 api_v1_public；postgrest.conf 参考文件已对齐（2026-08-19）。
 
 ### 影响与代价

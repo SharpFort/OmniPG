@@ -1,4 +1,4 @@
--- db/api_v1/sys/rpc/rpc_get_audit_log_timeline.sql
+-- db/api_v1/public/rpc/rpc_get_audit_log_timeline.sql
 -- 获取审计时间线 RPC（按天聚合）
 -- 来源: 20260707000017_audit_session_monitoring.sql
 

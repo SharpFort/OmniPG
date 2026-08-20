@@ -26,7 +26,7 @@
 | `iam_role_menu` | 角色-菜单绑定（授权唯一通道） | `role_code` + `menu_id`，唯一索引；RLS 全量可读 |
 | `iam_role_data_scope` | 角色数据范围 | `scope_type`（枚举）+ `dept_id`（custom 时多行） |
 
-> 055 单表化后 **`iam_api`/`iam_role_api` 已删除**，不存在 Casbin/Go syncer 运行时鉴权；`casbin_rule` 仅是 public 兼容视图（供测试留档），不是鉴权通道。
+> 055 单表化后 **`iam_api`/`iam_role_api` 已删除**，不存在 Casbin/Go syncer 运行时鉴权；`casbin_rule` 兼容视图已于 2026-08-20 移除，不是鉴权通道。
 
 ## 菜单（iam_menu）与按钮权限
 

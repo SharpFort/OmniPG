@@ -71,7 +71,7 @@ make migrate            # 或 make migrate-status 先看状态
 | --- | --- | --- |
 | `functions/` | 底层函数（无前缀 public schema） | `has_permission.sql`、`current_tenant_id.sql`、`update_updated_at.sql` |
 | `triggers/` | `CREATE TRIGGER` | `trg_audit_iam_menu.sql`、`trg_updated_at.sql` |
-| `views/` | 内部兼容视图 | `sys_user.sql`、`casbin_rule.sql`（兼容投影） |
+| `views/` | 内部兼容视图（已移除，2026-08-20） | `sys_user.sql`、`casbin_rule.sql` 已删除 |
 | `types/` | 枚举（bootstrap 前置） | `scope_type.sql`、`menu_type.sql` |
 | `templates/` | 审计字段模板参考 | `audit_fields.sql` |
 | `privileges/` | RLS 策略集中清单 | `rls_policies.sql` |
@@ -114,7 +114,7 @@ WITH CHECK (tenant_id = current_tenant_id());
 
 ## Step 3：在 api_v1 建对外视图或 RPC
 
-**Schema 布局**（以 `db/init/02-schemas.sql` 为准）：`public`（核心业务 + 函数/触发器/RLS）、`api_v1_public`（对外暴露视图/RPC）、`api_v1_sys`（027 改名链兼容，新代码不用）、`net`（pg_net 宿主）；**不存在 extensions schema**。`db/api_v1/` 下按域分子目录（`_shared` / `public`，当前活跃模块 public，实际内容全部在此）。**PostgREST 运行态以 compose 为权威：单 schema `api_v1_public`**。新增 API 默认落在 `db/api_v1/public/`：
+**Schema 布局**（以 `db/init/02-schemas.sql` 为准）：`public`（核心业务 + 函数/触发器/RLS）、`api_v1_public`（对外暴露视图/RPC）、`net`（pg_net 宿主）；**不存在 extensions schema**。`db/api_v1/` 下按域分子目录（`_shared` / `public`，当前活跃模块 public，实际内容全部在此）。**PostgREST 运行态以 compose 为权威：单 schema `api_v1_public`**。新增 API 默认落在 `db/api_v1/public/`：
 
 - **视图**：`db/api_v1/public/views/<name>.sql` —— 视图名 = 底层表名（如 `users`、`iam_menu`）或 `v_*` 列表视图（如 `v_user_list`、`v_role_list`）；视图负责脱敏（例如 `users` 视图不暴露 password_hash）。
 - **RPC**：`db/api_v1/public/rpc/rpc_<动词>_<名词>.sql` —— CRUD 类 RPC 统一 `rpc_` 前缀；历史函数（`get_user_menu`、`get_role_permissions`、`search_users`、`update_config`、`webhook_logto`、`ensure_user` 等）保留原名。新模块的视图/RPC 放对应域子目录（`db/api_v1/<域>/`），并同步声明到 `apply-src.sh` 的 `API_MODULES` 与 postgrest 的 `db-schemas`。

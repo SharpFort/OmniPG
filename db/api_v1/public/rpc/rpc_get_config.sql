@@ -1,4 +1,4 @@
--- db/api_v1/sys/rpc/rpc_get_config.sql
+-- db/api_v1/public/rpc/rpc_get_config.sql
 -- 获取单个配置（公开配置，前端可调用）
 
 CREATE OR REPLACE FUNCTION api_v1_public.get_config(p_config_key text)

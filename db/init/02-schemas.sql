@@ -2,13 +2,10 @@
 -- 初始 Schema 和角色创建（容器首次启动自动执行）
 -- ==============================================================================
 
--- 系统管理 API Schema（027 改名链兼容）
---   api_v1_sys  : 历史迁移引用承载（027 迁移 RENAME → api_v1_public 或清理残留）
+-- 系统管理 API Schema
 --   api_v1_public: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
-CREATE SCHEMA IF NOT EXISTS api_v1_sys;
-COMMENT ON SCHEMA api_v1_sys IS '系统管理 API Schema（兼容历史迁移引用；027 迁移统一收敛）';
 CREATE SCHEMA IF NOT EXISTS api_v1_public;
-COMMENT ON SCHEMA api_v1_public IS '系统管理 API 暴露层（027 定稿：视图名=底层表名；原 api_v1_sys）';
+COMMENT ON SCHEMA api_v1_public IS '系统管理 API 暴露层（027 定稿：视图名=底层表名）';
 
 CREATE SCHEMA IF NOT EXISTS net;
 -- net schema 注释不在此处维护：pg_net 扩展宿主 schema（owner=postgres），

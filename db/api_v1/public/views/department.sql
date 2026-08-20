@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/sys_department
+-- db/api_v1/public/views/sys_department
 -- 来源: 20260707000013_postgrest_api_v1.sql
 
 CREATE OR REPLACE VIEW api_v1_public.department AS

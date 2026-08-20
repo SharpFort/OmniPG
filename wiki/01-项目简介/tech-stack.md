@@ -24,12 +24,11 @@
 | `public` | 核心业务表 + 全部函数/触发器/视图/RLS 策略 | 业务逻辑唯一真相源；镜像表（users/tenants/role/user_tenants/user_role 等）只读投影 |
 | `api_v1_public` | 系统管理 API 暴露层：视图 + RPC（`api_v1_public.*`），URL 前缀 `/api/v1/public/*` 映射至此 | 027 定稿名；**当前 compose 运行态实际暴露**（`PGRST_DB_SCHEMAS=api_v1_public`） |
 | ~~`api_v1_sales` / `api_v1_inventory`~~ | ~~销售 / 库存测试域暴露层~~ | 2026-08-15 退役；2026-08-19 已从 `postgrest.conf` 移除，占位目录已清理——运行态仅 `api_v1_public` |
-| `api_v1_sys` | 历史迁移引用承载 | 027 改名链兼容，遗留空 schema，新代码不再使用 |
 | `net` | pg_net 扩展宿主 schema | 权限收紧：`authenticated` 无 EXECUTE/USAGE，HTTP 调用一律经 SECURITY DEFINER 封装函数 |
 
 代码目录：`db/migrations/public`（dbmate 迁移）、`db/src/public`（函数/触发器/类型/视图/RLS）、`db/api_v1/`（`_shared`（空） / `public`（当前唯一有效暴露代码，44 RPC + 29 视图））、`db/init`（扩展 + schema 引导）、`db/tests`（pgTAP）。
 
-**刻意保留的兼容视图**（非"未清理的 sys_ 残留"）：`public.sys_user`（users + user_profile 投影，`password_hash` 恒 NULL——密码由 Logto 管理，兼容旧查询字段）与 `public.casbin_rule`（055 双段投影：API 段 = `iam_role_menu → iam_menu` 按钮行端点，菜单段 = router）是历史接口的兼容层，源码见 `db/src/public/views/`。
+**兼容视图已移除**（2026-08-20）：`public.sys_user` 与 `public.casbin_rule` 兼容视图已删除——用户数据直接查 `public.users`（Logto 镜像）+ `public.user_profile`（业务档案，对外经 `api_v1_public.users`），权限模型不再借鉴 Casbin（授权以 `iam_role_menu → iam_menu` 为准）。
 
 ## PostgreSQL 扩展清单（权威 = `infra/pigsty.yml`，唯一 inventory）
 

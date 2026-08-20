@@ -50,7 +50,7 @@
 - Casdoor 角色分配无可靠事件推送，需自建 Go auth-service 做 token exchange + 同步管道；
 - Logto OSS 原生提供 Organizations、组织级 RBAC、Webhooks、Custom JWT Claims、终端用户 MFA，且自部署免费开放——少一个自建服务组件。
 
-**吸收了什么**：casbin 的 RBAC 思路保留在数据库内——`casbin_rule` 视图（仅 p 规则，055 双段投影：API 段 = `role_menu → iam_menu` 按钮行端点，菜单段 = `role_menu → router`）作为授权数据的只读投影；角色→权限绑定表（`iam_role_menu`）继续承载 RBAC 语义；RLS 数据隔离是独立于网关的第二道防线。另外 `public.sys_user`（users + user_profile 投影，`password_hash` 恒 NULL——密码由 Logto 管理）与 `public.casbin_rule` 是**刻意保留的兼容视图层**，供旧接口/旧查询过渡，并非"未清理的 sys_ 残留"。
+**吸收了什么**：casbin 的 RBAC 思路保留在数据库内——角色→权限绑定表（`iam_role_menu` → `iam_menu` 按钮行端点）继续承载 RBAC 语义（原 `casbin_rule` 兼容投影视图已于 2026-08-20 移除）；RLS 数据隔离是独立于网关的第二道防线。`public.sys_user` 兼容视图亦已移除，用户数据直接查 `public.users`（Logto 镜像）+ `public.user_profile`（业务档案）。
 
 ## 与 Pigsty / PostgreSQL 扩展生态的关系
 

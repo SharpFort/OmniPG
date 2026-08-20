@@ -75,7 +75,7 @@
 | 对象 | 说明 |
 | --- | --- |
 | api_v1_public.audit_log | 只读视图：id, table_name, operation, old_data, new_data, user_id, tenant_id, created_at |
-| api_v1_public.v_audit_log_detail | 含 username、tenant_name（LEFT JOIN sys_user 兼容视图 / tenants） |
+| api_v1_public.v_audit_log_detail | 含 username、tenant_name（LEFT JOIN users 镜像 / tenants） |
 | api_v1_public.v_audit_log_timeline | 按天聚合：log_date, table_name, operation, change_count, unique_users |
 | api_v1_public.search_audit_log(p_query, p_table_name, p_operation, p_start_date, p_end_date, p_limit, p_offset) | 搜索（INVOKER + RLS；LIMIT 上限 100）；源码文件为 rpc_search_audit_log.sql |
 | api_v1_public.get_audit_log_timeline(p_start_date, p_end_date) | 时间线（默认近 7 天） |

@@ -52,7 +52,7 @@ curl -H 'Authorization: Bearer <logto-access-token>' \
 
 ## 暴露范围：api_v1_public（运行态单 schema）
 
-**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 `api_v1_sys`）、`api_v1_sys`（027 改名链兼容，新代码不用）、`net`（pg_net 宿主）。**不存在 extensions schema**（早先方案的 extensions 域未落地）。
+**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名）、`net`（pg_net 宿主）。**不存在 extensions schema**（早先方案的 extensions 域未落地）。
 
 **运行态（compose 为权威）**：`PGRST_DB_SCHEMAS=api_v1_public`——PostgREST 实际只暴露 `api_v1_public` 单 schema，`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`（public 仅供函数解析）。`gateway/postgrest/postgrest.conf` 是**参考文件**（2026-08-19 已对齐运行态：`db-schemas = "api_v1_public"`、`jwt-role-claim-key = .pg_role`、无 pre-request；sales/inventory schema 未在 02-schemas.sql 创建、对应 URL 路由已于 2026-08-15 退役）。`db/api_v1/` 目录按 `_shared` / `public` 分域，**当前仅 `public/` 下有实体 SQL**（44 个 RPC + 29 个视图）。
 
@@ -61,7 +61,7 @@ curl -H 'Authorization: Bearer <logto-access-token>' \
 - **视图**（29 个，`db/api_v1/public/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
 - **RPC**（44 个，`db/api_v1/public/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./rpc-reference.md)。
 - **授权矩阵**见 `db/api_v1/public/privileges/zz_grant_all.sql`：authenticated 只读基础视图；role_guest 只读全部；role_editor 只读；role_admin 对业务自主表（department/iam_menu/iam_role_menu/app_config）可 INSERT/UPDATE；super_admin 全权（镜像表仅 SELECT，写入收敛到 sync_*/JIT/对账）。
-- **兼容视图（刻意保留，非 sys_ 残留）**：`public.sys_user`（users + user_profile 投影，password_hash 恒 NULL——密码由 Logto 托管）与 `public.casbin_rule`（055 双段投影：API 段 = iam_role_menu → iam_menu 按钮行端点，菜单段 = router）供历史引用/测试使用，不对外暴露。
+- **兼容视图已移除**（2026-08-20）：`public.sys_user` / `public.casbin_rule` 已删除（不再借鉴 Casbin 权限模型），用户查询直接走 `public.users` + `public.user_profile`。
 
 - **视图**（29 个，`db/api_v1/public/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
 - **RPC**（44 个，`db/api_v1/public/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./rpc-reference.md)。

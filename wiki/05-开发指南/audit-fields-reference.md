@@ -642,8 +642,8 @@ FROM department;
 | `webhook_event_log` | created_at | 1（IHasCreationTime） | ✅ 合理 | 事件日志只追加 |
 
 > **已移除表（v3.1 之后不再存在）：** `sys_tenant`（退役，租户改由 `tenants` 镜像承载）、`sys_api`（API 权限点单表化并入 `iam_menu`）、`sys_user_session` / `sys_token_blacklist`（会话与令牌黑名单交由 IdP 管理）、`sys_secret`（JWKS 由 IdP 提供，不再在库中存密钥）。
-> **拆分表：** `sys_user` 由 `users`（Logto 镜像）+ `user_profile`（业务档案）承载，`public.sys_user` 仅存兼容视图。
-> **镜像表审计原则（2026-08-15 拍板，061 已落地）：** 镜像表完全以 Logto 同步数据为准，不套用本项目审计模板——仅保留 `created_at`（Logto createdAt）与 `logto_updated_at` / `joined_at` 同步元数据；`_by` 与软删字段已由迁移 061 移除；删除经 sync_*_delete 硬删（Logto 删除 = 行删除）。兼容视图（public.sys_user 等）列集保持稳定：updated_at 映射 logto_updated_at，deleted_at/_by 恒 NULL。
+> **拆分表：** `sys_user` 由 `users`（Logto 镜像）+ `user_profile`（业务档案）承载；`public.sys_user` 兼容视图已于 2026-08-20 移除，直接查 `public.users` / `api_v1_public.users`。
+> **镜像表审计原则（2026-08-15 拍板，061 已落地）：** 镜像表完全以 Logto 同步数据为准，不套用本项目审计模板——仅保留 `created_at`（Logto createdAt）与 `logto_updated_at` / `joined_at` 同步元数据；`_by` 与软删字段已由迁移 061 移除；删除经 sync_*_delete 硬删（Logto 删除 = 行删除）。users 镜像列集保持稳定：updated_at 映射 logto_updated_at，deleted_at/_by 恒 NULL（原 sys_user 兼容视图列集亦如此，视图已于 2026-08-20 移除）。
 
 ---
 

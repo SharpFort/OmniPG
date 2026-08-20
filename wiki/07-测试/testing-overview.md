@@ -6,7 +6,7 @@ OmniPG 的测试分为三层：**pgTAP 数据库测试**（`db/tests/`）、**E2
 
 | 层级 | 载体 | 位置 | 入口命令 | 覆盖目标 |
 | --- | --- | --- | --- | --- |
-| 数据库单元测试 | pgTAP | `db/tests/public/*.sql`（6 个文件，计划断言合计 115 条） | `make test-db` | 表/列/索引/外键/函数/触发器/RLS/casbin_rule 视图的存在性与基础行为 |
+| 数据库单元测试 | pgTAP | `db/tests/public/*.sql`（5 个文件，计划断言合计 107 条） | `make test-db` | 表/列/索引/外键/函数/触发器/RLS 的存在性与基础行为 |
 | E2E 集成测试 | bash + curl + jq + python3 | `scripts/e2e-test.sh` | `make test-e2e` | Logto OIDC 登录、镜像表只读保障、API 鉴权、租户 RLS 隔离、webhook 同步链路、异常恢复 |
 | 冒烟/验证脚本 | bash / SQL | `scripts/verify-stack.sh`、`scripts/verify-fresh-db.sh`、`scripts/055-t1-precheck.sql` | 直接执行 `bash scripts/...` | 组件健康、冷启动可复现性、迁移前置核查 |
 
@@ -49,7 +49,7 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 
 ## 覆盖范围
 
-### pgTAP（`db/tests/public/`，6 个文件）
+### pgTAP（`db/tests/public/`，5 个文件）
 
 | 文件 | 计划断言数 | 覆盖内容 |
 | --- | ---: | --- |
@@ -57,7 +57,6 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 | `02_function_test.sql` | 11 | sha256、`current_user_id/current_tenant_id/current_user_roles`、`update_updated_at`、`is_super_admin` |
 | `03_trigger_test.sql` | 4 | 审计触发器 `trg_audit_department`、`audit_trigger_func`、`updated_at` 自动更新 |
 | `05_rls_test.sql` | 12 | 关键表 RLS 启用状态；`iam_api`/`iam_role_api` 已删除（055 单表化） |
-| `test_casbin_view.sql` | 8 | `casbin_rule` 视图列、ptype/v0 输出格式、is_active 过滤（其中 3 条依赖运行时绑定数据） |
 | `test_rls_isolation.sql` | 14 | 镜像表存在性、RLS 策略存在性、RLS helper 函数与返回类型 |
 
 ### E2E（`scripts/e2e-test.sh`）
@@ -88,7 +87,7 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 | 新函数（RPC/helper） | `has_function` + `is` / `lives_ok` 行为断言 | `02_function_test.sql` |
 | 新触发器 | `has_trigger` + `lives_ok` | `03_trigger_test.sql` |
 | 新 RLS 策略/镜像表 | `relrowsecurity` / `pg_policies` 断言 | `05_rls_test.sql`、`test_rls_isolation.sql` |
-| 新菜单权限点/API 端点 | `casbin_rule` 视图断言 | `test_casbin_view.sql` |
+| 新菜单权限点/API 端点 | `iam_menu`/`iam_role_menu` 数据断言 | `05_rls_test.sql` 等 |
 | 新 API 视图/RPC/路由 | e2e 增加 curl 用例（Phase 3/4） | `scripts/e2e-test.sh` |
 | 新 Logto webhook 事件/同步函数 | e2e Phase 6（验签 401 + 镜像数据）+ 对账 dry-run | `scripts/e2e-test.sh`、`scripts/phase2/reconcile-logto.py` |
 | 迁移/部署链变更 | 冷启动 + 结构比对 + pgTAP | `bash scripts/verify-fresh-db.sh` + `make test` |

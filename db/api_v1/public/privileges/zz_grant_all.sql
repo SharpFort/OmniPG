@@ -1,4 +1,4 @@
--- db/api_v1/sys/privileges/grant_all.sql
+-- db/api_v1/public/privileges/grant_all.sql
 -- API v1 权限授予（按角色分层）— T7 重写（Logto 语义）
 -- 来源: 20260707000013_postgrest_api_v1.sql
 

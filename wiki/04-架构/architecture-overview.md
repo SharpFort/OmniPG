@@ -117,12 +117,11 @@ PostgREST 运行配置（gateway/docker-compose.yml 环境变量，覆盖同名 
 | public | 核心业务：镜像表（users/tenants/role/…）、自主表（iam_menu/iam_role_menu/…）、全部业务函数/触发器/视图/RLS、审计与日志 | db/src/public/、db/migrations/public/ |
 | api_v1_public | 对外暴露层（现行）：视图投影（视图名 = 底层表名）与 RPC 包装（api_v1_public.*） | db/api_v1/public/ |
 | ~~api_v1_sales / api_v1_inventory~~ | ~~对外暴露层声明~~ | 2026-08-15 退役；2026-08-19 从 postgrest.conf 移除，占位目录已清理 |
-| api_v1_sys | 兼容历史迁移引用（027 改名链）；非最终使用对象 | db/init/02-schemas.sql |
 | net | pg_net 扩展宿主 schema（owner=postgres；已对 authenticated 收紧权限） | 扩展管理，项目不驻留对象 |
 | cron | pg_cron 扩展宿主 schema（任务定义 cron.job、运行历史 cron.job_run_details） | 扩展管理（Pigsty 集群级安装） |
 | 扩展（非 schema） | 不存在 extensions schema：pgcrypto/pgtap 装在 public，pg_net 宿主 net，pg_cron 宿主 cron；ip2region/GeoLite2 离线表在 public；说明文档见 wiki/01-项目简介/extensions/（权威 = infra/pigsty.yml） | wiki/01-项目简介/extensions/、infra/pigsty.yml |
 
-> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、api_v1_sys（027 改名链兼容，新代码不用）、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（063 已退役；postgrest.conf 声明与占位目录已于 2026-08-19 清理，按需重建时再补）。运行态暴露层为单 schema api_v1_public。db/api_v1/ 目录含 _shared（空，apply-src API 模块排序前缀）、public（实际内容）。兼容视图 public.sys_user 与 public.casbin_rule 是刻意保留的兼容层（非未清理的 sys_ 残留）。db/api_v1/public/privileges/zz_grant_all.sql 与 db/src/public/privileges/rls_policies.sql 是授权/策略的集中清单。详见 [模块划分](./module-breakdown.md)。
+> schema 现实（以 db/init/02-schemas.sql 为准）：public、api_v1_public、net（pg_net 宿主）——**不存在 extensions schema**，也不存在 api_v1_sales / api_v1_inventory schema（063 已退役；postgrest.conf 声明与占位目录已于 2026-08-19 清理，按需重建时再补）。运行态暴露层为单 schema api_v1_public。db/api_v1/ 目录含 _shared（空，apply-src API 模块排序前缀）、public（实际内容）。原兼容视图 public.sys_user / public.casbin_rule 已于 2026-08-20 移除（不再借鉴 Casbin 权限模型），用户数据直接查 public.users + public.user_profile。db/api_v1/public/privileges/zz_grant_all.sql 与 db/src/public/privileges/rls_policies.sql 是授权/策略的集中清单。详见 [模块划分](./module-breakdown.md)。
 
 ## 架构关键特性：数据库即后端、RLS 数据隔离
 

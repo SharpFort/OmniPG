@@ -105,7 +105,7 @@ curl -s 'http://localhost:3100/role?select=role_code,role_name&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
-> 说明：`users` / `v_user_list` 的数据源是 public 的 users/user_profile（兼容视图 `public.sys_user` 为 users+user_profile 投影；`password_hash` 恒 NULL——密码由 Logto 管理，库内不存明文）。该兼容视图是刻意保留的兼容层，非"未清理的 sys_ 残留"。
+> 说明：`users` / `v_user_list` 的数据源是 public 的 `users`（Logto 镜像）+ `user_profile`（业务档案）直接投影；`password_hash` 恒 NULL——密码由 Logto 管理，库内不存明文。原 `public.sys_user` 兼容视图已于 2026-08-20 移除。
 
 ## 5. 示例：调用一个 RPC
 

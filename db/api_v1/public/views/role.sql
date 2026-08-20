@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/sys_role
+-- db/api_v1/public/views/sys_role
 -- T7: 重建为 role 投影（Logto 全局角色目录），与 013 迁移一致
 -- 034: is_active 语义修复——Logto 角色无「停用」状态（角色删除即移除），
 --       原 NOT r.is_default 映射与注释意图相反（默认角色被标为停用），恒 true 兼容前端过滤

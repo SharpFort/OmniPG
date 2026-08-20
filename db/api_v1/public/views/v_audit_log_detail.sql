@@ -1,5 +1,5 @@
--- db/api_v1/sys/views/v_audit_log_detail.sql
--- 审计日志视图：含用户名、租户名（T7: sys_user 兼容视图 + tenants 镜像）
+-- db/api_v1/public/views/v_audit_log_detail.sql
+-- 审计日志视图：含用户名、租户名（T7: users 镜像 + tenants 镜像）
 -- 来源: 20260707000015_system_management_api.sql → T7 适配
 
 CREATE OR REPLACE VIEW api_v1_public.v_audit_log_detail AS
@@ -15,6 +15,6 @@ SELECT
     t.name AS tenant_name,
     a.created_at
 FROM public.audit_log a
-LEFT JOIN public.sys_user u ON a.user_id::text = u.id
+LEFT JOIN public.users u ON a.user_id::text = u.id
 LEFT JOIN public.tenants t ON a.tenant_id = t.id;
 COMMENT ON VIEW api_v1_public.v_audit_log_detail IS '审计日志视图：含用户名、租户名';

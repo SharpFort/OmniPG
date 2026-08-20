@@ -8,18 +8,18 @@
 
 - 业务表/镜像表**无 `sys_` 前缀**：`users`、`tenants`、`role`、`organization_role`、`user_tenants`、`user_role`（Logto 镜像表）；`department`、`position`、`user_profile`、`user_position`、`iam_menu`、`iam_role_menu`、`iam_role_data_scope`、`dict_type`、`dict_data`、`app_config`、`audit_log`、`login_log`、`cron_job_log`、`webhook_event_log`、`ip_geolite2_*`、`ip_region_v4`（业务/自主表）。
 - `iam_*` 前缀保留给权限域表（iam_menu / iam_role_menu / iam_role_data_scope）。
-- `sys_user`/`casbin_rule` 是 **刻意保留的 public schema 兼容层**（`db/src/public/views/`），不是物理表，也不是"未清理的 sys_ 残留"：`sys_user` = users+user_profile 投影（password_hash 恒 NULL，密码由 Logto 管理）；`casbin_rule` = 055 双段投影（API 段 = iam_role_menu→iam_menu 按钮行端点、菜单段 = router）。历史 `sys_*` 表（sys_role/sys_api/sys_menu/sys_user_session 等）已全部移除（见 `db/tests/public/01_schema_test.sql` 的 `hasnt_table` 断言）。
+- `public.sys_user` / `public.casbin_rule` 兼容视图已于 2026-08-20 **移除**（不再借鉴 Casbin 权限模型）：用户数据直接查 `public.users`（Logto 镜像）+ `public.user_profile`（业务档案），授权以 `iam_role_menu → iam_menu` 为准。历史 `sys_*` 表（sys_role/sys_api/sys_menu/sys_user_session 等）已全部移除（见 `db/tests/public/01_schema_test.sql` 的 `hasnt_table` 断言）。
 
 ### 视图
 
 | 位置 | 命名 | 示例 |
 | --- | --- | --- |
 | `db/api_v1/<域>/views/`（对外暴露） | 视图名 = 底层表名，或 `v_*` 列表/明细视图；目录按域组织（`_shared`/`public`，当前活跃模块 public）；运行态仅暴露 `api_v1_public`（compose 权威） | `users`、`role`、`iam_menu`、`v_user_list`、`v_role_list`、`v_dept_list`、`v_audit_log_timeline` |
-| `db/src/public/views/`（内部兼容投影） | 保留历史名 | `sys_user`、`casbin_rule` |
+| `db/src/public/views/`（内部兼容投影，已清空） | 2026-08-20 移除 `sys_user`/`casbin_rule` | — |
 
 ### RPC（api_v1_public 函数）
 
-- **CRUD 类统一 `rpc_` 前缀**：`rpc_create_menu`、`rpc_update_department`、`rpc_delete_dict_data`、`rpc_set_role_menus`、`rpc_get_position_tree` 等（`db/api_v1/public/rpc/` 共 44 个文件）。Schema 布局 = `public`/`api_v1_public`/`api_v1_sys`（027 兼容）/`net`（pg_net 宿主）；运行态仅暴露 `api_v1_public`（compose 权威），目录按域组织（`db/api_v1/{_shared,public}/`），当前内容全部在 public 子目录。
+- **CRUD 类统一 `rpc_` 前缀**：`rpc_create_menu`、`rpc_update_department`、`rpc_delete_dict_data`、`rpc_set_role_menus`、`rpc_get_position_tree` 等（`db/api_v1/public/rpc/` 共 44 个文件）。Schema 布局 = `public`/`api_v1_public`/`net`（pg_net 宿主）；运行态仅暴露 `api_v1_public`（compose 权威），目录按域组织（`db/api_v1/{_shared,public}/`），当前内容全部在 public 子目录。
 - 历史函数保留原名（不强制改名）：`get_user_menu`、`get_role_permissions`、`get_current_user`、`search_users`、`search_audit_log`、`update_config`、`webhook_logto`、`ensure_user`、`import_csv`。
 - 参数用 `p_` 前缀 + 蛇形（`p_role_code`、`p_menu_ids`）；**枚举不进函数签名**（参数用 `text`，函数体内显式 cast，JSON 友好）。
 

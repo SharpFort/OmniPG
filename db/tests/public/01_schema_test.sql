@@ -1,6 +1,6 @@
 -- 01_schema_test.sql：表/列/约束存在性验证（T7 重写：Logto 镜像表 + 自主表；055 单表化调整）
 BEGIN;
-SELECT plan(63);
+SELECT plan(64);
 
 -- 1. 表存在性（12 张：镜像表 + 自主表 + 业务表；055: iam_api/iam_role_api 已删除 → hasnt_table）
 SELECT has_table('users');
@@ -80,6 +80,7 @@ SELECT fk_ok('iam_role_menu', 'menu_id', 'iam_menu', 'id');
 SELECT hasnt_table('casdoor_user_mirror');
 SELECT hasnt_table('sys_role');
 SELECT hasnt_table('sys_user');
+SELECT hasnt_view('sys_user', 'public.sys_user 兼容视图已移除');
 SELECT hasnt_table('sys_tenant');
 SELECT hasnt_table('sys_user_session');
 SELECT hasnt_table('sys_token_blacklist');
@@ -97,7 +98,7 @@ SELECT ok(
     (SELECT count(*) >= 1 FROM pg_views WHERE viewname='users' AND schemaname='api_v1_public'),
     'api_v1_public.users 视图存在');
 
-SELECT has_view('casbin_rule');
+SELECT hasnt_view('casbin_rule', 'public.casbin_rule 兼容视图已移除');
 
 SELECT * FROM finish();
 ROLLBACK;

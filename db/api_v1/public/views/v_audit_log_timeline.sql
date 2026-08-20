@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/v_audit_log_timeline.sql
+-- db/api_v1/public/views/v_audit_log_timeline.sql
 -- 审计时间线（按天聚合）
 -- 来源: 20260707000017_audit_session_monitoring.sql
 

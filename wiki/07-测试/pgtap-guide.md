@@ -33,7 +33,7 @@ psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT extname, extversion FROM pg_
 
 当前文件清单（计划断言合计 115 条）：
 
-> 兼容视图说明：`public.sys_user`（users + user_profile 投影，`password_hash` 恒 NULL，密码由 Logto 管理）与 `casbin_rule`（055 双段投影：API 段 = iam_role_menu → iam_menu 按钮行端点、菜单段 = router）是**刻意保留的兼容层**，不是未清理的 sys_ 残留。`01_schema_test.sql` 中 `hasnt_table('sys_user')` 只断言“表”不存在，不影响兼容视图存在。
+> 兼容视图说明：`public.sys_user` / `casbin_rule` 兼容视图已于 2026-08-20 移除；`01_schema_test.sql` 用 `hasnt_table('sys_user')`、`hasnt_view('sys_user')`、`hasnt_view('casbin_rule')` 断言其不存在。
 
 | 文件 | 计划断言数 | 主题 |
 | --- | ---: | --- |
@@ -41,7 +41,6 @@ psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT extname, extversion FROM pg_
 | `02_function_test.sql` | 11 | 函数存在性与基础行为（sha256、JWT helper、RLS helper 等） |
 | `03_trigger_test.sql` | 4 | 触发器存在与行为（审计、updated_at） |
 | `05_rls_test.sql` | 12 | RLS 启用状态、055 单表化后的表删除断言 |
-| `test_casbin_view.sql` | 8 | `casbin_rule` 视图结构/输出/过滤 |
 | `test_rls_isolation.sql` | 14 | 镜像表、RLS 策略、RLS helper 函数 |
 
 ## 文件结构与事务回滚
@@ -70,11 +69,11 @@ ROLLBACK;
 | `plan(N)` | 声明用例数 | `SELECT plan(63);`（01_schema_test.sql） |
 | `ok(expr, desc)` | 布尔断言 | `ok((SELECT count(*) >= 1 FROM pg_indexes ...), 'users.username 有索引')` |
 | `is(actual, expected, desc)` | 等值断言 | `is(current_user_id(), NULL, '无 JWT 时 user_id 为 NULL')` |
-| `results_eq(sql, ARRAY[...], desc)` | SQL 结果与期望数组比较 | `results_eq($$ SELECT DISTINCT ptype FROM casbin_rule $$, ARRAY['p'::varchar], ...)` |
+| `results_eq(sql, ARRAY[...], desc)` | SQL 结果与期望数组比较 | `results_eq($$ SELECT DISTINCT api_method FROM iam_menu WHERE api_method IS NOT NULL $$, ARRAY['GET'::varchar], ...)` |
 | `lives_ok(sql, desc)` | 断言语句不抛异常 | `lives_ok('SELECT current_user_id()', 'current_user_id 不抛异常')` |
 | `has_table / hasnt_table` | 表存在/不存在 | `has_table('users')`、`hasnt_table('iam_api')` |
 | `has_column` | 列存在 | `has_column('users', 'username')` |
-| `has_view / columns_are` | 视图存在/列集合 | `has_view('casbin_rule')`、`columns_are('casbin_rule', ARRAY['id','ptype','v0',...])` |
+| `has_view / columns_are` | 视图存在/列集合 | `has_view('v_role_list')`、`columns_are('v_role_list', ARRAY['id',...])` |
 | `has_function` | 函数存在 | `has_function('update_updated_at')`、`has_function('current_user_id', ARRAY[]::text[])` |
 | `has_trigger` | 触发器存在 | `has_trigger('department', 'trg_audit_department')` |
 | `fk_ok(table, col, ref_table, ref_col)` | 外键存在 | `fk_ok('user_tenants', 'user_id', 'users', 'id')` |

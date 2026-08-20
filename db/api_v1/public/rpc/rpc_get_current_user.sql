@@ -1,4 +1,4 @@
--- db/api_v1/sys/rpc/rpc_get_current_user.sql
+-- db/api_v1/public/rpc/rpc_get_current_user.sql
 -- 获取当前登录用户信息 RPC（T7: Logto 镜像语义 users+user_profile+tenants+department）
 -- 来源: 20260707000014_auth_rpc_functions.sql → T7 适配
 -- 061（2026-08-15）: 镜像表无 updated_at/deleted_at——updated_at 映射 logto_updated_at，

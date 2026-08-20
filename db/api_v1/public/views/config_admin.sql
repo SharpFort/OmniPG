@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/sys_config_admin.sql
+-- db/api_v1/public/views/sys_config_admin.sql
 -- 系统配置管理视图（含描述，仅管理员可见）
 
 CREATE OR REPLACE VIEW api_v1_public.config_admin AS

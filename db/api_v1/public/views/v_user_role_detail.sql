@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/v_user_role_detail.sql
+-- db/api_v1/public/views/v_user_role_detail.sql
 -- 用户-角色关联详情视图（T7: user_tenants 成员关系 + tenants 镜像）
 -- Logto 语义: 成员关系即授权面；组织角色绑定在 Logto organization_roles
 -- 来源: 20260707000016_relationship_management.sql → T7 适配

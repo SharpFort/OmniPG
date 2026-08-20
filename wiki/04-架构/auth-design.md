@@ -184,7 +184,7 @@ PostgREST 把 JWT claims 注入 `request.jwt.claims`（GUC），策略直接消�
 | 吸收点 | 现状落点 |
 | --- | --- |
 | RBAC 数据模型（角色 → 资源绑定） | iam_role_menu（单表化后）+ iam_menu.api_code |
-| casbin_rule 扁平策略视图思想 | db/src/public/views/casbin_rule.sql 双段投影（API 段 = role_menu→button 行 api_url/api_method；菜单段 = router/'menu'），供测试/兼容 |
+| casbin_rule 扁平策略视图思想 | 已随 2026-08-20 兼容视图清理移除（不再借鉴 Casbin 模型）；授权数据以 iam_role_menu → iam_menu 为准 |
 | Role-in-JWT 优化（用户数退出授权路径） | roles claim 注入，授权判定零用户查询 |
 | role_code 作为策略主体（v0） | role.role_code 生成列 = Logto 角色名，绑定表 join key |
 

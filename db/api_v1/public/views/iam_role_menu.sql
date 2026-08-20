@@ -1,4 +1,4 @@
--- db/api_v1/sys/views/sys_role_menu
+-- db/api_v1/public/views/sys_role_menu
 -- T7: 重建为 iam_role_menu 投影（role_id = role.id，兼容前端关联），与 013 迁移一致
 -- 来源: 20260707000013_postgrest_api_v1.sql（T7 改造）
 
