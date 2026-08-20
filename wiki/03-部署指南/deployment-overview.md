@@ -3,7 +3,7 @@
 OmniPG 采用「宿主基础设施 + 容器网关」两层部署形态：
 
 - **宿主层（Pigsty v4.4.0）**：PostgreSQL 18（5432）、pgBouncer（6432）、Redis（6379）、etcd（2379）、Grafana/VictoriaMetrics 等，配置见 `infra/`。
-- **容器层（gateway/docker-compose.yml）**：etcd（APISIX 配置中心）、APISIX（9080/9443/9180/7085）、PostgREST（3100）、Swagger UI（8082）、Logto（3001/3002）。PostgreSQL/pgBouncer/Redis 不放入容器，统一由 Pigsty 管理（22 号审查文档决策）。
+- **容器层（gateway/docker-compose.yml）**：etcd（APISIX 配置中心）、APISIX（9080 对外 / 9180 仅内网管理 / 7085 仅本机回环；9443 预留未映射）、PostgREST（3100）、Swagger UI（8082）、Logto（3001/3002）。PostgreSQL/pgBouncer/Redis 不放入容器，统一由 Pigsty 管理（22 号审查文档决策）。
 
 本文档给出两套部署方案的对比、环境区分与部署前置检查；具体步骤见 [script-deploy.md](script-deploy.md) 与 [manual-deploy.md](manual-deploy.md)。
 
@@ -89,9 +89,10 @@ OmniPG 采用「宿主基础设施 + 容器网关」两层部署形态：
 | 6432 | pgBouncer（Pigsty） | PostgREST 容器经 `host.docker.internal:6432` 接入 |
 | 6379 | Redis（Pigsty） | standalone |
 | 2379 | etcd（Pigsty） | 宿主侧；compose 内 etcd 不映射宿主端口 |
-| 9080 / 9443 | APISIX 数据面 HTTP/HTTPS | 对外入口 |
-| 9180 | APISIX Admin API + Dashboard | 不暴露公网 |
-| 7085 | APISIX Status API | 健康检查 |
+| 9080 | APISIX 数据面 HTTP | 唯一对外端口 |
+| 9180 | APISIX Admin API + Dashboard | 仅内网管理（allow_admin 私网段） |
+| 7085 | APISIX Status API | 仅本机回环（127.0.0.1:7085），健康检查 |
+| ~~9443~~ | ~~APISIX 数据面 HTTPS~~ | 预留，2026-08-20 起不再映射宿主 |
 | 3100 | PostgREST（compose 映射 3100:3000） | 直连调试 |
 | 3001 / 3002 | Logto Core / Console | OIDC |
 | 8082 | Swagger UI | |

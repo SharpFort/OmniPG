@@ -37,13 +37,13 @@
 | 文件 | 职责 | 说明 |
 | --- | --- | --- |
 | `docker-compose.yml` | 五服务编排：etcd(app-etcd)、apisix(app-apisix)、postgrest(app-postgrest)、swagger-ui(app-swagger)、logto(app-logto) | 网络 `app-net`（172.20.0.0/16）；数据库走 `host.docker.internal` 连 Pigsty pgBouncer（6432/5433） |
-| `apisix/config.yaml` | APISIX traditional 模式配置（etcd 存储 + Admin API + Dashboard） | Admin API 9180、Status 7085、Control 9092 |
+| `apisix/config.yaml` | APISIX traditional 模式配置（etcd 存储 + Admin API + Dashboard） | Admin API 9180（仅内网）、Status 7085（宿主仅本机回环）、Control 9092（容器内回环） |
 | ~~`apisix/apisix.yaml`~~ | standalone 模式路由过时残留 | 2026-08-19 已删除 |
 | `postgrest/postgrest.conf` | PostgREST **参考文件**（2026-08-19 已与 compose 运行态对齐） | `db-schemas = "api_v1_public"`（单 schema）、`jwt-role-claim-key = .pg_role`、无 pre-request；运行态权威 = compose 环境变量（`PGRST_DB_SCHEMAS: api_v1_public`） |
 | `logto-csp-patch.js` | Logto CSP frame-ancestors 补丁（启动时注入） | 供 OmniAdmin 3006/3007 嵌入登录页 |
 | `.env.example` | 网关环境变量模板 | `APISIX_ADMIN_KEY`、`JWKS_JSON`、`AUTHENTICATOR_PASSWORD`、`LOGTO_DB_PASSWORD` 等 |
 
-对外端口速查：APISIX 9080(HTTP)/9443(HTTPS)/9180(Admin API+Dashboard)/7085(Status) · PostgREST 3100（容器内 3000）· Logto 3001(core)/3002(console) · Swagger UI 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库走宿主 5433。
+对外端口速查：APISIX 9080(HTTP，唯一对外)/9180(Admin API+Dashboard，仅内网)/7085(Status，仅本机回环；9443 预留未映射) · PostgREST 3100（容器内 3000）· Logto 3001(core)/3002(console) · Swagger UI 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库走宿主 5433。
 
 组件版本：Pigsty v4.4.0 · PostgreSQL 18 · PostgREST v14.15（postgrest/postgrest:v14.15）· APISIX 3.17.0（apache/apisix:3.17.0-debian）· etcd 3.5.11（bitnamilegacy/etcd:3.5.11）· Logto OSS v1.42（compose 镜像 latest）· Swagger UI v5.2.0 · dbmate · pgTAP · GitHub Actions。
 

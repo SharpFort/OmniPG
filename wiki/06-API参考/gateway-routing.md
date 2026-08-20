@@ -16,8 +16,8 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 
 - `deployment.role: traditional`，`config_provider: etcd`——**路由/插件/上游全部存 etcd**，经 Admin API 管理；不读 `apisix.yaml`。
 - etcd 为 compose 内 `app-etcd`（`http://app-etcd:2379`），**不映射宿主端口**（宿主 2379 被 Pigsty etcd 占用）。
-- Admin API 需要 `X-API-KEY`（`APISIX_ADMIN_KEY`，由 `gateway/.env` 注入）；开发环境 `allow_admin: 0.0.0.0/0`，生产必须收窄。
-- 内置 Dashboard（`enable_admin_ui: true`）、Status API（7085）、Control API（9092，内部运维勿暴露公网）。
+- Admin API 需要 `X-API-KEY`（`APISIX_ADMIN_KEY`，由 `gateway/.env` 注入）；`allow_admin` 已收窄为私网段（127.0.0.0/8、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16），仅内网管理（2026-08-20）。
+- 内置 Dashboard（`enable_admin_ui: true`，仅内网管理）、Status API（7085，宿主仅本机回环）、Control API（9092，容器内回环）。
 
 ## 对外端口与服务映射
 
@@ -25,10 +25,10 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 
 | 宿主端口 | 服务 | 容器内 | 说明 |
 |:---:|:---|:---|:---|
-| 9080 | APISIX 数据面 HTTP | 9080 | 所有业务流量入口 |
-| 9443 | APISIX 数据面 HTTPS | 9443 | 预留 |
-| 9180 | APISIX Admin API + Dashboard | 9180 | REST 管理接口；浏览器 `http://localhost:9180/ui` |
-| 7085 | APISIX Status API | 7085 | 健康探针 `GET /status` → `{"status":"ok"}` |
+| 9080 | APISIX 数据面 HTTP | 9080 | 所有业务流量入口（唯一对外端口） |
+| 9443 | APISIX 数据面 HTTPS | —（未映射宿主） | 预留；需要时由外层 LB/反代终结 TLS，或配置 ssl 证书后恢复映射 |
+| 9180 | APISIX Admin API + Dashboard | 9180 | REST 管理接口；浏览器 `http://localhost:9180/ui`；仅内网管理（allow_admin 收窄私网段） |
+| 7085 | APISIX Status API | 127.0.0.1:7085 | 健康探针 `GET /status` → `{"status":"ok"}`；仅本机回环 |
 | 3100 | PostgREST | 3000 | 调试/OpenAPI 直连；**业务必须走 9080** |
 | 8082 | Swagger UI | 8080 | `API_URL` 指向 PostgREST（${PGRST_PORT}） |
 | 3001 | Logto Core / OIDC / Management API | 3001 | 签发 token、`/oidc/.well-known/openid-configuration` |

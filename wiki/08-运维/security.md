@@ -86,7 +86,7 @@ PostgREST 只接受预定义视图/RPC 调用，HTTP 参数作为绑定值传递
 | --- | --- | --- | --- |
 | DB_PASSWORD（app_owner） | .env.*、infra/userlist.txt、infra/pigsty.yml | 数据库全量读写 | 生产换强随机值；userlist.txt 权限 640 |
 | AUTHENTICATOR_PASSWORD | .env.*、userlist.txt、pigsty.yml | PostgREST 连接串 | 同上 |
-| APISIX_ADMIN_KEY | gateway/.env → config.yaml | 网关全部路由/插件可被篡改 | 上线前必须更换默认值；9180 不暴露公网 |
+| APISIX_ADMIN_KEY | gateway/.env → config.yaml | 网关全部路由/插件可被篡改 | 上线前必须更换默认值；9180 仅内网可达（allow_admin 私网段） |
 | JWKS_JSON | gateway/.env | PostgREST 验签密钥（Logto 时代为公钥 JWKS） | 与 Logto 一致即可；公钥泄露风险低 |
 | LOGTO_WEBHOOK_SIGNING_KEY | gateway/.env | webhook 可被伪造（fail-open） | 必填，脚本缺失即拒绝部署 |
 | LOGTO_M2M_SECRET | 环境变量 / --m2m-secret | Management API 全量读写 | 不硬编码；init-logto.py 缺失即拒绝（N23） |
@@ -125,8 +125,8 @@ pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_
 ### 4.4 APISIX 管理面（gateway/apisix/config.yaml）
 
 - Traditional 模式：etcd（compose 内 app-etcd:2379，不映射宿主端口，避免与 Pigsty etcd 冲突）。
-- Admin API 9180 + 内置 Dashboard（/ui）；enable_admin_ui: true；**allow_admin: 0.0.0.0/0 仅限开发**，生产务必收窄。
-- Control API 9092、Status API 7085：控制面/健康检查，不应暴露公网。
+- **端口收敛（2026-08-20）**：对外仅 9080；Admin API 9180 + 内置 Dashboard（/ui）仅内网管理，`allow_admin` 已收窄为私网段（127.0.0.0/8、10.0.0.0/8、172.16.0.0/12、192.168.0.0/16）；Status API 7085 宿主仅绑 127.0.0.1；Control API 9092 容器内回环；9443 不再映射宿主（预留）。
+- 详见 [APISIX 端口收敛与安全访问](apisix-port-hardening.md)。
 - 全局 CORS 规则（init-apisix-routes.sh 写入）：allow_origins: "*"，生产建议收窄为前端域名。
 
 ### 4.5 PostgREST 暴露面
@@ -198,7 +198,7 @@ pigsty.yml 使用 pg_hba_builtin: [] + 自定义 pg_hba_rules，与仓库内 pg_
 - [ ] 数据库账号最小权限：app_owner（业务主账号）、authenticator（PostgREST 切换角色）、web_anon（匿名，无表权限）；镜像表对应用只读
 - [ ] RLS 覆盖所有业务表（当前 20 条策略，新增表必须补策略）
 - [ ] 网关启用 jwt-auth + 全局 CORS（生产收窄 allow_origins）
-- [ ] APISIX Admin Key 已更换默认值，allow_admin 收窄，9180/9092/7085 不暴露公网
+- [ ] APISIX Admin Key 已更换默认值（compose 兜底值仍是官方示例 edd1c9…）；allow_admin 已收窄为私网段；9180/9092/7085 不暴露公网（2026-08-20 端口收敛已落地）
 - [ ] PostgREST 3100 端口仅 APISIX 可达（webhook 验签依赖网关）
 - [ ] LOGTO_WEBHOOK_SIGNING_KEY 已配置且 init-apisix-routes.sh 可 fail-closed
 - [ ] 密钥定期轮换（Logto JWKS + APISIX plugin_metadata 刷新）

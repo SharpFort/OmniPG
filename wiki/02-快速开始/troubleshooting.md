@@ -19,7 +19,10 @@
 | 3000 | Grafana（Pigsty） | 旧版 PostgREST 映射（现映射 3100） |
 | 3001 / 3002 | Logto core / console | 其他 Node 服务 |
 | 3100 | PostgREST（compose 硬编码） | — |
-| 9080 / 9180 / 7085 / 9443 | APISIX 数据面 / Admin / Status / HTTPS | 其他网关 |
+| 9080 | APISIX 数据面（唯一对外端口） | 其他网关 |
+| 9180 | APISIX Admin + Dashboard（仅内网管理） | 其他管理面板 |
+| 7085 | APISIX Status API（仅本机回环 127.0.0.1） | — |
+| ~~9443~~ | ~~APISIX HTTPS（预留，2026-08-20 起不再映射宿主）~~ | 其他 HTTPS 服务 |
 | 8082 | Swagger UI | 其他 Web 服务 |
 | 2379 | Pigsty etcd | ⚠️ compose 内 app-etcd **不映射** 2379，避免冲突 |
 | 5432 / 6432 | 宿主 PG / pgbouncer | Windows 侧服务（需 portproxy 时） |

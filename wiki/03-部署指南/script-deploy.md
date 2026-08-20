@@ -119,6 +119,8 @@ bash scripts/init-apisix-routes.sh   # 依赖 gateway/.env 的 APISIX_ADMIN_KEY 
 
 完成后输出 Dashboard（http://localhost:9180/ui）、Admin API（http://localhost:9180/apisix/admin）、Status API（http://localhost:7085/status）与路由数量。
 
+> 🔒 2026-08-20 端口收敛：9080 为唯一对外端口；9180 仅内网管理；7085 仅本机回环；9443 不再映射宿主。详见 [APISIX 端口收敛与安全访问](../08-运维/apisix-port-hardening.md)。
+
 > ✅ 2026-08-19：Casdoor 时代 `setup_apisix.sh` 已删除，部署链统一为 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS、`/logto/*` 代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`）。
 
 ## 初始化数据

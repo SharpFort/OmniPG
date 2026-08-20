@@ -70,10 +70,12 @@ cd gateway && bash -c '[ -f .env ] && export $(grep -v "^#" .env | xargs); bash 
 | 服务 | 容器名 | 端口映射 | 说明 |
 | --- | --- | --- | --- |
 | etcd | app-etcd | 无 | APISIX 配置中心（traditional 模式），容器内 `app-etcd:2379` |
-| apisix | app-apisix | 9080 / 9443 / 9180 / 7085 | 数据面 + Admin API + Dashboard + Status API |
+| apisix | app-apisix | 9080（对外）/ 9180（仅内网管理）/ 127.0.0.1:7085（仅本机回环）；9443 预留不映射 | 数据面 + Admin API + Dashboard + Status API |
 | postgrest | app-postgrest | 3100 → 3000 | 暴露 `api_v1_public` schema；连接 pgbouncer 6432 |
 | swagger-ui | app-swagger | 8082 → 8080 | 浏览器端拉取 PostgREST OpenAPI |
 | logto | app-logto | 3001 / 3002 | 首次启动执行 `db seed -- --swe` + CSP 补丁后 `npm start` |
+
+> 🔒 2026-08-20 端口收敛：对外仅 9080；9180 仅内网管理（allow_admin 收窄私网段）；7085 仅绑本机回环；9443 不再映射宿主（预留）。详见 [APISIX 端口收敛与安全访问](../08-运维/apisix-port-hardening.md)。
 
 关键环境变量（compose 内，代码事实）：
 

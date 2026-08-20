@@ -184,7 +184,9 @@ curl -s http://localhost:3000/api/health
 | 3000 | Grafana | http://localhost:3000 (admin/pigsty) |
 | 8428 | VictoriaMetrics | http://localhost:8428 |
 | 9428 | VictoriaLogs | http://localhost:9428 |
-| 9080 | APISIX (Docker) | http://localhost:9080 |
+| 9080 | APISIX 数据面 (Docker) | http://localhost:9080（唯一对外端口） |
+| 9180 | APISIX Admin + Dashboard (Docker) | http://localhost:9180/ui（仅内网管理） |
+| 7085 | APISIX Status API (Docker) | http://localhost:7085/status（仅本机回环） |
 | 3001 | Logto (Docker) | http://localhost:3001 (Console 3002) |
 | 8082 | Swagger UI (Docker) | http://localhost:8082 |
 

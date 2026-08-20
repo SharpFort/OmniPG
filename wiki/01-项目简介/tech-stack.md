@@ -133,7 +133,7 @@
 | production | `.env.production` | `production` | `${VAR}` 注入或密钥管理服务 | 同上 |
 
 - 部署入口：`scripts/deploy-db.sh <env> [db_port]`（bootstrap → dbmate up → apply-src 全量重放 → 验证）、`scripts/deploy-gateway.sh <env>`（复制 `.env.<env>` → compose 重启 → 健康检查）、`scripts/deploy-infra.sh`；CI 侧对应 `deploy-db.yml` / `deploy-gateway.yml` / `deploy-infra.yml` / `deploy-all.yml`（workflow_dispatch，staging/production）。
-- 端口速查（开发环境）：APISIX 9080/9443/9180/7085 · PostgREST 3100 · Logto 3001(core)/3002(console) · Swagger 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库 5433（宿主 Pigsty PG）。
+- 端口速查（开发环境，2026-08-20 收敛）：APISIX 9080（对外）/9180（Admin+Dashboard，仅内网管理）/7085（Status，仅本机回环；9443 预留未映射宿主） · PostgREST 3100 · Logto 3001(core)/3002(console) · Swagger 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库 5433（宿主 Pigsty PG）。详见 [APISIX 端口收敛与安全访问](../08-运维/apisix-port-hardening.md)。
 - 环境差异注意：APISIX Admin Key、数据库密码、JWKS 全部经 `.env.<env>` 注入，任何非本地部署前必须更换默认值（如 `openssl rand -hex 16`）。
 
 ---

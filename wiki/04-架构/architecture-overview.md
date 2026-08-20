@@ -15,7 +15,7 @@
 │ APISIX 网关（traditional 模式，etcd 存路由配置）            │         │
 │  · jwt-auth：Logto JWKS 验签（开发 HS256 / 生产 RS256）   │         │
 │  · 路由：/api/v1/public/* 去前缀→schema、/logto/*、/rpc/*  │         │
-│  · 全局 CORS；端口 9080(HTTP)/9443(HTTPS)/9180(Admin)/7085 │         │
+│  · 全局 CORS；对外 9080(HTTP)，管理 9180(仅内网)          │         │
 └──────────────┬───────────────────────────────────────────┘         │
                ▼                                                      ▼
 ┌──────────────────────────────────────────────────────────┐  ┌───────────────────────┐
@@ -39,14 +39,14 @@
 | 组件 | 镜像/版本 | 容器端口 | 宿主端口 | 职责 |
 | --- | --- | --- | --- | --- |
 | etcd | bitnamilegacy/etcd:3.5.11 | 2379（容器内，不映射宿主） | — | APISIX 配置中心（traditional 模式路由/插件元数据存储） |
-| apisix | apache/apisix:3.17.0-debian | 9080/9443/9180/7085 | 9080/9443/9180/7085 | 网关：JWT 验签、路由、CORS；9180 为 Admin API + Dashboard，7085 为 Status API |
+| apisix | apache/apisix:3.17.0-debian | 9080/9180/7085（容器内；9443 默认监听但未映射） | 9080（对外）/ 9180（仅内网）/ 127.0.0.1:7085（仅本机） | 网关：JWT 验签、路由、CORS；9180 为 Admin API + Dashboard（仅内网），7085 为 Status API（仅本机回环） |
 | postgrest | postgrest/postgrest:v14.15 | 3000 | 3100 | REST 引擎：api_v1_public schema 自动映射 + /rpc/* 函数端点 |
 | swagger-ui | swaggerapi/swagger-ui:v5.2.0 | 8080 | 8082 | OpenAPI 文档（浏览器端直连拉取 PostgREST spec） |
 | logto | ghcr.io/logto-io/logto:latest（OSS v1.42） | 3001/3002 | 3001/3002 | 认证/授权 IdP：OIDC、组织（租户）、角色目录、签发 JWT、webhook |
 
 > 注：gateway/docker-compose.yml 头部注释仍保留 "Casdoor/Syncer" 字样，属历史遗留；实际 compose 服务只有上表 5 个。PostgreSQL / pgbouncer / Redis 不在 compose 内，由宿主 Pigsty 管理（PostgREST 经 host.docker.internal:6432 连接 pgbouncer）。
 
-端口速查：APISIX 9080(HTTP)/9443(HTTPS)/9180(Admin)/7085(Status) · PostgREST 3100（容器内 3000）· Logto 3001(Core)/3002(Console) · Swagger 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库走宿主 5433（logto 容器 DB_URL 指向 host.docker.internal:5433/logto）。
+端口速查：APISIX 9080(HTTP，唯一对外)/9180(Admin+Dashboard，仅内网)/7085(Status，仅本机回环；9443 预留未映射) · PostgREST 3100（容器内 3000）· Logto 3001(Core)/3002(Console) · Swagger 8082 · PostgreSQL 5432 · pgBouncer 6432 · Redis 6379 · Logto 业务库走宿主 5433（logto 容器 DB_URL 指向 host.docker.internal:5433/logto）。
 
 版本口径（与 tech-stack 一致）：Pigsty v4.4.0 / PostgreSQL 18 / PostgREST v14.15 / APISIX 3.17.0 / etcd 3.5.11 / Logto OSS v1.42 / Swagger v5.2.0 / dbmate / pgTAP / GitHub Actions。
 

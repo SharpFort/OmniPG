@@ -166,7 +166,9 @@ curl -sf http://localhost:7085/status   # {"status":"ok"}
 bash ../scripts/init-apisix-routes.sh   # 需 gateway/.env 的 APISIX_ADMIN_KEY 与 LOGTO_WEBHOOK_SIGNING_KEY
 ```
 
-`gateway/apisix/config.yaml` 关键点：`deployment.role = traditional`、`config_provider = etcd`（etcd 地址 `http://app-etcd:2379`）、Admin API 9180 + 内嵌 Dashboard（`/ui`）、Status API 7085、Control API 9092、`admin_key` 来自环境变量 `APISIX_ADMIN_KEY`。`gateway/apisix/apisix.yaml`（standalone 时代留档，含 Casdoor 路由）已于 2026-08-19 删除。
+`gateway/apisix/config.yaml` 关键点：`deployment.role = traditional`、`config_provider = etcd`（etcd 地址 `http://app-etcd:2379`）、Admin API 9180 + 内嵌 Dashboard（`/ui`，仅内网管理）、Status API 7085（宿主仅本机回环）、Control API 9092（容器内回环）、`admin_key` 来自环境变量 `APISIX_ADMIN_KEY`。`gateway/apisix/apisix.yaml`（standalone 时代留档，含 Casdoor 路由）已于 2026-08-19 删除。
+
+> 🔒 2026-08-20 端口收敛：对外仅 9080；9180 仅内网管理（`allow_admin` 已收窄为私网段）；7085 仅绑本机回环 `127.0.0.1:7085`；9443 不再映射宿主。详见 [APISIX 端口收敛与安全访问](../08-运维/apisix-port-hardening.md)。
 
 **目标路由集**（`scripts/init-apisix-routes.sh`，Logto 时代，共 7 条）：
 

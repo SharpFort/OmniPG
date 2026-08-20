@@ -30,9 +30,9 @@ OmniPG 的配置分两层：根目录 `.env.*`（部署/数据库/网关公共�
 | DB_NAME | app_db | app_db | app_db | app_db | 主数据库 |
 | PG_BOUNCER_PORT | 6432 | 6432 | 6432 | 6432 | pgBouncer 端口 |
 | AUTHENTICATOR_PASSWORD | authenticator_dev_pass | authenticator_dev_pass | `${AUTHENTICATOR_PASSWORD}` | `${AUTHENTICATOR_PASSWORD}` | PostgREST 认证角色密码 |
-| APISIX_HTTP_PORT | 9080 | 9080 | 9080 | 9080 | 网关数据面 HTTP |
-| APISIX_HTTPS_PORT | 9443 | 9443 | 9443 | 9443 | 网关数据面 HTTPS |
-| APISIX_ADMIN_PORT | 9180 | 9180 | 9180 | 9180 | Admin API |
+| APISIX_HTTP_PORT | 9080 | 9080 | 9080 | 9080 | 网关数据面 HTTP（唯一对外端口） |
+| APISIX_HTTPS_PORT | 9443 | 9443 | 9443 | 9443 | 网关数据面 HTTPS（预留；2026-08-20 起 compose 不映射宿主） |
+| APISIX_ADMIN_PORT | 9180 | 9180 | 9180 | 9180 | Admin API + Dashboard（仅内网管理；allow_admin 收窄私网段） |
 | APISIX_ADMIN_KEY | a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6 | a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6 | `${APISIX_ADMIN_KEY}` | `${APISIX_ADMIN_KEY}` | Admin API Key |
 | PGRST_PORT | 3001 | 3001 | 3001 | 3001 | ⚠️ 见下方「遗留不一致」 |
 | JWKS_JSON | HS256 开发密钥 | HS256 开发密钥 | `${JWKS_JSON}` | `${JWKS_JSON}` | JWT 验签 JWKS（开发=HS256 对称密钥；staging/production=Logto JWKS RS256 公钥；compose/.env 注释写 ES384，需以 Logto 实际配置核实） |
@@ -55,7 +55,7 @@ OmniPG 的配置分两层：根目录 `.env.*`（部署/数据库/网关公共�
 | DB_PASSWORD | dev_password_change_me | app_owner 密码 |
 | PG_BOUNCER_PORT | 6432 | pgBouncer 端口 |
 | AUTHENTICATOR_PASSWORD | authenticator_dev_pass | PostgREST 认证角色密码 |
-| APISIX_HTTP_PORT / APISIX_HTTPS_PORT / APISIX_ADMIN_PORT | 9080 / 9443 / 9180 | APISIX 端口 |
+| APISIX_HTTP_PORT / APISIX_HTTPS_PORT / APISIX_ADMIN_PORT | 9080 / 9443（预留不映射） / 9180 | APISIX 端口（9080 对外；9180 仅内网管理） |
 | APISIX_ADMIN_KEY | edd1c9f034335f136f87ad84b625c8f1 | Admin API Key（⚠️ 与根目录 development 默认 a1b2… 不一致，部署以 gateway/.env 实际值为准） |
 | PGRST_PORT | 3001 | ⚠️ 见「遗留不一致」 |
 | JWKS_JSON | HS256 开发密钥 | PostgREST `PGRST_JWT_SECRET`（开发环境） |

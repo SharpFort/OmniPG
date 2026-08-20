@@ -163,8 +163,9 @@ all:
     node_etc_hosts: ['${admin_ip} i.pigsty sss.pigsty']
     node_repo_modules: 'node,infra,pgsql'
     node_repo_remove: true
-    # Phase 1 单机全栈 + Phase 2 分离（db: 6432/8428/2379；gw: 9080/9443/9180/8000/8082/6379）端口并集
-    node_firewall_public_port: [22, 80, 443, 5432, 6432, 3000, 8428, 2379, 9080, 9443, 9180, 8000, 8082, 6379]
+    # Phase 1 单机全栈 + Phase 2 分离（db: 6432/8428/2379；gw: 9080/9180/8082/6379）端口并集
+    # 2026-08-20 端口收敛：9080 为唯一对外端口；9180 仅内网管理（按内网来源放行）；9443 已从列表移除（预留，不映射）
+    node_firewall_public_port: [22, 80, 443, 5432, 6432, 3000, 8428, 2379, 9080, 9180, 8000, 8082, 6379]
 
     pg_version: 18
     pg_locale: C.UTF-8

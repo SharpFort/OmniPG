@@ -7,7 +7,7 @@
 | 组件 | 日志/入口 | 查看方式 |
 | --- | --- | --- |
 | APISIX | 容器日志 + error.log | docker logs app-apisix --tail 200 |
-| APISIX 状态 | Status API | curl http://localhost:7085/status |
+| APISIX 状态 | Status API（仅本机回环） | curl http://localhost:7085/status |
 | PostgREST | 容器日志（PGRST 错误码） | docker logs app-postgrest --tail 100 |
 | Logto | 容器日志 | docker logs app-logto --tail 200 |
 | PostgreSQL | /var/log/postgresql/（Pigsty 宿主） | tail -f /var/log/postgresql/*.log |
@@ -149,7 +149,7 @@ curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_list_webhook_events' \
 
 ### 5.1 模式与配置
 
-- APISIX 为 **traditional 模式**：路由/插件元数据存 compose 内 etcd（app-etcd:2379），Admin API 9180 + 内置 Dashboard（/ui），Status API 7085，Control API 9092。
+- APISIX 为 **traditional 模式**：路由/插件元数据存 compose 内 etcd（app-etcd:2379），Admin API 9180 + 内置 Dashboard（/ui，仅内网管理），Status API 7085（宿主仅本机回环），Control API 9092（容器内回环）。
 - 路由初始化：**scripts/init-apisix-routes.sh（Logto 版，2026-08-19 起唯一入口）**；Casdoor 时代 setup_apisix.sh 与 apisix.yaml 已删除。
 - 当前路由（7 条）：100 /.well-known/jwks（代理 Logto）· 95 POST /rpc/webhook_logto（HMAC 验签，无 jwt-auth）· 80 POST /rpc/ensure_user · 60 /logto/* · 50 /api/v1/public/*（重写至 api_v1_public）· 40 /rpc/* · 10 /*。api_v1_sales / api_v1_inventory 路由 2026-08-15 已退役。
 - 当前**未配置 limit-req 限流插件**（历史安全分析的建议尚未实施，TODO）；全局规则只有 CORS。
@@ -175,7 +175,7 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/public/role 
 | 全部 404 | etcd 未启动或路由未初始化 | docker compose ps 检查 app-etcd；重跑 init-apisix-routes.sh |
 | 受保护路由 401 | jwt-auth 元数据缺失/算法不符 | 见 §3.1；重新拉 Logto JWKS |
 | 路径 404 但 /rpc/* 可用 | 路由优先级/rewrite 不对 | 检查 api_v1_public 路由 regex_uri（^/api/v1/public/(.*) → /$1） |
-| Dashboard 打不开 | enable_admin_ui / allow_admin / 9180 映射 | 核对 config.yaml；浏览器 http://localhost:9180/ui 输入 Admin Key |
+| Dashboard 打不开 | enable_admin_ui / allow_admin / 9180 映射 | 核对 config.yaml；浏览器 http://localhost:9180/ui 输入 Admin Key（9180 仅内网可达） |
 | 怀疑限流误伤 | 当前无限流插件 | 若已加 limit-req，检查 rate/burst/全局规则；可临时移除验证 |
 
 ## 6. 回滚预案

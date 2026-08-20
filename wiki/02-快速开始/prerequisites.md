@@ -32,7 +32,7 @@
 | 容器 | 镜像 | 对外端口 |
 | --- | --- | --- |
 | app-etcd | bitnamilegacy/etcd:3.5.11 | 不映射（容器间 `app-etcd:2379`，避免与 Pigsty etcd :2379 冲突） |
-| app-apisix | apache/apisix:3.17.0-debian | 9080 / 9443 / 9180 / 7085 |
+| app-apisix | apache/apisix:3.17.0-debian | 9080（对外）/ 9180（仅内网管理）/ 127.0.0.1:7085（仅本机回环）；9443 预留不映射 |
 | app-postgrest | postgrest/postgrest:v14.15 | 3100 → 3000 |
 | app-swagger | swaggerapi/swagger-ui:v5.2.0 | 8082 → 8080 |
 | app-logto | ghcr.io/logto-io/logto:latest（OSS v1.42） | 3001（Core/OIDC）/ 3002（Admin Console） |

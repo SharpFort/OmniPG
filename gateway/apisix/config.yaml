@@ -3,20 +3,25 @@
 # 变更记录:
 #   2026-08-03  从 standalone(data_plane+yaml) 切换为 traditional(etcd+Admin API)
 #               新增: 内置 Dashboard UI / Status API(7085) / Control API(9092)
+#   2026-08-20 端口收敛: Control API 改绑 127.0.0.1；allow_admin 收窄为私网段（仅内网管理）
 #   配套文档: docs/审查文档/21-APISIX全栈部署可行性分析-网关AdminAPI与Dashboard.md
+#              wiki/08-运维/apisix-port-hardening.md
 #   路由管理: 不再读取 apisix.yaml，由 Admin API 管理（scripts/init-apisix-routes.sh 初始化，2026-08-19 起）
 # =============================================================================
 apisix:
-  node_listen: 9080
+  node_listen: 9080   # 数据面 HTTP —— 唯一对外端口
+  # 数据面 HTTPS 沿用镜像默认监听 9443，但 compose 不再映射宿主端口（预留）；
+  # 需要 HTTPS 时由外层 LB/反代终结 TLS，或在本文件配置 ssl 证书后恢复 9443 映射
   enable_ipv6: false
 
-  # Control API（内部运维接口，勿暴露公网）
+  # Control API（内部运维接口）：仅本容器回环可达，勿暴露公网
   enable_control: true
   control:
-    ip: "0.0.0.0"
+    ip: "127.0.0.1"
     port: 9092
 
   # Status API（健康/就绪探针，供部署脚本与 e2e 使用）
+  # 容器内保持 0.0.0.0 供 Docker healthcheck/脚本使用；宿主映射已限 127.0.0.1:7085
   status:
     ip: "0.0.0.0"
     port: 7085
@@ -30,8 +35,11 @@ deployment:
     admin_key_required: true
     enable_admin_cors: true          # Admin API CORS（内置 Dashboard 跨域需要）
     enable_admin_ui: true            # 内嵌 Dashboard UI（http://<apisix>:9180/ui）
-    allow_admin:                     # ⚠️ 开发环境放行所有来源；生产务必收窄为内网/Docker 网段！
-      - 0.0.0.0/0
+    allow_admin:                     # 仅内网管理：私网段 + 回环；生产可按需再加公司出口/VPN 段
+      - 127.0.0.0/8
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
     admin_key:
       - name: admin
         key: ${{APISIX_ADMIN_KEY}}   # 由 docker-compose 注入（gateway/.env → 容器环境变量）

@@ -27,8 +27,8 @@
 | 1 | 网络链路 | 容器 → 宿主 pgbouncer(6432) 可达（app-net + host.docker.internal） | 现行 |
 | 2 | 宿主 pgbouncer | `authenticator` 角色经 127.0.0.1:6432 登录成功 | 现行 |
 | 3 | PostgREST OpenAPI | `http://localhost:3001/` 返回 >2000 字符 | 现行 |
-| 4 | APISIX Status | `http://localhost:7085/status` 返回 `{"status":"ok"}` | 现行 |
-| 5 | Dashboard UI | `http://localhost:9180/ui` 返回 HTML | 现行 |
+| 4 | APISIX Status | `http://localhost:7085/status` 返回 `{"status":"ok"}`（仅本机回环 127.0.0.1） | 现行 |
+| 5 | Dashboard UI | `http://localhost:9180/ui` 返回 HTML（仅内网管理） | 现行 |
 | 6 | 路由清单 | Admin API 路由数 = 7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all） | 现行 |
 | 7 | Logto OIDC | `http://localhost:3001/oidc/.well-known/openid-configuration` 含 `jwks_uri` | 现行 |
 | 8 | 架构校验 | compose 服务清单无 docker PG 残留（pgsql/pgbouncer/casdoor-db） | 现行 |

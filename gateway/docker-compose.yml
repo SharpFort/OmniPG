@@ -10,6 +10,8 @@
 #              ⑤ 【移除 docker PG】删除 pgsql/pgbouncer/casdoor-db 容器，
 #                 连接串改指宿主 Pigsty PG（host.docker.internal:6432/5432）
 #                 详见 docs/审查文档/22-*
+#              ⑥ 2026-08-20 端口收敛：对外仅 9080；9180 仅内网管理（allow_admin 收窄私网段）；
+#                 7085 仅绑本机回环 127.0.0.1；9443（数据面 HTTPS）不再映射宿主（预留）
 #   配套文档: docs/审查文档/20-*、21-*、22-*
 # =============================================================================
 
@@ -57,10 +59,11 @@ services:
       APISIX_WORKER_PROCESSES: "1"
       APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}   # ⚠️ 上线前务必更换
     ports:
-      - "9080:9080"    # 数据面 HTTP
-      - "9443:9443"    # 数据面 HTTPS
-      - "9180:9180"    # Admin API + 内置 Dashboard（浏览器访问 http://localhost:9180/ui）
-      - "7085:7085"    # Status API（健康检查）
+      - "9080:9080"               # 数据面 HTTP —— 唯一对外端口
+      - "9180:9180"               # Admin API + 内置 Dashboard（仅内网管理；浏览器 http://localhost:9180/ui）
+      - "127.0.0.1:7085:7085"     # Status API（仅本机回环：供健康检查脚本，不暴露局域网）
+      # 9443（数据面 HTTPS）不再映射宿主：预留；需要 HTTPS 时由外层 LB/反代终结 TLS 后转发 9080，
+      # 或在 config.yaml 配置 ssl 证书后恢复映射
     volumes:
       - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
     depends_on:
