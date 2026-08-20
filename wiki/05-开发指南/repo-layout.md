@@ -70,7 +70,7 @@
 | `apply-src.sh` | **全量幂等重放**（含 §6.3 迁移代码对象扫描 + 3 遍收敛）；`--bootstrap` 子集 |
 | `migrate.sh` | dbmate 快捷入口（up/down/status/create） |
 | ~~`setup_apisix.sh`~~ | Casdoor 时代 APISIX 初始化 | 2026-08-19 已删除 |
-| `init-apisix-routes.sh` | **唯一路由初始化脚本（Logto 版）**：logto_jwks（→app-logto）、logto_proxy（/logto/*）、webhook_logto（HMAC 验签）、ensure_user、api_v1_public（/api/v1/sys/*→/$1）、rpc_all、catch_all | ✅ 2026-08-19 起部署链唯一入口 |
+| `init-apisix-routes.sh` | **唯一路由初始化脚本（Logto 版）**：logto_jwks（→app-logto）、logto_proxy（/logto/*）、webhook_logto（HMAC 验签）、ensure_user、api_v1_public（/api/v1/public/*→/$1）、rpc_all、catch_all | ✅ 2026-08-19 起部署链唯一入口 |
 | `start.sh` / `stop.sh` | 一键启停开发环境 |
 | `e2e-test.sh` | 端到端测试（Logto OIDC code flow 登录 → APISIX/PostgREST 全链路） |
 | `verify-stack.sh` | 全栈冒烟验证（10 项） |

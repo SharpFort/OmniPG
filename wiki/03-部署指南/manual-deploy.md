@@ -176,7 +176,7 @@ bash ../scripts/init-apisix-routes.sh   # 需 gateway/.env 的 APISIX_ADMIN_KEY 
 | logto_proxy | `/logto/*` | 60 | Logto 同源代理，`^/logto/(.*)` → `/$1` |
 | webhook_logto | `POST /rpc/webhook_logto` | 95 | HMAC-SHA256 验签（`logto-signature-sha-256` vs rawBody），无 jwt-auth |
 | ensure_user | `POST /rpc/ensure_user` | 80 | jwt-auth（`key_claim_name: sub`），登录 JIT 建档 |
-| api_v1_public | `/api/v1/sys/*` | 50 | 重写 `^/api/v1/sys/(.*)` → `/$1`，jwt-auth（URL 前缀 /api/v1/sys/* 映射 api_v1_public） |
+| api_v1_public | `/api/v1/public/*` | 50 | 重写 `^/api/v1/public/(.*)` → `/$1`，jwt-auth（URL 前缀 /api/v1/public/* 映射 api_v1_public） |
 | rpc_all | `/rpc/*` | 40 | 全部 RPC，jwt-auth |
 | catch_all | `/*` | 10 | 兜底，jwt-auth |
 
@@ -250,7 +250,7 @@ curl -sf http://localhost:8082/ | head -c 100
 curl -sf http://localhost:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_KEY"
 ```
 
-验收重点：PostgREST OpenAPI 完整（>2000 字符）、APISIX 路由 8 条、Logto OIDC discovery 可访问、`/api/v1/sys/*` 无 token 401 / 带 Logto token 200、镜像表只读。
+验收重点：PostgREST OpenAPI 完整（>2000 字符）、APISIX 路由 8 条、Logto OIDC discovery 可访问、`/api/v1/public/*` 无 token 401 / 带 Logto token 200、镜像表只读。
 
 ## 与脚本的对应关系
 

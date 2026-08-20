@@ -95,7 +95,7 @@ bash scripts/deploy-gateway.sh [environment]
 | `logto_proxy` | `/logto/*` | 60 | Logto 同源代理，`^/logto/(.*)` → `/$1` |
 | `webhook_logto` | `POST /rpc/webhook_logto` | 95 | HMAC-SHA256 验签（`logto-signature-sha-256` vs rawBody），无 jwt-auth |
 | `ensure_user` | `POST /rpc/ensure_user` | 80 | JWT auth（`key_claim_name: sub`），登录 JIT 建档 |
-| `api_v1_public` | `/api/v1/sys/*` | 50 | 重写 `^/api/v1/sys/(.*)` → `/$1`，JWT auth |
+| `api_v1_public` | `/api/v1/public/*` | 50 | 重写 `^/api/v1/public/(.*)` → `/$1`，JWT auth |
 | `rpc_all` | `/rpc/*` | 40 | 全部 RPC，JWT auth |
 | `catch_all` | `/*` | 10 | 兜底，JWT auth |
 

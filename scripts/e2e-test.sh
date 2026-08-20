@@ -106,13 +106,13 @@ run_test "AUTH" "Invalid Password Rejected" "错误密码被 Logto 拒绝" \
     "E2E_PASSWORD=wrongpassword_xyz logto_login | grep -qv '^eyJ' ; [ \$? -eq 1 ]"
 
 run_test "AUTH" "Unauthorized Request" "无 Token 请求返回 401/403" \
-    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/sys/role' | grep -q '40[13]'"
+    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/public/role' | grep -q '40[13]'"
 
 run_test "AUTH" "Authorized Request" "带 Token 访问镜像表正常" \
-    "curl -sf '$BASE_URL/api/v1/sys/role?select=role_code,role_name&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e '.[0].role_code'"
+    "curl -sf '$BASE_URL/api/v1/public/role?select=role_code,role_name&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e '.[0].role_code'"
 
 run_test "AUTH" "Menu Loaded" "用户菜单树加载成功" \
-    "curl -sf '$BASE_URL/api/v1/sys/rpc/get_user_menu' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
+    "curl -sf '$BASE_URL/api/v1/public/rpc/get_user_menu' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
 
 # ==============================================================================
 # Phase 2: 权限与只读保障（镜像表只读；写操作应被拒 — Logto 单向同步）
@@ -121,19 +121,19 @@ echo ""
 echo "📋 Phase 2: 权限与只读保障"
 
 run_test "RBAC" "Users Readonly" "users 镜像表 POST 被拒（视图不可插入 500/400）" \
-    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/sys/users' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"username\":\"x\"}' | grep -qE '4[0-9]{2}|5[0-9]{2}'"
+    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/public/users' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"username\":\"x\"}' | grep -qE '4[0-9]{2}|5[0-9]{2}'"
 
 run_test "RBAC" "Role Readonly" "role 镜像表 POST 被拒" \
-    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/sys/role' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"name\":\"x\"}' | grep -qE '40[13]|4[0-9]{2}'"
+    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/public/role' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"name\":\"x\"}' | grep -qE '40[13]|4[0-9]{2}'"
 
 run_test "RBAC" "Tenant Readonly" "tenants 镜像表 POST 被拒" \
-    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/sys/tenants' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"name\":\"x\"}' | grep -qE '40[13]|4[0-9]{2}'"
+    "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/api/v1/public/tenants' -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" -d '{\"name\":\"x\"}' | grep -qE '40[13]|4[0-9]{2}'"
 
 run_test "RBAC" "User List" "查询用户列表（v_user_list 视图）" \
-    "curl -sf '$BASE_URL/api/v1/sys/v_user_list?select=id,username&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e '.[0].id'"
+    "curl -sf '$BASE_URL/api/v1/public/v_user_list?select=id,username&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e '.[0].id'"
 
 run_test "RBAC" "Role List" "查询角色列表（v_role_list 视图）" \
-    "curl -sf '$BASE_URL/api/v1/sys/v_role_list?select=role_code,role_name&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/v_role_list?select=role_code,role_name&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 # ==============================================================================
 # Phase 3: API 鉴权
@@ -142,13 +142,13 @@ echo ""
 echo "📋 Phase 3: API 鉴权"
 
 run_test "API" "GET /role" "镜像表 role 可读" \
-    "curl -sf '$BASE_URL/api/v1/sys/role?limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/role?limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 run_test "API" "GET /users" "镜像表 users 可读" \
-    "curl -sf '$BASE_URL/api/v1/sys/users?select=id,username&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/users?select=id,username&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 run_test "API" "RPC get_current_user" "当前用户信息（JWT claims）" \
-    "curl -sf '$BASE_URL/api/v1/sys/rpc/get_current_user' -H \"Authorization: Bearer $TOKEN\" | jq -e '.id'"
+    "curl -sf '$BASE_URL/api/v1/public/rpc/get_current_user' -H \"Authorization: Bearer $TOKEN\" | jq -e '.id'"
 
 run_test "API" "JWKS Endpoint" "Logto JWKS 端点可访问" \
     "curl -sf '$BASE_URL/logto/oidc/jwks' | jq -e '.keys[0].kty'"
@@ -166,7 +166,7 @@ run_test "REALTIME" "JWT Roles Claim" "token 携带 roles（Logto 角色）" \
     "echo '$TOKEN' | python3 -c \"import sys,base64,json; t=sys.stdin.read().strip(); p=t.split('.')[1]; p+='='*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(d.get('roles',[]))\" | grep -q 'role_super_admin'"
 
 run_test "REALTIME" "Role List API" "v_role_list 反映 Logto 角色" \
-    "curl -sf '$BASE_URL/api/v1/sys/v_role_list?select=role_code&limit=10' -H \"Authorization: Bearer $TOKEN\" | jq -e '[.[].role_code] | length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/v_role_list?select=role_code&limit=10' -H \"Authorization: Bearer $TOKEN\" | jq -e '[.[].role_code] | length >= 1'"
 
 # ==============================================================================
 # Phase 5: 多租户隔离（RLS：JWT organization_id）
@@ -175,13 +175,13 @@ echo ""
 echo "📋 Phase 5: 多租户隔离"
 
 run_test "TENANT" "Tenant Isolation" "RLS 按租户过滤（department/audit_log 可读）" \
-    "curl -sf '$BASE_URL/api/v1/sys/department?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
+    "curl -sf '$BASE_URL/api/v1/public/department?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
 
 run_test "TENANT" "Dept Tenant Scoped" "department RLS 按租户过滤（可读）" \
-    "curl -sf '$BASE_URL/api/v1/sys/department?select=id&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
+    "curl -sf '$BASE_URL/api/v1/public/department?select=id&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
 
 run_test "TENANT" "audit_log Scoped" "audit_log RLS 可读" \
-    "curl -sf '$BASE_URL/api/v1/sys/audit_log?select=id&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
+    "curl -sf '$BASE_URL/api/v1/public/audit_log?select=id&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
 
 # ==============================================================================
 # Phase 6: webhook 同步链路（Logto 事件 → sync_* RPC）
@@ -193,10 +193,10 @@ run_test "SYNC" "webhook RPC 存在" "webhook_logto 函数注册" \
     "PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db -t -A -c \"SELECT proname FROM pg_proc WHERE proname='webhook_logto';\" 2>/dev/null | grep -q webhook_logto"
 
 run_test "SYNC" "users 镜像有数据" "Logto 用户已同步" \
-    "curl -sf '$BASE_URL/api/v1/sys/users?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/users?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 run_test "SYNC" "role 镜像有数据" "Logto 角色已同步" \
-    "curl -sf '$BASE_URL/api/v1/sys/role?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+    "curl -sf '$BASE_URL/api/v1/public/role?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
 # N17（2026-08-11）: 补齐 Phase 6 用例——验签失败 / 删除与封禁同步 / 对账 dry-run
 #   前置: gateway/.env 已配置 LOGTO_WEBHOOK_SIGNING_KEY（init-apisix-routes.sh fail-closed）
@@ -211,7 +211,7 @@ run_test "SYNC" "Webhook 错误签名被拒" "错误 HMAC 401" \
 
 # 真实 Logto 操作 → 镜像断言（需 Logto Console 权限；失败可跳过——手工执行段）
 echo "  ── N17 手工段（可选）: 在 Logto Console 删除/封禁一名用户后执行以下断言 ──"
-echo "     curl -sf '$BASE_URL/api/v1/sys/users?select=id,is_suspended&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -r '.[] | [.id,.is_suspended] | @tsv'"
+echo "     curl -sf '$BASE_URL/api/v1/public/users?select=id,is_suspended&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -r '.[] | [.id,.is_suspended] | @tsv'"
 
 if [ -z "${LOGTO_M2M_APP_ID:-}" ]; then
     echo "  [SYNC] 对账 dry-run 可执行: ⏭️ SKIP（LOGTO_M2M_APP_ID/SECRET 未配置，配置后自动启用）"
@@ -229,13 +229,13 @@ echo ""
 echo "📋 Phase 7: 异常恢复"
 
 run_test "RESILIENCE" "Bad Token Rejected" "非法 Token 被拒绝" \
-    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/sys/role' -H 'Authorization: Bearer invalid.token.value' | grep -q '40[13]'"
+    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/public/role' -H 'Authorization: Bearer invalid.token.value' | grep -q '40[13]'"
 
 run_test "RESILIENCE" "Missing Auth Header" "无 Authorization 头被拒绝" \
-    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/sys/role' | grep -q '40[13]'"
+    "curl -s -o /dev/null -w '%{http_code}' '$BASE_URL/api/v1/public/role' | grep -q '40[13]'"
 
 run_test "RESILIENCE" "Wrong Method" "错误 HTTP 方法被拒绝" \
-    "curl -s -o /dev/null -w '%{http_code}' -X PUT '$BASE_URL/api/v1/sys/role' -H \"Authorization: Bearer $TOKEN\" -d '{\"x\":1}' | grep -q '40[135]'"
+    "curl -s -o /dev/null -w '%{http_code}' -X PUT '$BASE_URL/api/v1/public/role' -H \"Authorization: Bearer $TOKEN\" -d '{\"x\":1}' | grep -q '40[135]'"
 
 # ==============================================================================
 # 汇总

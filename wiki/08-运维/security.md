@@ -21,7 +21,7 @@
 
 - 路由初始化脚本为 **scripts/init-apisix-routes.sh**（Logto 版）：
   - 从 Logto OIDC discovery（http://localhost:3001/oidc/.well-known/openid-configuration）拉取 jwks_uri，将 JWKS 写入 APISIX plugin_metadata/jwt-auth（algorithm: RS256）。
-  - 业务路由 /api/v1/sys/*、/rpc/*、/* 均挂 jwt-auth；/.well-known/jwks 与 /logto/* 为公开代理（指向 app-logto:3001）。
+  - 业务路由 /api/v1/public/*、/rpc/*、/* 均挂 jwt-auth；/.well-known/jwks 与 /logto/* 为公开代理（指向 app-logto:3001）。
 - 算法口径（统一）：开发环境 JWKS_JSON 为 **HS256 对称密钥**（gateway/.env.example / .env.development）；staging/production 指向 Logto JWKS 公钥 **RS256**（05 文档与 init-apisix-routes.sh 口径）。gateway compose 注释与 .env.staging / .env.production 注释写 **ES384** —— 口径不一致，需以 Logto 实际配置核实（TODO）。
 - ✅ 2026-08-19：Casdoor 时代 `scripts/setup_apisix.sh` 已删除，部署链统一 `scripts/init-apisix-routes.sh`（RS256 + Logto JWKS）。
 

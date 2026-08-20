@@ -48,7 +48,7 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 | `logto_proxy` | `/logto/*` | 全部 | 60 | `app-logto:3001` | `proxy-rewrite`：`^/logto/(.*)` → `/$1` | Logto 同源代理（前端 SDK 用 `http://localhost:9080/logto` 规避 CORS） |
 | `webhook_logto` | `/rpc/webhook_logto` | POST | 95 | `app-postgrest:3000` | `serverless-pre-function`：HMAC-SHA256 验签（`logto-signature-sha-256` vs rawBody） | **无 jwt-auth**（web_anon 可调）；**禁止叠加 request-validation**（JSON 重排会破坏 rawBody 签名）；缺 `LOGTO_WEBHOOK_SIGNING_KEY` 时脚本 exit 1（fail-closed） |
 | `ensure_user` | `/rpc/ensure_user` | POST | 80 | `app-postgrest:3000` | `jwt-auth`（`key_claim_name: sub`） | 登录 JIT 建档兜底（见 [Logto Webhook 接入](./logto-webhook.md)） |
-| `api_v1_public` | `/api/v1/sys/*` | 全部 | 50 | `app-postgrest:3000` | `proxy-rewrite`：`^/api/v1/sys/(.*)` → `/$1`；`jwt-auth`（`key_claim_name: sub`） | 视图/业务 API：`/api/v1/sys/users` → PostgREST `/users` |
+| `api_v1_public` | `/api/v1/public/*` | 全部 | 50 | `app-postgrest:3000` | `proxy-rewrite`：`^/api/v1/public/(.*)` → `/$1`；`jwt-auth`（`key_claim_name: sub`） | 视图/业务 API：`/api/v1/public/users` → PostgREST `/users` |
 | `rpc_all` | `/rpc/*` | 全部 | 40 | `app-postgrest:3000` | `jwt-auth`（`key_claim_name: sub`） | 全部 RPC（`webhook_logto` 因优先级更高先命中） |
 | `catch_all` | `/*` | 全部 | 10 | `app-postgrest:3000` | `jwt-auth`（`key_claim_name: sub`） | 兜底：未匹配路径进 PostgREST 由其返回 404 |
 
@@ -64,7 +64,7 @@ APISIX 是本项目唯一对外的 API 网关（入口 9080），负责 JWT 验�
 | PostgREST schema 配置 | **运行态以 `gateway/docker-compose.yml` 为权威**：`PGRST_DB_SCHEMAS=api_v1_public`（单 schema）、`PGRST_JWT_ROLE_CLAIM_KEY=.pg_role`、`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`、`PGRST_MAX_ROWS=1000`、`PGRST_DB_PRE_REQUEST` 已清空、`PGRST_JWT_SECRET=$(JWKS_JSON)`；`gateway/postgrest/postgrest.conf` 仅为参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_public、.pg_role、无 pre-request） | ✅ compose 为运行态权威；引用 conf 时须注明“以 compose 为准” |
 | `scripts/verify-stack.sh` / `scripts/start.sh` | 已按 Logto 架构更新（2026-08-19）：8 项检查、路由预期 7 条、Logto OIDC、无 Casdoor/Syncer | ✅ 现行 |
 
-**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 api_v1_sys）、`api_v1_sys`（027 改名链兼容承载，新代码不用）、`net`（pg_net 扩展宿主）；**不存在 extensions schema**。PostgREST 运行态只暴露 `api_v1_public` 单 schema（compose 环境变量权威，见上表）。`db/api_v1/` 目录按 `_shared`/`public` 分域（当前仅 `public/` 下有实体 SQL 文件；sales/inventory 模块已于 2026-08-15 退役、占位目录已清理，按需重建）。URL 前缀 `/api/v1/sys/*` 重写 `^/api/v1/sys/(.*)` → `/$1`，落到 `api_v1_public`。
+**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名，原 api_v1_sys）、`api_v1_sys`（027 改名链兼容承载，新代码不用）、`net`（pg_net 扩展宿主）；**不存在 extensions schema**。PostgREST 运行态只暴露 `api_v1_public` 单 schema（compose 环境变量权威，见上表）。`db/api_v1/` 目录按 `_shared`/`public` 分域（当前仅 `public/` 下有实体 SQL 文件；sales/inventory 模块已于 2026-08-15 退役、占位目录已清理，按需重建）。URL 前缀 `/api/v1/public/*` 重写 `^/api/v1/public/(.*)` → `/$1`，落到 `api_v1_public`。
 
 ## 鉴权与安全插件
 
@@ -153,7 +153,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9080/public/foo       
   - `curl -sf http://localhost:7085/status` → `{"status":"ok"}`
   - `curl -sf http://localhost:9180/ui` → HTML（Dashboard）
   - `curl -sf http://localhost:9080/logto/oidc/.well-known/openid-configuration` → Logto 同源代理
-  - 无 token 访问 `http://localhost:9080/api/v1/sys/users` → 401（jwt-auth）
+  - 无 token 访问 `http://localhost:9080/api/v1/public/users` → 401（jwt-auth）
 - ✅ 2026-08-19：`scripts/start.sh` / `scripts/verify-stack.sh` 已更新（无 Casdoor/Syncer）；CI `syncer-check` job 已移除。
 
 ---

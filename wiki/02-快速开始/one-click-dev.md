@@ -91,10 +91,10 @@ compose 没有健康检查 gate，纯 `sleep 10` 后即进入路由初始化。
 1. 幂等清理 Casdoor 时代旧路由（jwks / user_login_sso / refresh_token_rtr / casdoor_proxy / api_v1_sys / api_v1_sales / api_v1_inventory）。
 2. 轮询 `http://localhost:7085/status` 直到 `{"status":"ok"}`（15 次 × 1s）。
 3. 从 Logto OIDC discovery（:3001）拉取 JWKS，`PUT /apisix/admin/plugin_metadata/jwt-auth`（RS256）。
-4. `PUT` 业务路由 7 条：`logto_jwks`、`logto_proxy`（`/logto/*`）、`webhook_logto`（`/rpc/webhook_logto`，HMAC 验签）、`ensure_user`（`/rpc/ensure_user`）、`api_v1_public`（`/api/v1/sys/*`）、`rpc_all`（`/rpc/*`）、`catch_all`（`/*`）。
+4. `PUT` 业务路由 7 条：`logto_jwks`、`logto_proxy`（`/logto/*`）、`webhook_logto`（`/rpc/webhook_logto`，HMAC 验签）、`ensure_user`（`/rpc/ensure_user`）、`api_v1_public`（`/api/v1/public/*`）、`rpc_all`（`/rpc/*`）、`catch_all`（`/*`）。
 5. `PUT /apisix/admin/global_rules/1`：全局 CORS（含 `logto-signature-sha-256` header）。
 
-> ✅ 2026-08-19：部署链（`make dev`）已切换为 Logto 版 `scripts/init-apisix-routes.sh`（清理旧路由、Logto JWKS RS256、`/logto/*` 同源代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`、`/api/v1/sys/*` 重写为 `/$1`）；Casdoor 时代 `setup_apisix.sh` 已删除。
+> ✅ 2026-08-19：部署链（`make dev`）已切换为 Logto 版 `scripts/init-apisix-routes.sh`（清理旧路由、Logto JWKS RS256、`/logto/*` 同源代理、`/rpc/webhook_logto` HMAC 验签、`/rpc/ensure_user`、`/api/v1/public/*` 重写为 `/$1`）；Casdoor 时代 `setup_apisix.sh` 已删除。
 
 ```bash
 bash scripts/init-apisix-routes.sh   # 需要 gateway/.env 含 LOGTO_WEBHOOK_SIGNING_KEY

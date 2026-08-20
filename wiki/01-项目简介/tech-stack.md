@@ -22,7 +22,7 @@
 | Schema | 内容 | 说明 |
 | --- | --- | --- |
 | `public` | 核心业务表 + 全部函数/触发器/视图/RLS 策略 | 业务逻辑唯一真相源；镜像表（users/tenants/role/user_tenants/user_role 等）只读投影 |
-| `api_v1_public` | 系统管理 API 暴露层：视图 + RPC（`api_v1_public.*`），URL 前缀 `/api/v1/sys/*` 映射至此 | 027 定稿名；**当前 compose 运行态实际暴露**（`PGRST_DB_SCHEMAS=api_v1_public`） |
+| `api_v1_public` | 系统管理 API 暴露层：视图 + RPC（`api_v1_public.*`），URL 前缀 `/api/v1/public/*` 映射至此 | 027 定稿名；**当前 compose 运行态实际暴露**（`PGRST_DB_SCHEMAS=api_v1_public`） |
 | ~~`api_v1_sales` / `api_v1_inventory`~~ | ~~销售 / 库存测试域暴露层~~ | 2026-08-15 退役；2026-08-19 已从 `postgrest.conf` 移除，占位目录已清理——运行态仅 `api_v1_public` |
 | `api_v1_sys` | 历史迁移引用承载 | 027 改名链兼容，遗留空 schema，新代码不再使用 |
 | `net` | pg_net 扩展宿主 schema | 权限收紧：`authenticated` 无 EXECUTE/USAGE，HTTP 调用一律经 SECURITY DEFINER 封装函数 |
@@ -84,7 +84,7 @@
 
 - **模式**：traditional（etcd 存储配置），Admin API（9180）+ 内置 Dashboard（`/ui`）+ Status API（7085）；`gateway/apisix/apisix.yaml`（standalone 留档）已于 2026-08-19 删除。
 - **插件**：`jwt-auth`（Logto JWKS 验签；开发环境 HS256，生产 RS256）、`serverless-pre-function`（webhook HMAC-SHA256 原始 body 验签）、`proxy-rewrite`（路径映射）、全局 `cors`。
-- **目标路由集**（Logto 版，`scripts/init-apisix-routes.sh`，7 条）：`/api/v1/sys/*` 经 proxy-rewrite（regex `^/api/v1/sys/(.*) → /$1`）重写至 PostgREST 的 api_v1_public 暴露层：
+- **目标路由集**（Logto 版，`scripts/init-apisix-routes.sh`，7 条）：`/api/v1/public/*` 经 proxy-rewrite（regex `^/api/v1/public/(.*) → /$1`）重写至 PostgREST 的 api_v1_public 暴露层：
 
 | 优先级 | 路由 | 说明 |
 | --- | --- | --- |
@@ -92,7 +92,7 @@
 | 95 | `POST /rpc/webhook_logto` | 公开（无 jwt-auth）：Logto webhook 接收入口，APISIX 前置 HMAC 验签 |
 | 80 | `POST /rpc/ensure_user` | JWT 保护：登录 JIT 建档 |
 | 60 | `/logto/*` | Logto 同源代理（前端 SDK endpoint） |
-| 50 | `/api/v1/sys/*` | JWT 保护：业务 API（api_v1_public） |
+| 50 | `/api/v1/public/*` | JWT 保护：业务 API（api_v1_public） |
 | 40 | `/rpc/*` | JWT 保护：其余 RPC |
 | 10 | `/*` | 兜底（AuthN 准入） |
 
@@ -102,7 +102,7 @@
 
 | 文件 | 定位 | 现状 |
 | --- | --- | --- |
-| `scripts/init-apisix-routes.sh` | **唯一路由初始化脚本**（Logto 版：logto_jwks → app-logto:3001、logto_proxy `/logto/*`、webhook_logto `/rpc/webhook_logto`（HMAC 验签）、ensure_user `/rpc/ensure_user`、api_v1_public `/api/v1/sys/*`、rpc_all `/rpc/*`、catch_all `/*`；开头幂等清理 Casdoor 时代残留路由） | ✅ 部署链唯一入口：`Makefile dev`、`scripts/deploy-all.sh`、`.github/workflows/deploy-gateway.yml` 均调用它；依赖 `gateway/.env` 的 `APISIX_ADMIN_KEY` 与 `LOGTO_WEBHOOK_SIGNING_KEY`（缺失 fail-closed） |
+| `scripts/init-apisix-routes.sh` | **唯一路由初始化脚本**（Logto 版：logto_jwks → app-logto:3001、logto_proxy `/logto/*`、webhook_logto `/rpc/webhook_logto`（HMAC 验签）、ensure_user `/rpc/ensure_user`、api_v1_public `/api/v1/public/*`、rpc_all `/rpc/*`、catch_all `/*`；开头幂等清理 Casdoor 时代残留路由） | ✅ 部署链唯一入口：`Makefile dev`、`scripts/deploy-all.sh`、`.github/workflows/deploy-gateway.yml` 均调用它；依赖 `gateway/.env` 的 `APISIX_ADMIN_KEY` 与 `LOGTO_WEBHOOK_SIGNING_KEY`（缺失 fail-closed） |
 | ~~`scripts/setup_apisix.sh`~~ | ~~Casdoor 时代旧脚本~~（jwks 上游 `app-casdoor:8000`、user_login_sso / refresh_token_rtr、HS256） | 2026-08-19 已删除 |
 | ~~`gateway/apisix/apisix.yaml`~~ | ~~standalone 时代留档~~（含 Casdoor 路由） | 2026-08-19 已删除（traditional + etcd 为现行模式） |
 

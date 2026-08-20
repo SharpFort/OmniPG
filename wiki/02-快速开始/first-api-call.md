@@ -80,7 +80,7 @@ APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 | `/logto/*` | 60 | 公开 | 重写去前缀 → app-logto:3001 |
 | `/rpc/webhook_logto` | 95 | POST + HMAC 验签（无 jwt-auth） | app-postgrest:3000 |
 | `/rpc/ensure_user` | 80 | jwt-auth | app-postgrest:3000 |
-| `/api/v1/sys/*` | 50 | jwt-auth | 重写 `^/api/v1/sys/(.*)` → `/$1` |
+| `/api/v1/public/*` | 50 | jwt-auth | 重写 `^/api/v1/public/(.*)` → `/$1` |
 | `/rpc/*` | 40 | jwt-auth | app-postgrest:3000 |
 | `/*` | 10 | jwt-auth | 兜底 → PostgREST |
 
@@ -93,11 +93,11 @@ APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 TOKEN=<你的 access token>
 
 # 角色镜像目录（api_v1_public.role）
-curl -s 'http://localhost:9080/api/v1/sys/role?select=role_code,role_name&limit=5' \
+curl -s 'http://localhost:9080/api/v1/public/role?select=role_code,role_name&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
 # 用户列表视图（api_v1_public.v_user_list；RLS 只返回当前用户可见行）
-curl -s 'http://localhost:9080/api/v1/sys/v_user_list?select=id,username,email&limit=5' \
+curl -s 'http://localhost:9080/api/v1/public/v_user_list?select=id,username,email&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
 # 直连 PostgREST（同一 token；schema 即 api_v1_public）
@@ -109,16 +109,16 @@ curl -s 'http://localhost:3100/role?select=role_code,role_name&limit=5' \
 
 ## 5. 示例：调用一个 RPC
 
-RPC 走 `POST /rpc/<name>`；经 APISIX 可用 `/api/v1/sys/rpc/<name>` 或 `/rpc/<name>`（都带 jwt-auth）。
+RPC 走 `POST /rpc/<name>`；经 APISIX 可用 `/api/v1/public/rpc/<name>` 或 `/rpc/<name>`（都带 jwt-auth）。
 
 ```bash
 # 当前登录用户（JWT claims → users/user_profile/tenants 镜像；无参）
-curl -s -X POST 'http://localhost:9080/api/v1/sys/rpc/get_current_user' \
+curl -s -X POST 'http://localhost:9080/api/v1/public/rpc/get_current_user' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' \
   | python3 -m json.tool
 
 # 用户菜单树（前端初始化时调用；无参）
-curl -s -X POST 'http://localhost:9080/api/v1/sys/rpc/get_user_menu' \
+curl -s -X POST 'http://localhost:9080/api/v1/public/rpc/get_user_menu' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' \
   | python3 -m json.tool
 

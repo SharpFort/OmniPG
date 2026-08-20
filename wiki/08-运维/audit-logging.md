@@ -84,12 +84,12 @@
 
 ```bash
 # 最近 20 条审计（经网关）
-curl -s 'http://localhost:9080/api/v1/sys/rpc/search_audit_log' \
+curl -s 'http://localhost:9080/api/v1/public/rpc/search_audit_log' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_limit":20}'
 
 # 按表名模糊 + 时间范围
-curl -s 'http://localhost:9080/api/v1/sys/rpc/search_audit_log' \
+curl -s 'http://localhost:9080/api/v1/public/rpc/search_audit_log' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_table_name":"department","p_start_date":"2026-08-01T00:00:00Z"}'
 ```
@@ -112,7 +112,7 @@ id bigserial、tenant_id text（NULL = 登录前阶段）、user_id text（无 F
 | api_v1_public.rpc_search_login_logs(p_user_id, p_result, p_from, p_to, p_limit, p_offset, p_login_type, p_region) | 分页搜索；**需权限点 public:login-log:list**（否则 42501）；非超管仅能查本租户成员（user_tenants 关联）；LIMIT 上限 100 |
 
 ```bash
-curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_search_login_logs' \
+curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_search_login_logs' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_result":"success","p_limit":20,"p_offset":0}'
 ```
@@ -139,8 +139,8 @@ log_operate(p_module, p_action, p_target_type, p_target_id, p_result, p_detail)�
 | api_v1_public.rpc_list_cron_job_runs(p_limit int DEFAULT 100) | cron.job_run_details | 执行记录：runid, jobid, status, return_message, start_time, end_time；LIMIT 上限 1000 |
 
 ```bash
-curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_cron_jobs' -H "Authorization: Bearer $TOKEN"
-curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_cron_job_runs' -H "Authorization: Bearer $TOKEN" \
+curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_list_cron_jobs' -H "Authorization: Bearer $TOKEN"
+curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_list_cron_job_runs' -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"p_limit":20}'
 ```
 

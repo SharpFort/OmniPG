@@ -240,13 +240,13 @@ curl -s "http://localhost:3100/v_user_list?select=id,username,email&limit=5" \
 | `webhook_logto` | 95 | `POST /rpc/webhook_logto` | → PostgREST，`serverless-pre-function` HMAC-SHA256 验签（`logto-signature-sha-256`） | 无 jwt-auth（web_anon） |
 | `ensure_user` | 80 | `POST /rpc/ensure_user` | → PostgREST | jwt-auth（`key_claim_name: sub`） |
 | `logto_proxy` | 60 | `/logto/*` | → Logto 同源代理（去 `/logto` 前缀） | 公开 |
-| `api_v1_public` | 50 | `/api/v1/sys/*` | → `/$1`（去前缀映射 api_v1_public） | jwt-auth |
+| `api_v1_public` | 50 | `/api/v1/public/*` | → `/$1`（去前缀映射 api_v1_public） | jwt-auth |
 | `rpc_all` | 40 | `/rpc/*` | → PostgREST `/rpc/*` | jwt-auth |
 | `catch_all` | 10 | `/*` | 兜底 → PostgREST | jwt-auth |
 
 > `api_v1_sales`/`api_v1_inventory` 路由已于 2026-08-15 退役（测试模块移除），不在目标路由集内。
 
-一般新增 API **不需要改路由**（`/rpc/*` 与 `/api/v1/sys/*` 已通配）。只有需要独立路径/公开访问/特殊校验时才新增，例如：
+一般新增 API **不需要改路由**（`/rpc/*` 与 `/api/v1/public/*` 已通配）。只有需要独立路径/公开访问/特殊校验时才新增，例如：
 
 ```bash
 curl -s -X PUT http://localhost:9180/apisix/admin/routes/xxx_route \

@@ -14,7 +14,7 @@
 ┌──────────────────────────────────────────────────────────┐         │ (User.*/Org.*/…)
 │ APISIX 网关（traditional 模式，etcd 存路由配置）            │         │
 │  · jwt-auth：Logto JWKS 验签（开发 HS256 / 生产 RS256）   │         │
-│  · 路由：/api/v1/sys/* 去前缀→schema、/logto/*、/rpc/*  │         │
+│  · 路由：/api/v1/public/* 去前缀→schema、/logto/*、/rpc/*  │         │
 │  · 全局 CORS；端口 9080(HTTP)/9443(HTTPS)/9180(Admin)/7085 │         │
 └──────────────┬───────────────────────────────────────────┘         │
                ▼                                                      ▼
@@ -54,7 +54,7 @@
 
 1. **认证（旁路，不经过业务 API）**：前端 Logto SDK 重定向到 Logto 登录页 → 用户完成认证 → authorization code → SDK 换 access token + refresh token → 用 refresh token flow 换取组织 token（携带 resource + organization_id；组织 token 不能从 code flow 直接获取）。
 2. **JWT 签发**：Logto 在签发时执行 Custom Token Claims 脚本（scripts/phase2/init-logto.py 的 CLAIMS_SCRIPT），从 context 零 fetch 提取角色，注入 roles（全局角色 ∪ 当前组织组织角色）、global_roles、org_roles 与 pg_role（PostgREST 角色映射）。
-3. **网关鉴权**：客户端携带 Authorization: Bearer <JWT> 请求 APISIX → jwt-auth 插件用 Logto JWKS 验签 → 命中路由（如 /api/v1/sys/* 经 proxy-rewrite 去掉前缀，映射到 api_v1_public 等 schema 对象）→ 全局 CORS 处理 → 转发 PostgREST。
+3. **网关鉴权**：客户端携带 Authorization: Bearer <JWT> 请求 APISIX → jwt-auth 插件用 Logto JWKS 验签 → 命中路由（如 /api/v1/public/* 经 proxy-rewrite 去掉前缀，映射到 api_v1_public 等 schema 对象）→ 全局 CORS 处理 → 转发 PostgREST。
 4. **API 层**：PostgREST 再次验签（PGRST_JWT_SECRET），按 JWT pg_role claim 切换数据库角色，把 JWT claims 注入 request.jwt.claims，解析 /rpc/<函数> 或表/视图查询。
 5. **数据访问**：SQL 进入 PostgreSQL：RLS 策略按 request.jwt.claims 强制行过滤（租户/本人/角色例外）；RPC 内部再用 has_permission / require_permission / require_super_admin 做操作级判定。
 6. **webhook 旁路**：Logto 事件（用户/组织/成员/角色/登录）异步 POST 到 http://host.docker.internal:9080/rpc/webhook_logto（经网关进入 PostgREST），由 api_v1_public.webhook_logto 分发到 sync_* 函数写镜像表。
@@ -67,11 +67,11 @@
 | logto_proxy | /logto/* | app-logto:3001 | proxy-rewrite（公开） | 60 | Logto 同源代理 ^/logto/(.*) → /$1（CORS 规避） |
 | webhook_logto | /rpc/webhook_logto（POST） | app-postgrest:3000 | serverless-pre-function（无 jwt-auth） | 95 | webhook 接收入口；HMAC-SHA256(rawBody) vs logto-signature-sha-256 验签，缺 LOGTO_WEBHOOK_SIGNING_KEY 时 fail-closed（N15） |
 | ensure_user | /rpc/ensure_user（POST） | app-postgrest:3000 | jwt-auth（key_claim_name=sub） | 80 | 登录 JIT 建档 |
-| api_v1_public | /api/v1/sys/* | app-postgrest:3000 | proxy-rewrite + jwt-auth | 50 | 去掉前缀 ^/api/v1/sys/(.*) → /$1，映射 api_v1_public 等 schema 对象 |
+| api_v1_public | /api/v1/public/* | app-postgrest:3000 | proxy-rewrite + jwt-auth | 50 | 去掉前缀 ^/api/v1/public/(.*) → /$1，映射 api_v1_public 等 schema 对象 |
 | rpc_all | /rpc/* | app-postgrest:3000 | jwt-auth | 40 | 其余 RPC（/rpc/webhook_logto 优先级更高先命中） |
 | catch_all | /* | app-postgrest:3000 | jwt-auth | 10 | 兜底（未匹配请求交给 PostgREST 返回 404） |
 
-> api_v1_sales / api_v1_inventory 路由已随 063 退役移除（init-apisix-routes.sh 注释：测试模块退役，后续按需重建）；`/api/v1/sys/*` 是历史 URL 前缀（sys 模块收敛到 api_v1_public 后保留），表名本身无 sys_ 前缀。
+> api_v1_sales / api_v1_inventory 路由已随 063 退役移除（init-apisix-routes.sh 注释：测试模块退役，后续按需重建）；`/api/v1/public/*` 是 API 暴露层 URL 前缀（与 schema api_v1_public 同名；原 `/api/v1/sys/*` 历史前缀已于 2026-08-20 迁移对齐），表名本身无 sys_ 前缀。
 
 ### 已知不一致 / 待收敛（路由脚本新旧并存，务必区分）
 

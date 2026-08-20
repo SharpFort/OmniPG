@@ -125,12 +125,12 @@ Logto 事件 → APISIX /rpc/webhook_logto（HMAC 验签：logto-signature-sha-2
 
 ```bash
 # 查最近 50 条事件
-curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_webhook_events' \
+curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_list_webhook_events' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_limit":50}'
 
 # 只看 error 事件
-curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_webhook_events' \
+curl -s 'http://localhost:9080/api/v1/public/rpc/rpc_list_webhook_events' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_result":"error","p_limit":50}'
 ```
@@ -151,7 +151,7 @@ curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_webhook_events' \
 
 - APISIX 为 **traditional 模式**：路由/插件元数据存 compose 内 etcd（app-etcd:2379），Admin API 9180 + 内置 Dashboard（/ui），Status API 7085，Control API 9092。
 - 路由初始化：**scripts/init-apisix-routes.sh（Logto 版，2026-08-19 起唯一入口）**；Casdoor 时代 setup_apisix.sh 与 apisix.yaml 已删除。
-- 当前路由（7 条）：100 /.well-known/jwks（代理 Logto）· 95 POST /rpc/webhook_logto（HMAC 验签，无 jwt-auth）· 80 POST /rpc/ensure_user · 60 /logto/* · 50 /api/v1/sys/*（重写至 api_v1_public）· 40 /rpc/* · 10 /*。api_v1_sales / api_v1_inventory 路由 2026-08-15 已退役。
+- 当前路由（7 条）：100 /.well-known/jwks（代理 Logto）· 95 POST /rpc/webhook_logto（HMAC 验签，无 jwt-auth）· 80 POST /rpc/ensure_user · 60 /logto/* · 50 /api/v1/public/*（重写至 api_v1_public）· 40 /rpc/* · 10 /*。api_v1_sales / api_v1_inventory 路由 2026-08-15 已退役。
 - 当前**未配置 limit-req 限流插件**（历史安全分析的建议尚未实施，TODO）；全局规则只有 CORS。
 
 ### 5.2 排查步骤
@@ -160,12 +160,12 @@ curl -s 'http://localhost:9080/api/v1/sys/rpc/rpc_list_webhook_events' \
 # ① APISIX 是否就绪
 curl -sf http://localhost:7085/status
 
-# ② 路由清单（Logto 版 7 条：100 /.well-known/jwks、95 POST /rpc/webhook_logto、80 POST /rpc/ensure_user、60 /logto/*、50 /api/v1/sys/*、40 /rpc/*、10 /*）
+# ② 路由清单（Logto 版 7 条：100 /.well-known/jwks、95 POST /rpc/webhook_logto、80 POST /rpc/ensure_user、60 /logto/*、50 /api/v1/public/*、40 /rpc/*、10 /*）
 curl -s http://localhost:9180/apisix/admin/routes -H "X-API-KEY: ${APISIX_ADMIN_KEY}"
 
 # ③ 命中测试（带 token 与不带 token 对比）
-curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/sys/role
-curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/sys/role -H "Authorization: Bearer $TOKEN"
+curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/public/role
+curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/public/role -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 5.3 常见根因与处置
@@ -174,7 +174,7 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:9080/api/v1/sys/role -H 
 | --- | --- | --- |
 | 全部 404 | etcd 未启动或路由未初始化 | docker compose ps 检查 app-etcd；重跑 init-apisix-routes.sh |
 | 受保护路由 401 | jwt-auth 元数据缺失/算法不符 | 见 §3.1；重新拉 Logto JWKS |
-| 路径 404 但 /rpc/* 可用 | 路由优先级/rewrite 不对 | 检查 api_v1_public 路由 regex_uri（^/api/v1/sys/(.*) → /$1） |
+| 路径 404 但 /rpc/* 可用 | 路由优先级/rewrite 不对 | 检查 api_v1_public 路由 regex_uri（^/api/v1/public/(.*) → /$1） |
 | Dashboard 打不开 | enable_admin_ui / allow_admin / 9180 映射 | 核对 config.yaml；浏览器 http://localhost:9180/ui 输入 Admin Key |
 | 怀疑限流误伤 | 当前无限流插件 | 若已加 limit-req，检查 rate/burst/全局规则；可临时移除验证 |
 
