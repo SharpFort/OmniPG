@@ -127,7 +127,7 @@ ROUTE_COUNT=$(curl -s --max-time 5 http://localhost:9180/apisix/admin/routes \
     -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
     | "$PYTHON_BIN" -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))' 2>/dev/null || echo "err")
 if [ "$ROUTE_COUNT" = "7" ]; then
-    log_pass "路由 7/7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all）"
+    log_pass "路由 7/7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_platform/rpc_all/catch_all）"
 elif [ "$ROUTE_COUNT" = "err" ] || [ -z "$ROUTE_COUNT" ]; then
     log_fail "Admin API 不可用（检查 APISIX_ADMIN_KEY / 9180 内网可达）"
 else

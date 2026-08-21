@@ -3,9 +3,9 @@
 -- ==============================================================================
 
 -- 系统管理 API Schema
---   api_v1_public: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
-CREATE SCHEMA IF NOT EXISTS api_v1_public;
-COMMENT ON SCHEMA api_v1_public IS '系统管理 API 暴露层（027 定稿：视图名=底层表名）';
+--   api_v1_platform: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
+CREATE SCHEMA IF NOT EXISTS api_v1_platform;
+COMMENT ON SCHEMA api_v1_platform IS '系统管理 API 暴露层（027 定稿：视图名=底层表名）';
 
 CREATE SCHEMA IF NOT EXISTS net;
 -- net schema 注释不在此处维护：pg_net 扩展宿主 schema（owner=postgres），
@@ -38,10 +38,10 @@ COMMENT ON SCHEMA ext IS '扩展宿主（40 号方案：扩展迁出 public）';
 --       - { name: tenant_admin,      nologin: true, roles: [role_admin] }
 -- ==============================================================================
 
--- Schema 使用权（api_v1 已随 027 收敛为 api_v1_public）
-GRANT USAGE ON SCHEMA api_v1_public TO web_anon;
-GRANT USAGE ON SCHEMA api_v1_public TO authenticated;
-GRANT USAGE ON SCHEMA api_v1_public TO authenticator;
+-- Schema 使用权（api_v1 已随 027 收敛为 api_v1_platform）
+GRANT USAGE ON SCHEMA api_v1_platform TO web_anon;
+GRANT USAGE ON SCHEMA api_v1_platform TO authenticated;
+GRANT USAGE ON SCHEMA api_v1_platform TO authenticator;
 
 -- 业务核心/扩展宿主 Schema 使用权（40 号方案 §4.3）
 GRANT USAGE ON SCHEMA platform TO web_anon;
@@ -58,7 +58,7 @@ GRANT USAGE ON SCHEMA ext TO authenticator;
 ALTER ROLE app_owner SET search_path = platform, ext, pg_temp;
 
 -- web_anon 默认无任何表权限（安全第一）
--- authenticated 的权限由 db/api_v1/public/privileges/zz_grant_all.sql 与
+-- authenticated 的权限由 db/api_v1/platform/privileges/zz_grant_all.sql 与
 --   db/src/platform/privileges/rls_policies.sql 显式授予（RLS 为安全边界）
 
 -- pg_net 权限收紧（2026-08-16 拍板）：pg_net 可发任意外网 HTTP 请求，

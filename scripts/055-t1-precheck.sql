@@ -47,7 +47,7 @@ GROUP BY a.id
 ORDER BY a.api_code;
 
 -- ---------------------------------------------------------------------------
--- §4 死端点判定（PostgREST 实际暴露 = api_v1_public 视图/RPC）
+-- §4 死端点判定（PostgREST 实际暴露 = api_v1_platform 视图/RPC）
 --    ⚠️ 不能按 proname LIKE 'rpc_%' 过滤：源文件层函数名无 rpc_ 前缀
 --    （search_users/get_user_menu/import_csv...），迁移层管理 RPC 才带前缀
 --    DEAD = 仓库/存量库均无对应暴露 → 仅对无码行有"清除"含义（D9）；
@@ -56,11 +56,11 @@ ORDER BY a.api_code;
 WITH exposed AS (
     SELECT '/rpc/' || p.proname AS path
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'api_v1_public'
+    WHERE n.nspname = 'api_v1_platform'
     UNION
     SELECT '/' || v.table_name
     FROM information_schema.views v
-    WHERE v.table_schema = 'api_v1_public'
+    WHERE v.table_schema = 'api_v1_platform'
 )
 SELECT a.path, a.method, a.name, a.api_code,
        CASE WHEN e.path IS NULL THEN 'DEAD' ELSE 'ALIVE' END AS endpoint_status

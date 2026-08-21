@@ -25,7 +25,7 @@ fi
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
 MODULES="platform"
-API_MODULES="_shared public"
+API_MODULES="_shared platform"
 
 BOOTSTRAP_ONLY=false
 if [ "$2" = "--bootstrap" ]; then

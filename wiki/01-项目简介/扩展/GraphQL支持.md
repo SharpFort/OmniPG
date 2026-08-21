@@ -21,7 +21,7 @@
 
 ## 注意事项
 
-- **当前状态: 预留**，未用于业务 API；启用前需明确与 PostgREST 暴露层（`api_v1_public`）的边界，避免双入口；
+- **当前状态: 预留**，未用于业务 API；启用前需明确与 PostgREST 暴露层（`api_v1_platform`）的边界，避免双入口；
 - 如需停用，从 `pg_databases[].extensions` 移除并 `DROP EXTENSION`（由集群管理员操作）。
 
 ## 相关文件

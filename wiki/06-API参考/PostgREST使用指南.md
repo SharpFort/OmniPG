@@ -1,6 +1,6 @@
 # PostgREST 使用指南
 
-PostgREST 是本项目对外 API 层的执行引擎：它把 PostgreSQL（public schema 的业务逻辑 + api_v1_* 暴露层）自动映射为 RESTful API，是「数据库即后端」架构的 HTTP 出口。本文以当前代码为准（`gateway/postgrest/postgrest.conf` + `gateway/docker-compose.yml` 环境变量），介绍入口、鉴权、查询语法、RPC 调用与排障。
+PostgREST 是本项目对外 API 层的执行引擎：它把 PostgreSQL（platform schema 的业务逻辑 + api_v1_* 暴露层）自动映射为 RESTful API，是「数据库即后端」架构的 HTTP 出口。本文以当前代码为准（`gateway/postgrest/postgrest.conf` + `gateway/docker-compose.yml` 环境变量），介绍入口、鉴权、查询语法、RPC 调用与排障。
 
 ## 入口与端口
 
@@ -15,15 +15,15 @@ PostgREST 以 Docker 容器运行（`gateway/docker-compose.yml` 中 `postgrest`
 | 数据库连接 | `postgres://authenticator:***@host.docker.internal:6432/app_db?sslmode=disable`（经 Pigsty pgBouncer） | compose 环境变量 |
 | 匿名角色 | `web_anon` | `db-anon-role` |
 
-> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_public、`.pg_role`、无 pre-request）。另外 `gateway/.env.example` 与 `scripts/verify-stack.sh` 仍写着 `PGRST_PORT=3001`，那是 Logto 时代的旧值——**当前 PostgREST 宿主端口是 3100**（3001 已让给 Logto core）。
+> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_platform、`.pg_role`、无 pre-request）。另外 `gateway/.env.example` 与 `scripts/verify-stack.sh` 仍写着 `PGRST_PORT=3001`，那是 Logto 时代的旧值——**当前 PostgREST 宿主端口是 3100**（3001 已让给 Logto core）。
 
 ### 实际生效的关键配置（compose 环境变量为准）
 
 | 配置 | compose 值 | conf 文件值 | 说明 |
 |:---|:---|:---|:---|
-| `PGRST_DB_SCHEMAS` | `api_v1_public` | `api_v1_public`（2026-08-19 已对齐） | **以 compose 为运行态权威**：只暴露 api_v1_public 单 schema（sales/inventory 已退役，见下节） |
-| `PGRST_DB_EXTRA_SEARCH_PATH` | `api_v1_public,public` | `api_v1_public, public`（2026-08-19 已对齐） | 函数解析路径，public 用于调用底层逻辑 |
-| `PGRST_DB_PRE_REQUEST` | `""`（空） | `api_v1_public.check_token_blacklist` | **已退役**：`db/init/02-schemas.sql` 明确 token 黑名单/会话吊销交给 Logto（D12），pre-request 清空 |
+| `PGRST_DB_SCHEMAS` | `api_v1_platform` | `api_v1_platform`（2026-08-19 已对齐） | **以 compose 为运行态权威**：只暴露 api_v1_platform 单 schema（sales/inventory 已退役，见下节） |
+| `PGRST_DB_EXTRA_SEARCH_PATH` | `api_v1_platform,platform,ext` | `api_v1_platform, platform, ext`（2026-08-19 已对齐） | 函数解析路径，platform 用于调用底层逻辑 |
+| `PGRST_DB_PRE_REQUEST` | `""`（空） | `api_v1_platform.check_token_blacklist` | **已退役**：`db/init/02-schemas.sql` 明确 token 黑名单/会话吊销交给 Logto（D12），pre-request 清空 |
 | `PGRST_JWT_SECRET` | `${JWKS_JSON}` | 同 | JWT 验签密钥：开发环境 = HS256 对称密钥（JWKS_JSON 的 oct key）；staging/production = Logto JWKS 公钥（RS256），算法口径见「鉴权」节 |
 | `PGRST_JWT_ROLE_CLAIM_KEY` | `.pg_role` | `.pg_role`（2026-08-19 已对齐） | 运行态以 `.pg_role` 为准（Logto Custom Token Claims 脚本注入） |
 | `PGRST_OPENAPI_SERVER_PROXY_URI` | `http://localhost:3100` | `http://localhost:3000` | Swagger 展示用 |
@@ -42,7 +42,7 @@ curl -H 'Authorization: Bearer <logto-access-token>' \
   'http://localhost:3100/users'
 ```
 
-- 未带 / 无效 token → PostgREST 按 `web_anon` 执行。`web_anon` 只被授予 `USAGE ON SCHEMA api_v1_public`，没有任何表权限（`db/init/02-schemas.sql`），因此匿名访问一律 401/403。
+- 未带 / 无效 token → PostgREST 按 `web_anon` 执行。`web_anon` 只被授予 `USAGE ON SCHEMA api_v1_platform`，没有任何表权限（`db/init/02-schemas.sql`），因此匿名访问一律 401/403。
 - 有效 token → PostgREST 根据 `pg_role` claim 切换到对应 PG 角色（super_admin / role_admin / role_editor / role_guest），并暴露 claims：
   - `sub` → `current_user_id()`
   - `organization_id`（组织 token 内置 claim）→ `current_tenant_id()`，供 RLS 租户隔离
@@ -50,22 +50,22 @@ curl -H 'Authorization: Bearer <logto-access-token>' \
 
 角色映射详见 [认证与授权设计](../04-架构/认证授权设计.md) 与 [Logto Webhook 接入](./LogtoWebhook接入.md)（`pg_role` 注入脚本在 `scripts/phase2/init-logto.py` 的 `CLAIMS_SCRIPT`）。
 
-## 暴露范围：api_v1_public（运行态单 schema）
+## 暴露范围：api_v1_platform（运行态单 schema）
 
-**Schema 布局（`db/init/02-schemas.sql`）**：`public`（核心业务：表/函数/触发器/RLS）、`api_v1_public`（对外暴露层：视图/RPC，027 定稿名）、`net`（pg_net 宿主）。**不存在 extensions schema**（早先方案的 extensions 域未落地）。
+**Schema 布局（`db/init/02-schemas.sql`）**：`platform`（核心业务：表/函数/触发器/RLS）、`api_v1_platform`（对外暴露层：视图/RPC，027 定稿名）、`ext`（扩展宿主：pgcrypto/pgtap 迁入）、`net`（pg_net 宿主）；`public` 让给 Logto（40 号方案）。
 
-**运行态（compose 为权威）**：`PGRST_DB_SCHEMAS=api_v1_public`——PostgREST 实际只暴露 `api_v1_public` 单 schema，`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_public,public`（public 仅供函数解析）。`gateway/postgrest/postgrest.conf` 是**参考文件**（2026-08-19 已对齐运行态：`db-schemas = "api_v1_public"`、`jwt-role-claim-key = .pg_role`、无 pre-request；sales/inventory schema 未在 02-schemas.sql 创建、对应 URL 路由已于 2026-08-15 退役）。`db/api_v1/` 目录按 `_shared` / `public` 分域，**当前仅 `public/` 下有实体 SQL**（44 个 RPC + 29 个视图）。
+**运行态（compose 为权威）**：`PGRST_DB_SCHEMAS=api_v1_platform`——PostgREST 实际只暴露 `api_v1_platform` 单 schema，`PGRST_DB_EXTRA_SEARCH_PATH=api_v1_platform,platform,ext`（platform 仅供函数解析）。`gateway/postgrest/postgrest.conf` 是**参考文件**（2026-08-19 已对齐运行态：`db-schemas = "api_v1_platform"`、`jwt-role-claim-key = .pg_role`、无 pre-request；sales/inventory schema 未在 02-schemas.sql 创建、对应 URL 路由已于 2026-08-15 退役）。`db/api_v1/` 目录按 `_shared` / `platform` 分域，**当前仅 `platform/` 下有实体 SQL**（44 个 RPC + 29 个视图）。
 
 其中：
 
-- **视图**（29 个，`db/api_v1/public/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
-- **RPC**（44 个，`db/api_v1/public/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./RPC清单.md)。
-- **授权矩阵**见 `db/api_v1/public/privileges/zz_grant_all.sql`：authenticated 只读基础视图；role_guest 只读全部；role_editor 只读；role_admin 对业务自主表（department/iam_menu/iam_role_menu/app_config）可 INSERT/UPDATE；super_admin 全权（镜像表仅 SELECT，写入收敛到 sync_*/JIT/对账）。
-- **兼容视图已移除**（2026-08-20）：`public.sys_user` / `public.casbin_rule` 已删除（不再借鉴 Casbin 权限模型），用户查询直接走 `public.users` + `public.user_profile`。
+- **视图**（29 个，`db/api_v1/platform/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
+- **RPC**（44 个，`db/api_v1/platform/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./RPC清单.md)。
+- **授权矩阵**见 `db/api_v1/platform/privileges/zz_grant_all.sql`：authenticated 只读基础视图；role_guest 只读全部；role_editor 只读；role_admin 对业务自主表（department/iam_menu/iam_role_menu/app_config）可 INSERT/UPDATE；super_admin 全权（镜像表仅 SELECT，写入收敛到 sync_*/JIT/对账）。
+- **兼容视图已移除**（2026-08-20）：`platform.sys_user` / `platform.casbin_rule` 已删除（不再借鉴 Casbin 权限模型），用户查询直接走 `platform.users` + `platform.user_profile`。
 
-- **视图**（29 个，`db/api_v1/public/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
-- **RPC**（44 个，`db/api_v1/public/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./RPC清单.md)。
-- 授权矩阵见 `db/api_v1/public/privileges/zz_grant_all.sql`：authenticated 只读基础视图；role_guest 只读全部；role_editor 只读；role_admin 对业务自主表（department/iam_menu/iam_role_menu/app_config）可 INSERT/UPDATE；super_admin 全权（镜像表仅 SELECT，写入收敛到 sync_*/JIT/对账）。
+- **视图**（29 个，`db/api_v1/platform/views/*.sql`）：视图名 = 底层表名（`users`、`department`、`role`、`iam_menu`、`dict_type`、`login_log`、`audit_log`、`cron_job_log` 等）+ `v_*` 明细/聚合视图（`v_user_list`、`v_role_list`、`v_dict_list`、`v_audit_log_detail` 等）。这些是只读投影：`users`/`role` 等 Logto 镜像表只允许经 sync_*（SECURITY DEFINER）与对账通道写入。
+- **RPC**（44 个，`db/api_v1/platform/rpc/*.sql`）：对外暴露为 `/rpc/<name>`，全部 `GRANT EXECUTE ... TO authenticated`（仅 `webhook_logto` 授给 `web_anon`）。完整索引见 [RPC 清单](./RPC清单.md)。
+- 授权矩阵见 `db/api_v1/platform/privileges/zz_grant_all.sql`：authenticated 只读基础视图；role_guest 只读全部；role_editor 只读；role_admin 对业务自主表（department/iam_menu/iam_role_menu/app_config）可 INSERT/UPDATE；super_admin 全权（镜像表仅 SELECT，写入收敛到 sync_*/JIT/对账）。
 
 ## 查询语法
 
@@ -112,7 +112,7 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Prefer: count=exact' \
 
 ### 嵌入（embed / 垂直过滤）
 
-`?select=parent,children(*)` 式嵌入依赖外键关系（PostgREST 自动识别 FK）。api_v1_public 视图大多是扁平投影，跨 schema（public）对象不会出现在 OpenAPI 中，嵌入主要用于视图内部的 FK（如 `v_user_list` 已 JOIN 好租户/部门，一般无需再嵌）。需要复杂聚合时优先使用 RPC。
+`?select=parent,children(*)` 式嵌入依赖外键关系（PostgREST 自动识别 FK）。api_v1_platform 视图大多是扁平投影，跨 schema（platform）对象不会出现在 OpenAPI 中，嵌入主要用于视图内部的 FK（如 `v_user_list` 已 JOIN 好租户/部门，一般无需再嵌）。需要复杂聚合时优先使用 RPC。
 
 ## RPC 调用
 
@@ -129,14 +129,14 @@ curl -H "Authorization: Bearer $TOKEN" 'http://localhost:3100/rpc/get_current_us
 ```
 
 - 返回 `json` 的函数直接返回 JSON 对象；返回 `TABLE(...)` 的函数（如 `rpc_list_cron_jobs`）返回 JSON 数组。
-- 函数内 `has_permission('public:xxx')` 或 `require_super_admin()` 不通过时抛 `42501 permission denied`。
+- 函数内 `has_permission('platform:xxx')` 或 `require_super_admin()` 不通过时抛 `42501 permission denied`。
 - 经网关访问时路径为 `http://localhost:9080/rpc/<name>`（`/rpc/*` 路由，jwt-auth 保护）；webhook 入口 `POST /rpc/webhook_logto` 例外（见 [Logto Webhook 接入](./LogtoWebhook接入.md)）。
 
 ## OpenAPI / Swagger
 
 - PostgREST 自动生成 OpenAPI：`curl http://localhost:3100/`（内容为 spec JSON，含全部视图与 RPC，函数/视图的 `COMMENT ON` 会作为描述）。
 - Swagger UI：`http://localhost:8082/`，浏览器端从 `API_URL`（compose 默认 `http://localhost:${PGRST_PORT:-3001}/`）拉取 spec。**注意**：`.env.example` 的 `PGRST_PORT=3001` 与当前 3100 端口映射不一致，部署时 `gateway/.env` 必须设置 `PGRST_PORT=3100`，否则 Swagger 拉取失败（TODO：`.env.example` 与 `verify-stack.sh` 中的 3001 旧值待同步）。
-- 用 "Try it out" 可在线测试接口；Swagger 按 schema 分组为 Tag，运行态（compose 权威）仅 `api_v1_public` 一个 tag。
+- 用 "Try it out" 可在线测试接口；Swagger 按 schema 分组为 Tag，运行态（compose 权威）仅 `api_v1_platform` 一个 tag。
 
 ## 常见错误与排查
 

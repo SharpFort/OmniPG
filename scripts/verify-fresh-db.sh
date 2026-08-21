@@ -102,9 +102,9 @@ UNION ALL SELECT 'SEED|dict_type|' || count(*) FROM dict_type
 UNION ALL SELECT 'SEED|dict_data|' || count(*) FROM dict_data
 UNION ALL SELECT 'SEED|iam_menu|' || count(*) FROM iam_menu;
 SELECT 'FUNC_COUNT|' || count(*) FROM pg_proc p
-WHERE p.pronamespace IN ('platform'::regnamespace,'api_v1_public'::regnamespace)
+WHERE p.pronamespace IN ('platform'::regnamespace,'api_v1_platform'::regnamespace)
 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid=p.oid AND d.deptype='e');
-SELECT 'VIEW_COUNT|' || count(*) FROM pg_views WHERE schemaname IN ('platform','api_v1_public');
+SELECT 'VIEW_COUNT|' || count(*) FROM pg_views WHERE schemaname IN ('platform','api_v1_platform');
 SELECT 'TRIGGER_COUNT|' || count(*) FROM pg_trigger WHERE tgisinternal=false
 AND tgrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = COALESCE((SELECT oid FROM pg_namespace WHERE nspname='cron'), 0));
 SELECT 'POLICY_COUNT|' || count(*) FROM pg_policy p

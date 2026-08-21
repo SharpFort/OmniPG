@@ -1,6 +1,6 @@
 # E2E 集成测试
 
-E2E 集成测试的唯一入口是 `scripts/e2e-test.sh`（Logto 版），覆盖“Logto OIDC 登录 → APISIX 网关（jwt-auth 验签）→ PostgREST（运行态暴露 api_v1_public 单 schema，compose 环境变量为权威；postgrest.conf 的多 schema 仅为参考）→ PostgreSQL（RLS）”的完整链路。历史文档（12-端到端集成测试方案，已归档）中的 PowerShell 脚本（Casdoor / `user_login_sso` / policy-syncer 时代）已被本脚本取代，不作为当前依据。
+E2E 集成测试的唯一入口是 `scripts/e2e-test.sh`（Logto 版），覆盖“Logto OIDC 登录 → APISIX 网关（jwt-auth 验签）→ PostgREST（运行态暴露 api_v1_platform 单 schema，compose 环境变量为权威；postgrest.conf 的多 schema 仅为参考）→ PostgreSQL（RLS）”的完整链路。历史文档（12-端到端集成测试方案，已归档）中的 PowerShell 脚本（Casdoor / `user_login_sso` / policy-syncer 时代）已被本脚本取代，不作为当前依据。
 
 ## 前置条件
 
@@ -65,14 +65,14 @@ E2E 集成测试的唯一入口是 `scripts/e2e-test.sh`（Logto 版），覆盖
 | Phase | 用例 | 断言要点 |
 | --- | --- | --- |
 | 0 | PostgREST Running | `curl -sf $PGRST_URL/` 返回 OpenAPI |
-| 0 | APISIX Running | Admin API 路由列表含 `api_v1_public` |
+| 0 | APISIX Running | Admin API 路由列表含 `api_v1_platform` |
 | 0 | Logto Running | `$LOGTO_URL/oidc/.well-known/openid-configuration` 含 issuer |
 | 0 | Backend Health / Logto JWKS | Swagger :8082 可用；Logto JWKS 含 `keys[0].kty` |
 | 1 | Admin Login | `logto_login` 拿到长度 >100 的 token |
 | 1 | Invalid Password Rejected | 错误密码的登录流程拿不到 JWT |
-| 1 | Unauthorized Request | 无 token 请求 `/api/v1/public/role` 返回 401/403 |
+| 1 | Unauthorized Request | 无 token 请求 `/api/v1/platform/role` 返回 401/403 |
 | 1 | Authorized Request | 带 token 查询 `sys/role` 返回 `role_code` |
-| 1 | Menu Loaded | `/api/v1/public/rpc/get_user_menu` 可调用（断言较宽松：length >= 0） |
+| 1 | Menu Loaded | `/api/v1/platform/rpc/get_user_menu` 可调用（断言较宽松：length >= 0） |
 | 2 | Users/Role/Tenant Readonly | 对镜像表 `sys/users`、`sys/role`、`sys/tenants` POST 被拒（4xx/5xx） |
 | 2 | User List / Role List | `v_user_list`、`v_role_list` 视图可查询 |
 | 3 | GET role / users | 镜像表只读可查 |

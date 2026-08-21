@@ -28,7 +28,7 @@ Logto（自部署 OSS，compose 服务名 `logto`）是用户/组织（租户）
 
 ## 入口：rpc_webhook_logto 调用约定
 
-函数定义：`db/api_v1/public/rpc/rpc_webhook_logto.sql`
+函数定义：`db/api_v1/platform/rpc/rpc_webhook_logto.sql`
 
 | 项 | 值 |
 |:---|:---|
@@ -50,7 +50,7 @@ Logto（自部署 OSS，compose 服务名 `logto`）是用户/组织（租户）
 - PostSignIn：顶层平铺，无 data 包装（官方 payload 结构核实，v2.4）。
 - 时间戳（createdAt/updatedAt 等毫秒/ISO）经 `logto_ts(text)` 归一化为 timestamptz。
 
-## sync_* 函数（db/src/public/functions/）
+## sync_* 函数（db/src/platform/functions/）
 
 全部 SECURITY DEFINER、幂等（ON CONFLICT），由 webhook_logto 调用；对账脚本也直接复用：
 

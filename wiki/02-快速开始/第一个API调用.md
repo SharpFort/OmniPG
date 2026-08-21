@@ -13,7 +13,7 @@ Logto（签发 JWT；Console :3002 管理）
    ▼
 APISIX :9080（jwt-auth 验签 + 路由/重写 + CORS）
    ▼
-PostgREST :3100（api_v1_public schema；PGRST_JWT_SECRET=Logto JWKS；DB 角色取 .pg_role）
+PostgREST :3100（api_v1_platform schema；PGRST_JWT_SECRET=Logto JWKS；DB 角色取 .pg_role）
    ▼
 pgBouncer :6432 → PostgreSQL（RLS / has_permission 判定）
 ```
@@ -69,7 +69,7 @@ curl -s -X POST "$LOGTO/oidc/token" \
 ## 3. 网关入口与鉴权头
 
 - 业务流量入口：**APISIX http://localhost:9080**，请求头 `Authorization: Bearer <access_token>`。
-- 直接调试 PostgREST：**http://localhost:3100**（compose 映射 3100→3000，同样需要 Bearer）。暴露 schema 为 `api_v1_public`，因此路径即视图名/RPC 名（如 `/role`、`/v_user_list`、`/rpc/get_current_user`）。
+- 直接调试 PostgREST：**http://localhost:3100**（compose 映射 3100→3000，同样需要 Bearer）。暴露 schema 为 `api_v1_platform`，因此路径即视图名/RPC 名（如 `/role`、`/v_user_list`、`/rpc/get_current_user`）。
 - ⚠️ `gateway/.env.example` 中 `PGRST_PORT=3001` 与 compose 的 3100 映射不一致（Swagger 的 API_URL 也引用该变量）；以 3100 为准，详见 [常见问题排查](常见问题排查.md)。
 
 APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
@@ -80,7 +80,7 @@ APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 | `/logto/*` | 60 | 公开 | 重写去前缀 → app-logto:3001 |
 | `/rpc/webhook_logto` | 95 | POST + HMAC 验签（无 jwt-auth） | app-postgrest:3000 |
 | `/rpc/ensure_user` | 80 | jwt-auth | app-postgrest:3000 |
-| `/api/v1/public/*` | 50 | jwt-auth | 重写 `^/api/v1/public/(.*)` → `/$1` |
+| `/api/v1/platform/*` | 50 | jwt-auth | 重写 `^/api/v1/platform/(.*)` → `/$1` |
 | `/rpc/*` | 40 | jwt-auth | app-postgrest:3000 |
 | `/*` | 10 | jwt-auth | 兜底 → PostgREST |
 
@@ -92,37 +92,37 @@ APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 ```bash
 TOKEN=<你的 access token>
 
-# 角色镜像目录（api_v1_public.role）
-curl -s 'http://localhost:9080/api/v1/public/role?select=role_code,role_name&limit=5' \
+# 角色镜像目录（api_v1_platform.role）
+curl -s 'http://localhost:9080/api/v1/platform/role?select=role_code,role_name&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
-# 用户列表视图（api_v1_public.v_user_list；RLS 只返回当前用户可见行）
-curl -s 'http://localhost:9080/api/v1/public/v_user_list?select=id,username,email&limit=5' \
+# 用户列表视图（api_v1_platform.v_user_list；RLS 只返回当前用户可见行）
+curl -s 'http://localhost:9080/api/v1/platform/v_user_list?select=id,username,email&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 
-# 直连 PostgREST（同一 token；schema 即 api_v1_public）
+# 直连 PostgREST（同一 token；schema 即 api_v1_platform）
 curl -s 'http://localhost:3100/role?select=role_code,role_name&limit=5' \
   -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
 ```
 
-> 说明：`users` / `v_user_list` 的数据源是 public 的 `users`（Logto 镜像）+ `user_profile`（业务档案）直接投影；`password_hash` 恒 NULL——密码由 Logto 管理，库内不存明文。原 `public.sys_user` 兼容视图已于 2026-08-20 移除。
+> 说明：`users` / `v_user_list` 的数据源是 platform 的 `users`（Logto 镜像）+ `user_profile`（业务档案）直接投影；`password_hash` 恒 NULL——密码由 Logto 管理，库内不存明文。原 `platform.sys_user` 兼容视图已于 2026-08-20 移除。
 
 ## 5. 示例：调用一个 RPC
 
-RPC 走 `POST /rpc/<name>`；经 APISIX 可用 `/api/v1/public/rpc/<name>` 或 `/rpc/<name>`（都带 jwt-auth）。
+RPC 走 `POST /rpc/<name>`；经 APISIX 可用 `/api/v1/platform/rpc/<name>` 或 `/rpc/<name>`（都带 jwt-auth）。
 
 ```bash
 # 当前登录用户（JWT claims → users/user_profile/tenants 镜像；无参）
-curl -s -X POST 'http://localhost:9080/api/v1/public/rpc/get_current_user' \
+curl -s -X POST 'http://localhost:9080/api/v1/platform/rpc/get_current_user' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' \
   | python3 -m json.tool
 
 # 用户菜单树（前端初始化时调用；无参）
-curl -s -X POST 'http://localhost:9080/api/v1/public/rpc/get_user_menu' \
+curl -s -X POST 'http://localhost:9080/api/v1/platform/rpc/get_user_menu' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}' \
   | python3 -m json.tool
 
-# 带参数示例：分页搜索用户（函数名 search_users，形参见 db/api_v1/public/rpc/rpc_search_users.sql）
+# 带参数示例：分页搜索用户（函数名 search_users，形参见 db/api_v1/platform/rpc/rpc_search_users.sql）
 curl -s -X POST 'http://localhost:9080/rpc/search_users' \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"p_query":"admin","p_limit":20,"p_offset":0}' | python3 -m json.tool
@@ -136,7 +136,7 @@ curl -s -X POST 'http://localhost:9080/rpc/search_users' \
 | --- | --- | --- |
 | 401 | APISIX jwt-auth / PostgREST | 未认证：无 `Authorization` 头、token 过期/无效/签名不符。检查 token 是否为 JWT（带 resource 签发）、`gateway/.env` 的 `JWKS_JSON` 是否为 Logto JWKS |
 | 403 | PostgREST | 认证通过但授权不足：PG 角色（`pg_role`）无权限、RLS 过滤、RPC 内 `has_permission()` 拒绝。检查角色映射/角色绑定/RLS 策略 |
-| 404 | APISIX → PostgREST | 路由或对象不存在：视图/RPC 不在 `api_v1_public`、schema 未暴露、路径重写错误。对照 OpenAPI 与路由表 |
+| 404 | APISIX → PostgREST | 路由或对象不存在：视图/RPC 不在 `api_v1_platform`、schema 未暴露、路径重写错误。对照 OpenAPI 与路由表 |
 | 400 | PostgREST | 请求体/参数与函数签名不符（常见于 RPC 形参名错误） |
 | 429 | APISIX | 限流（当前 compose 未配置 limit-req，一般不出现） |
 
