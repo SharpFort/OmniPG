@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_replay_webhook_event(p_event_id uui
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_payload jsonb;

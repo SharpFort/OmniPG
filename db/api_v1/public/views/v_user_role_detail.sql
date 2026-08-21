@@ -13,8 +13,8 @@ SELECT
     u.primary_email AS email,
     t.name AS role_name,
     t.name AS tenant_name
-FROM public.user_tenants ut
-JOIN public.users u ON ut.user_id = u.id
-JOIN public.tenants t ON ut.organization_id = t.id
+FROM platform.user_tenants ut
+JOIN platform.users u ON ut.user_id = u.id
+JOIN platform.tenants t ON ut.organization_id = t.id
 WHERE u.is_suspended = FALSE;
 COMMENT ON VIEW api_v1_public.v_user_role_detail IS '用户-组织成员详情视图（Logto 镜像）';

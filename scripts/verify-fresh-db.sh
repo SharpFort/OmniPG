@@ -12,7 +12,7 @@
 #   [5] apply-src 全量（幂等重放，含 §6.3 扫描）
 #   [6] apply-src 二遍（幂等验证）
 #   [7] 与参照库（app_db）结构比对（表/列/约束/种子/函数/视图/触发器/策略/索引）
-#   [8] pgTAP（tests/public，需 pg_prove）
+#   [8] pgTAP（tests/platform，需 pg_prove）
 # 环境: PGPASSWORD 自动从 gateway/.env 提取；参照库 REF_DB（默认 app_db）
 # 注: 生产 Pigsty 无 sudo 时，用 PG_SUPER_CMD/PG_SUPER_POSTGRES_CMD 覆盖超级用户执行方式
 #     （如 PG_SUPER_CMD='psql "postgres://dbuser_dba:xxx@host:5432/${DB_NAME}"'）
@@ -47,20 +47,25 @@ $SUPER_CMD -q -v ON_ERROR_STOP=1 <<'SQL'
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_net";
 CREATE EXTENSION IF NOT EXISTS "pgtap";
+-- 40 号方案：扩展迁出 public → ext（Logto 独占 public；[3] 的 02-schemas 幂等建 ext）
+--   此处 superuser 先建 ext 再 ALTER，保证 [4]-[8] 阶段 ext 内函数可解析
+CREATE SCHEMA IF NOT EXISTS ext;
+ALTER EXTENSION "pgcrypto" SET SCHEMA ext;
+ALTER EXTENSION "pgtap" SET SCHEMA ext;
 SQL
 
 # [3] bootstrap 子集（02-schemas + src types）
 echo ""
 echo "[3/8] 02-schemas + src types（枚举前置）..."
 PGPASSWORD="$DB_PASSWORD" psql "$URI" -q -v ON_ERROR_STOP=1 -f "$REPO_DIR/db/init/02-schemas.sql"
-for f in "$REPO_DIR"/db/src/public/types/*.sql; do
+for f in "$REPO_DIR"/db/src/platform/types/*.sql; do
     PGPASSWORD="$DB_PASSWORD" psql "$URI" -q -v ON_ERROR_STOP=1 -f "$f"
 done
 
 # [4] dbmate up（基线 064/065/066；--no-dump-schema 防止 scratch 快照覆盖 db/schema.sql）
 echo ""
 echo "[4/8] dbmate up（基线迁移）..."
-(cd "$REPO_DIR" && DATABASE_URL="$URI" dbmate --no-dump-schema -d db/migrations/public up)
+(cd "$REPO_DIR" && DATABASE_URL="$URI" dbmate --no-dump-schema -d db/migrations/platform up)
 
 # apply-src.sh 为 CRLF（仓库惯例不改行尾），WSL bash 直跑必炸——LF 临时副本
 # 放在 scripts/ 下保证其 "$0/../db" 路径推导正确；trap 兜底清理
@@ -86,26 +91,26 @@ cat > /tmp/verify_compare.sql <<'EOF'
 \pset format unaligned
 SELECT 'TABLE|' || table_name || '|' || string_agg(column_name || ':' || data_type || CASE WHEN udt_name<>data_type THEN ':'||udt_name ELSE '' END, ',' ORDER BY ordinal_position)
 FROM information_schema.columns
-WHERE table_schema='public' AND table_name <> 'schema_migrations'
+WHERE table_schema='platform' AND table_name <> 'schema_migrations'
 GROUP BY table_name ORDER BY table_name;
 SELECT 'CONSTRAINT|' || c.relname || '|' || con.conname || '|' || con.contype
 FROM pg_constraint con JOIN pg_class c ON c.oid=con.conrelid
-WHERE c.relnamespace='public'::regnamespace AND c.relname <> 'schema_migrations'
+WHERE c.relnamespace='platform'::regnamespace AND c.relname <> 'schema_migrations'
 ORDER BY 2,3;
 SELECT 'SEED|app_config|' || count(*) FROM app_config
 UNION ALL SELECT 'SEED|dict_type|' || count(*) FROM dict_type
 UNION ALL SELECT 'SEED|dict_data|' || count(*) FROM dict_data
 UNION ALL SELECT 'SEED|iam_menu|' || count(*) FROM iam_menu;
 SELECT 'FUNC_COUNT|' || count(*) FROM pg_proc p
-WHERE p.pronamespace IN ('public'::regnamespace,'api_v1_public'::regnamespace)
+WHERE p.pronamespace IN ('platform'::regnamespace,'api_v1_public'::regnamespace)
 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid=p.oid AND d.deptype='e');
-SELECT 'VIEW_COUNT|' || count(*) FROM pg_views WHERE schemaname IN ('public','api_v1_public');
+SELECT 'VIEW_COUNT|' || count(*) FROM pg_views WHERE schemaname IN ('platform','api_v1_public');
 SELECT 'TRIGGER_COUNT|' || count(*) FROM pg_trigger WHERE tgisinternal=false
 AND tgrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = COALESCE((SELECT oid FROM pg_namespace WHERE nspname='cron'), 0));
 SELECT 'POLICY_COUNT|' || count(*) FROM pg_policy p
 JOIN pg_class c ON c.oid=p.polrelid
 WHERE c.relnamespace <> COALESCE((SELECT oid FROM pg_namespace WHERE nspname='cron'), 0);
-SELECT 'INDEX_COUNT|' || count(*) FROM pg_indexes WHERE schemaname='public' AND tablename <> 'schema_migrations';
+SELECT 'INDEX_COUNT|' || count(*) FROM pg_indexes WHERE schemaname='platform' AND tablename <> 'schema_migrations';
 EOF
 PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$REF_DB" -w -f /tmp/verify_compare.sql > /tmp/verify_ref.txt 2>&1
 PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$DB_NAME" -w -f /tmp/verify_compare.sql > /tmp/verify_new.txt 2>&1

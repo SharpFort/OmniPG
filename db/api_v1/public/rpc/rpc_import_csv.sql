@@ -20,7 +20,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.import_csv(
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_allow    text[] := ARRAY['department','position','user_position',

@@ -14,7 +14,7 @@ SELECT
     a.tenant_id,
     t.name AS tenant_name,
     a.created_at
-FROM public.audit_log a
-LEFT JOIN public.users u ON a.user_id::text = u.id
-LEFT JOIN public.tenants t ON a.tenant_id = t.id;
+FROM platform.audit_log a
+LEFT JOIN platform.users u ON a.user_id::text = u.id
+LEFT JOIN platform.tenants t ON a.tenant_id = t.id;
 COMMENT ON VIEW api_v1_public.v_audit_log_detail IS '审计日志视图：含用户名、租户名';

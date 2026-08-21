@@ -8,7 +8,7 @@ RETURNS TABLE(jobid bigint, jobname text, schedule text, command text,
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 BEGIN
     -- 仅超管可查看任务定义（平台级运维信息，非租户级）

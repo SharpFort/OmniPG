@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_get_user_roles(p_user_id text, p_org_id text DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE
     v_org        text;
     v_global     json;

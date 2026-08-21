@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_dict_data(
     p_item_type text DEFAULT 'default', p_is_default boolean DEFAULT false,
     p_sort_no int DEFAULT 0)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_id uuid; v_tenant text;
 BEGIN
     IF NOT has_permission('public:dict:create') THEN

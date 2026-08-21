@@ -28,15 +28,15 @@ export DATABASE_URL="$DBMATE_URL"
 case "$COMMAND" in
     up)
         echo "应用数据库迁移..."
-        dbmate -d migrations/public up
+        dbmate -d migrations/platform up
         ;;
     down|rollback)
         echo "回滚最近一次迁移..."
-        dbmate -d migrations/public rollback
+        dbmate -d migrations/platform rollback
         ;;
     status)
         echo "迁移状态:"
-        dbmate -d migrations/public status
+        dbmate -d migrations/platform status
         ;;
     create)
         if [ -z "${3:-}" ]; then

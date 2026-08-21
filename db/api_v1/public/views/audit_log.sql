@@ -3,5 +3,5 @@
 
 CREATE OR REPLACE VIEW api_v1_public.audit_log AS
 SELECT id, table_name, operation, old_data, new_data, user_id, tenant_id, created_at
-FROM public.audit_log;
+FROM platform.audit_log;
 COMMENT ON VIEW api_v1_public.audit_log IS '审计日志视图（只读）';

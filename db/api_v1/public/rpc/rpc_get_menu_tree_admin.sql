@@ -7,7 +7,7 @@
 CREATE OR REPLACE FUNCTION api_v1_public.get_menu_tree_admin()
 RETURNS json
 LANGUAGE plpgsql
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_result json;
@@ -18,7 +18,7 @@ BEGIN
             m.menu_type, m.api_code, m.api_url, m.api_method, m.is_affix,
             m.order_num AS sort_order, m.is_active,
             1 AS level
-        FROM public.iam_menu m
+        FROM platform.iam_menu m
         WHERE m.parent_id IS NULL AND m.is_active
 
         UNION ALL
@@ -28,7 +28,7 @@ BEGIN
             m.menu_type, m.api_code, m.api_url, m.api_method, m.is_affix,
             m.order_num AS sort_order, m.is_active,
             mt.level + 1
-        FROM public.iam_menu m
+        FROM platform.iam_menu m
         JOIN menu_tree mt ON m.parent_id = mt.id
         WHERE m.is_active AND mt.level < 10
     )

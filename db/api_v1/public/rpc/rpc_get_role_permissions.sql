@@ -10,7 +10,7 @@ DROP FUNCTION IF EXISTS api_v1_public.get_role_permissions(text);
 CREATE FUNCTION api_v1_public.get_role_permissions(p_role_code text)
 RETURNS json
 LANGUAGE plpgsql
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_role RECORD;

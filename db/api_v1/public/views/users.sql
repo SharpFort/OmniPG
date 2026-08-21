@@ -1,6 +1,6 @@
 -- db/api_v1/public/views/users.sql
--- 数据源: public.users（Logto 镜像）+ public.user_profile（业务档案）
--- 来源: 20260707000013_postgrest_api_v1.sql → T7 适配 → 2026-08-20 直连 users + user_profile（不再依赖 public.sys_user 兼容视图）
+-- 数据源: platform.users（Logto 镜像）+ platform.user_profile（业务档案）
+-- 来源: 20260707000013_postgrest_api_v1.sql → T7 适配 → 2026-08-20 直连 users + user_profile（不再依赖 platform.sys_user 兼容视图）
 
 CREATE OR REPLACE VIEW api_v1_public.users AS
 SELECT
@@ -18,6 +18,6 @@ SELECT
     NULL::text AS updated_by,
     NULL::text AS deleted_by,
     NULL::text AS password_hash              -- 密码由 Logto 管理，仅通过 RPC 访问
-FROM public.users u
-LEFT JOIN public.user_profile p ON p.user_id = u.id;
+FROM platform.users u
+LEFT JOIN platform.user_profile p ON p.user_id = u.id;
 COMMENT ON VIEW api_v1_public.users IS '用户表视图（password_hash 仅通过 RPC 访问）';

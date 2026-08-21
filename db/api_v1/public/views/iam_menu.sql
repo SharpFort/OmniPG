@@ -7,5 +7,5 @@ SELECT id, parent_id, menu_name, menu_type, api_code, router, component, icon,
        remark, route_name, is_link, is_iframe, redirect, is_cache,
        api_url, api_method, is_affix,
        created_at, updated_at, created_by, updated_by
-FROM public.iam_menu;
+FROM platform.iam_menu;
 COMMENT ON VIEW api_v1_public.iam_menu IS '菜单表视图（057: keep_alive→is_cache 改名——SharpFort IsCache 语义 + is_ 前缀统一；056: -query B1 清理）';

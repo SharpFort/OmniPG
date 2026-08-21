@@ -21,12 +21,12 @@ SELECT
     NULL::timestamptz AS deleted_at,      -- 061: 镜像表无软删，恒 NULL
     COALESCE(
         (SELECT json_agg(ut.organization_id ORDER BY ut.organization_id)
-         FROM public.user_tenants ut
+         FROM platform.user_tenants ut
          WHERE ut.user_id = u.id),
         '[]'::json
     ) AS organizations
-FROM public.users u
-LEFT JOIN public.user_profile p ON p.user_id = u.id
-LEFT JOIN public.tenants t ON p.tenant_id = t.id
-LEFT JOIN public.department d ON p.dept_id = d.id;
+FROM platform.users u
+LEFT JOIN platform.user_profile p ON p.user_id = u.id
+LEFT JOIN platform.tenants t ON p.tenant_id = t.id
+LEFT JOIN platform.department d ON p.dept_id = d.id;
 COMMENT ON VIEW api_v1_public.v_user_list IS '用户列表视图（058 +name 列：前端关键词搜索姓名匹配；061 updated_at=同步水位、deleted_at 恒 NULL；含租户名、部门名、组织成员关系）';

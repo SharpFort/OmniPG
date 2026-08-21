@@ -5,7 +5,7 @@
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_assign_user_positions(
     p_user_id text, p_position_ids uuid[], p_primary_position_id uuid DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_tenant text := current_tenant_id();
 BEGIN
     IF NOT has_permission('public:position:assign') THEN

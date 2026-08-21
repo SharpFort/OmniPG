@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_get_user_profile(p_user_id text)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_row json; v_tenant text := current_tenant_id();
 BEGIN
     -- 本人 / 超管 / 本租户成员（管理端查看）

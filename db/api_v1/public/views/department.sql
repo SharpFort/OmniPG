@@ -4,5 +4,5 @@
 CREATE OR REPLACE VIEW api_v1_public.department AS
 SELECT id, dept_name, tenant_id, parent_id, sort_order, is_active,
        created_at, updated_at, deleted_at, created_by, updated_by, deleted_by
-FROM public.department;
+FROM platform.department;
 COMMENT ON VIEW api_v1_public.department IS '部门树视图';

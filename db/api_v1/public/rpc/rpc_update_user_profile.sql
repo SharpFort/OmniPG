@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_user_profile(p_user_id text, p_updates jsonb)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE
     v_tenant text := current_tenant_id();
     v_self   boolean;
@@ -30,7 +30,7 @@ BEGIN
     FOR v_col IN
         SELECT c.column_name
         FROM information_schema.columns c
-        WHERE c.table_schema = 'public' AND c.table_name = 'user_profile'
+        WHERE c.table_schema = 'platform' AND c.table_name = 'user_profile'
           AND c.column_name NOT IN
               ('user_id','tenant_id','dept_id','created_at','updated_at',
                'deleted_at','created_by','updated_by','deleted_by')
@@ -48,7 +48,7 @@ BEGIN
         FOR v_col IN
             SELECT c.column_name
             FROM information_schema.columns c
-            WHERE c.table_schema = 'public' AND c.table_name = 'user_profile'
+            WHERE c.table_schema = 'platform' AND c.table_name = 'user_profile'
               AND c.column_name NOT IN
                   ('user_id','tenant_id','dept_id','created_at','updated_at',
                    'deleted_at','created_by','updated_by','deleted_by')

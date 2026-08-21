@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_list_tenant_members(
     p_org_id text DEFAULT NULL, p_query text DEFAULT NULL,
     p_limit int DEFAULT 50, p_offset int DEFAULT 0)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_result json; v_org text;
 BEGIN
     IF NOT has_permission('public:tenant-member:list') THEN

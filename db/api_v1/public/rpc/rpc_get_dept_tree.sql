@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.get_dept_tree(p_tenant_id text DEFAULT 
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_result json;
@@ -19,7 +19,7 @@ BEGIN
             1 AS level,
             ARRAY[d.id] AS path_ids,
             ARRAY[d.dept_name::text] AS path_names
-        FROM public.department d
+        FROM platform.department d
         WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
           AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
 
@@ -30,7 +30,7 @@ BEGIN
             dt.level + 1,
             dt.path_ids || d.id,
             dt.path_names || d.dept_name::text
-        FROM public.department d
+        FROM platform.department d
         JOIN dept_tree dt ON d.parent_id = dt.id
         WHERE d.deleted_at IS NULL AND dt.level < 10
     )

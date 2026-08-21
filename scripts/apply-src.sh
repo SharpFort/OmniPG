@@ -6,11 +6,11 @@ set -e
 # 用法: ./scripts/apply-src.sh <database_url> [--bootstrap]
 #   --bootstrap : 仅执行 bootstrap 子集（init + src/*/types），供 deploy-db.sh
 #                 冷启动前置——扩展/枚举必须先于迁移存在（§3.4 依赖倒置陷阱：
-#                 059/060 迁移引用 public.scope_type/iam_gender 等 src 枚举）
+#                 059/060 迁移引用 platform.scope_type/iam_gender 等 src 枚举）
 # 全量顺序: §6.3 迁移代码对象扫描（P0-5 零容忍）→ src → api_v1 → init → migrations
 # 模块声明（2026-08-16: net 模块退役——net.request_status 零引用删除；pg_net
 #   schema 属扩展所有，项目对象不入驻）:
-#   public（基础/系统层，无前缀函数落 public schema）
+#   platform（基础/系统层，无前缀函数落 platform schema）
 #   依赖方向: 后置模块可依赖前置模块，反之不可；新增模块须在此声明位置
 #   api_v1 层前缀 _shared（跨模块共享 API）置首
 #   （2026-08-15: inventory/sales 测试模块全链路退役移除，后续按需重建）
@@ -24,7 +24,7 @@ fi
 
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
-MODULES="public"
+MODULES="platform"
 API_MODULES="_shared public"
 
 BOOTSTRAP_ONLY=false

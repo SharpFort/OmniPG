@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.webhook_logto(jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_event  text := $1->>'event';

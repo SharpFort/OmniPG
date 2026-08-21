@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_department(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_dept_name text DEFAULT NULL,
     p_sort_order int DEFAULT NULL, p_is_active boolean DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 BEGIN
     IF NOT has_permission('public:dept:update') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';

@@ -10,14 +10,14 @@ CREATE OR REPLACE FUNCTION api_v1_public.update_config(
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 BEGIN
     IF NOT has_permission('public:config:write') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 
-    UPDATE public.app_config
+    UPDATE platform.app_config
     SET config_value = p_config_value, updated_at = now()
     WHERE config_key = p_config_key;
 

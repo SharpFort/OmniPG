@@ -22,7 +22,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.ensure_user()
 RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_claims     jsonb := current_setting('request.jwt.claims', true)::jsonb;

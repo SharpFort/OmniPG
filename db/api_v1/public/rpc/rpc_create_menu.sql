@@ -11,7 +11,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_menu(
     p_redirect text DEFAULT NULL, p_is_cache boolean DEFAULT NULL,
     p_api_url text DEFAULT NULL, p_api_method text DEFAULT NULL, p_is_affix boolean DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
     IF NOT has_permission('public:menu:create') THEN
@@ -58,7 +58,7 @@ BEGIN
             -- （button 行 router 恒 NULL、link 行 router 为外链 URL，均不推导）
             COALESCE(p_route_name,
                      CASE WHEN p_menu_type IN ('directory','menu')
-                          THEN public.derive_route_name(p_router) END),
+                          THEN platform.derive_route_name(p_router) END),
             COALESCE(p_is_link, p_menu_type = 'link'), COALESCE(p_is_iframe, false),
             p_redirect, COALESCE(p_is_cache, true),
             CASE WHEN p_menu_type = 'button' THEN p_api_url ELSE NULL END,

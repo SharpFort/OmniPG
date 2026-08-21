@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_delete_dict_type(p_id uuid)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_tenant text; v_name text;
 BEGIN
     IF NOT has_permission('public:dict:delete') THEN

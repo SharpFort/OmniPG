@@ -9,7 +9,7 @@ SELECT
     operation,
     COUNT(*) AS change_count,
     COUNT(DISTINCT user_id) AS unique_users
-FROM public.audit_log
+FROM platform.audit_log
 GROUP BY DATE_TRUNC('day', created_at), table_name, operation
 ORDER BY log_date DESC, change_count DESC;
 COMMENT ON VIEW api_v1_public.v_audit_log_timeline IS '审计时间线（按天聚合）';

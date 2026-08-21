@@ -5,7 +5,7 @@
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_create_department(
     p_dept_name text, p_parent_id uuid DEFAULT NULL, p_sort_order int DEFAULT 0)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_id uuid;
 BEGIN
     IF NOT has_permission('public:dept:create') THEN

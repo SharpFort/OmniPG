@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_dict_data(
     p_item_type text DEFAULT NULL, p_is_default boolean DEFAULT NULL,
     p_sort_no int DEFAULT NULL, p_status boolean DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_tenant text;
 BEGIN
     IF NOT has_permission('public:dict:update') THEN

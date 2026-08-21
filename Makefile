@@ -54,20 +54,20 @@ deploy-gateway:
 # =============================================================================
 
 # =============================================================================
-# 数据库迁移（dbmate；URL 由 gateway/.env 的 DB_PASSWORD 拼装，迁移目录 migrations/public）
+# 数据库迁移（dbmate；URL 由 gateway/.env 的 DB_PASSWORD 拼装，迁移目录 migrations/platform）
 # =============================================================================
 
 DB_PASSWORD := $(shell sed -n 's/^DB_PASSWORD=//p' gateway/.env)
 DB_URL := postgres://app_owner:$(DB_PASSWORD)@127.0.0.1:5432/app_db?sslmode=disable
 
 migrate:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/public up
+	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform up
 
 migrate-rollback:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/public rollback
+	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform rollback
 
 migrate-status:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/public status
+	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform status
 
 # =============================================================================
 # 测试

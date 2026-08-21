@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.rpc_update_menu(
     p_redirect text DEFAULT NULL, p_is_cache boolean DEFAULT NULL,
     p_api_url text DEFAULT NULL, p_api_method text DEFAULT NULL, p_is_affix boolean DEFAULT NULL)
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE
     v_menu_type iam_menu_type;
     v_api_code  text;
@@ -77,7 +77,7 @@ BEGIN
                 THEN p_route_name
             WHEN p_router IS NOT NULL
              AND COALESCE(p_menu_type::iam_menu_type, v_menu_type) IN ('directory'::iam_menu_type, 'menu'::iam_menu_type)
-                THEN public.derive_route_name(p_router)
+                THEN platform.derive_route_name(p_router)
             ELSE route_name
         END,
         is_link     = COALESCE(p_is_link, p_menu_type = 'link', is_link),

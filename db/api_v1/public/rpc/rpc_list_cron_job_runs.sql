@@ -8,7 +8,7 @@ RETURNS TABLE(runid bigint, jobid bigint, status text, return_message text,
 LANGUAGE plpgsql
 SECURITY DEFINER
 STABLE
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 BEGIN
     IF NOT is_super_admin() THEN

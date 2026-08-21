@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.get_current_user()
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_user_id text;
@@ -27,10 +27,10 @@ BEGIN
            d.dept_name,
            (current_setting('request.jwt.claims', true)::json->'roles')::jsonb AS roles
     INTO v_user
-    FROM public.users u
-    LEFT JOIN public.user_profile p ON p.user_id = u.id
-    LEFT JOIN public.tenants t ON p.tenant_id = t.id
-    LEFT JOIN public.department d ON p.dept_id = d.id
+    FROM platform.users u
+    LEFT JOIN platform.user_profile p ON p.user_id = u.id
+    LEFT JOIN platform.tenants t ON p.tenant_id = t.id
+    LEFT JOIN platform.department d ON p.dept_id = d.id
     WHERE u.id = v_user_id;
 
     IF NOT FOUND THEN

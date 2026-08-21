@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION api_v1_public.rpc_set_role_menus(p_role_code text, p_menu_ids uuid[])
 RETURNS json
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 BEGIN
     IF NOT has_permission('public:role-menu:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';

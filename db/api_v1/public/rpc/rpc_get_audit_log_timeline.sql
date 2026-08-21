@@ -9,7 +9,7 @@ CREATE OR REPLACE FUNCTION api_v1_public.get_audit_log_timeline(
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
-SET search_path = public, pg_temp
+SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_result json;
