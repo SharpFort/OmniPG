@@ -1,6 +1,5 @@
 -- api_v1/platform/rpc/rpc_create_department.sql
--- FUNCTION: api_v1_platform.rpc_create_department（17 号文档归位：迁移 024_admin_crud_rpc.sql 删定义段，本文件为唯一权威）
--- 回放终态: 024_admin_crud_rpc.sql；幂等写法（§9 模板）
+-- D27: 部门写入 organization_id（业务组织）+ tenant_id（Logto 租户）。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_create_department(
     p_dept_name text, p_parent_id uuid DEFAULT NULL, p_sort_order int DEFAULT 0)
@@ -14,8 +13,11 @@ BEGIN
     IF p_dept_name IS NULL OR trim(p_dept_name) = '' THEN
         RAISE EXCEPTION 'dept_name required' USING ERRCODE = '22023';
     END IF;
-    INSERT INTO department (tenant_id, dept_name, parent_id, sort_order, created_by)
-    VALUES (current_tenant_id(), p_dept_name, p_parent_id, p_sort_order, current_user_id())
+    IF current_organization_id() IS NULL THEN
+        RAISE EXCEPTION 'organization required' USING ERRCODE = '22023';
+    END IF;
+    INSERT INTO department (organization_id, tenant_id, dept_name, parent_id, sort_order, created_by)
+    VALUES (current_organization_id(), current_logto_tenant_id(), p_dept_name, p_parent_id, p_sort_order, current_user_id())
     RETURNING id INTO v_id;
     PERFORM log_operate('dept', 'create', 'department', v_id::text,
                         'success', jsonb_build_object('name', p_dept_name));

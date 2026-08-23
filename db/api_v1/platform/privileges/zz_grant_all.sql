@@ -10,7 +10,10 @@ GRANT SELECT ON api_v1_platform.department TO authenticated;
 GRANT SELECT ON api_v1_platform.users TO authenticated;
 GRANT SELECT ON api_v1_platform.role TO authenticated;
 GRANT SELECT ON api_v1_platform.iam_menu TO authenticated;
-GRANT SELECT ON api_v1_platform.user_tenants TO authenticated;  -- 034: 原 user_role 更名
+GRANT SELECT ON api_v1_platform.tenants TO authenticated;          -- D27: Logto Tenant
+GRANT SELECT ON api_v1_platform.organizations TO authenticated;    -- D27: Logto Organization
+GRANT SELECT ON api_v1_platform.user_tenants TO authenticated;     -- D27: tenant_id/organization_id 双列
+GRANT SELECT ON api_v1_platform.tenant_role TO authenticated;      -- D25: 原 organization_role 改名
 GRANT SELECT ON api_v1_platform.iam_role_menu TO authenticated;
 GRANT SELECT ON api_v1_platform.audit_log TO authenticated;
 GRANT SELECT ON api_v1_platform.cron_job_log TO authenticated;

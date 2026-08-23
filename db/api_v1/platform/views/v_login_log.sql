@@ -1,9 +1,9 @@
+DROP VIEW IF EXISTS api_v1_platform.v_login_log CASCADE;
 -- api_v1/platform/views/v_login_log.sql
--- VIEW: api_v1_platform.v_login_log（17 号文档归位：迁移 026_view_sys_cleanup.sql 删定义段，本文件为唯一权威）
--- 回放终态: 026_view_sys_cleanup.sql；幂等写法（§9 模板）
+-- D27: 登录日志 API 输出 tenant_id/organization_id 双列。
 
 CREATE OR REPLACE VIEW api_v1_platform.v_login_log AS
-SELECT l.id, l.tenant_id, l.user_id, l.username, l.login_type, l.result,
+SELECT l.id, l.tenant_id, l.organization_id, l.user_id, l.username, l.login_type, l.result,
        l.fail_reason, l.ip, l.user_agent,
        l.region                 AS region_snapshot,
        g->>'region'             AS region_live,

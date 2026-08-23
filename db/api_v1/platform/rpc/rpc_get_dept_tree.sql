@@ -1,10 +1,8 @@
 -- db/api_v1/platform/rpc/rpc_get_dept_tree.sql
--- 获取部门树形结构 RPC（递归 CTE），按路径排序
--- 来源: 20260707000015_system_management_api.sql → 035 参数 text 化
--- 035: p_tenant_id uuid → text（017 department.tenant_id text 化后参数未同步；
---      传值调用 text=uuid 无隐式 cast 必炸；传 NULL 短路不炸掩盖问题）
+-- D27: 部门树 API 参数改为 p_organization_id（业务组织）；tenant_id 取当前 Logto 租户。
 
-CREATE OR REPLACE FUNCTION api_v1_platform.get_dept_tree(p_tenant_id text DEFAULT NULL)
+DROP FUNCTION IF EXISTS api_v1_platform.get_dept_tree(text);
+CREATE OR REPLACE FUNCTION api_v1_platform.get_dept_tree(p_organization_id text DEFAULT NULL)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -12,32 +10,37 @@ SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_result json;
+    v_org text := COALESCE(p_organization_id, current_organization_id());
 BEGIN
     WITH RECURSIVE dept_tree AS (
         SELECT
-            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            d.id, d.dept_name, d.tenant_id, d.organization_id, d.parent_id, d.sort_order, d.is_active,
             1 AS level,
             ARRAY[d.id] AS path_ids,
             ARRAY[d.dept_name::text] AS path_names
         FROM platform.department d
         WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
-          AND (p_tenant_id IS NULL OR d.tenant_id = p_tenant_id)
+          AND (p_organization_id IS NULL OR d.organization_id = p_organization_id)
+          AND d.tenant_id = current_logto_tenant_id()
 
         UNION ALL
 
         SELECT
-            d.id, d.dept_name, d.parent_id, d.sort_order, d.is_active,
+            d.id, d.dept_name, d.tenant_id, d.organization_id, d.parent_id, d.sort_order, d.is_active,
             dt.level + 1,
             dt.path_ids || d.id,
             dt.path_names || d.dept_name::text
         FROM platform.department d
         JOIN dept_tree dt ON d.parent_id = dt.id
         WHERE d.deleted_at IS NULL AND dt.level < 10
+          AND d.organization_id = dt.organization_id AND d.tenant_id = dt.tenant_id
     )
     SELECT COALESCE(json_agg(
         json_build_object(
             'id', dt.id,
             'dept_name', dt.dept_name,
+            'tenant_id', dt.tenant_id,
+            'organization_id', dt.organization_id,
             'parent_id', dt.parent_id,
             'sort_order', dt.sort_order,
             'is_active', dt.is_active,
@@ -50,5 +53,5 @@ BEGIN
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_platform.get_dept_tree(text) IS '获取部门树形结构（035: p_tenant_id 改 text，对齐 department.tenant_id text 化）';
+COMMENT ON FUNCTION api_v1_platform.get_dept_tree(text) IS '获取部门树形结构（D27：p_organization_id 传入业务组织，tenant_id 取当前 Logto 租户）';
 GRANT EXECUTE ON FUNCTION api_v1_platform.get_dept_tree(text) TO authenticated;

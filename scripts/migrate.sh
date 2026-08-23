@@ -18,7 +18,7 @@ if [ -f "$PROJECT_DIR/.env.$ENV" ]; then
 fi
 
 # 设置数据库连接
-DB_URI=${DB_URI:-"postgres://app_owner:dev_password_change_me@localhost:5432/app_db?sslmode=disable"}
+DB_URI=${DB_URI:-"postgres://app_owner:admin%40password@localhost:5432/app_db?sslmode=disable"}
 DBMATE_URL=${DATABASE_URL:-"$DB_URI"}
 
 cd "$PROJECT_DIR/db"

@@ -23,7 +23,8 @@ DB_NAME=${1:-app_db_verify}
 REF_DB=${REF_DB:-app_db}
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DB_PASSWORD=$(sed -n 's/^DB_PASSWORD=//p' "$REPO_DIR/gateway/.env" | tr -d '\r')
-URI="postgres://app_owner:${DB_PASSWORD}@127.0.0.1:5432/${DB_NAME}?sslmode=disable"
+DB_PASSWORD_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$DB_PASSWORD")
+URI="postgres://app_owner:${DB_PASSWORD_ENC}@127.0.0.1:5432/${DB_NAME}?sslmode=disable"
 SUPER_CMD=${PG_SUPER_CMD:-"sudo -u postgres psql -d ${DB_NAME}"}
 SUPER_POSTGRES_CMD=${PG_SUPER_POSTGRES_CMD:-"sudo -u postgres psql -d postgres"}
 
@@ -52,6 +53,8 @@ CREATE EXTENSION IF NOT EXISTS "pgtap";
 CREATE SCHEMA IF NOT EXISTS ext;
 ALTER EXTENSION "pgcrypto" SET SCHEMA ext;
 ALTER EXTENSION "pgtap" SET SCHEMA ext;
+-- 02-schemas 由 app_owner 执行（COMMENT ON SCHEMA ext 需要 owner），把 ext 所有权交给 app_owner
+ALTER SCHEMA ext OWNER TO app_owner;
 SQL
 
 # [3] bootstrap 子集（02-schemas + src types）
@@ -105,11 +108,15 @@ SELECT 'FUNC_COUNT|' || count(*) FROM pg_proc p
 WHERE p.pronamespace IN ('platform'::regnamespace,'api_v1_platform'::regnamespace)
 AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid=p.oid AND d.deptype='e');
 SELECT 'VIEW_COUNT|' || count(*) FROM pg_views WHERE schemaname IN ('platform','api_v1_platform');
-SELECT 'TRIGGER_COUNT|' || count(*) FROM pg_trigger WHERE tgisinternal=false
-AND tgrelid NOT IN (SELECT oid FROM pg_class WHERE relnamespace = COALESCE((SELECT oid FROM pg_namespace WHERE nspname='cron'), 0));
+-- 40 号方案后 public 为 Logto 专属（外部对象），net/graphql 为扩展宿主：均不参与业务结构比对
+SELECT 'TRIGGER_COUNT|' || count(*) FROM pg_trigger t
+JOIN pg_class c ON c.oid=t.tgrelid
+JOIN pg_namespace n ON n.oid=c.relnamespace
+WHERE t.tgisinternal=false
+AND n.nspname NOT IN ('cron','public','net','graphql');
 SELECT 'POLICY_COUNT|' || count(*) FROM pg_policy p
 JOIN pg_class c ON c.oid=p.polrelid
-WHERE c.relnamespace <> COALESCE((SELECT oid FROM pg_namespace WHERE nspname='cron'), 0);
+WHERE c.relnamespace::regnamespace::text NOT IN ('cron','public','net','graphql');
 SELECT 'INDEX_COUNT|' || count(*) FROM pg_indexes WHERE schemaname='platform' AND tablename <> 'schema_migrations';
 EOF
 PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$REF_DB" -w -f /tmp/verify_compare.sql > /tmp/verify_ref.txt 2>&1

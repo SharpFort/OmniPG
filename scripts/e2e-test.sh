@@ -2,7 +2,7 @@
 # ==============================================================================
 # 全系统端到端验收自动化脚本（Logto 版）— 替代 Casdoor 时代版本
 # 架构: Logto OSS v1.42（3001/3002）+ PostgREST（3100，api_v1_platform）
-#        + APISIX（9080，jwt-auth ES384）+ 镜像表只读（users/tenants/role）
+#        + APISIX（9080，jwt-auth ES384）+ Logto 只读投影视图（users/tenants/tenant_role）
 # ==============================================================================
 
 set -u
@@ -10,9 +10,9 @@ set -u
 BASE_URL="${BASE_URL:-http://localhost:9080}"
 PGRST_URL="${PGRST_URL:-http://localhost:3100}"
 LOGTO_URL="${LOGTO_URL:-http://localhost:3001}"
-CLIENT_ID="${CLIENT_ID:-lbrkbi552ndpp22o339p4}"
+CLIENT_ID="${CLIENT_ID:-0d4o8wb6qk9bar0egelb4}"
 REDIRECT_URI="${REDIRECT_URI:-http://localhost:5173/auth/callback}"
-ORG_ID="${ORG_ID:-fmr1j72k3htk}"
+ORG_ID="${ORG_ID:-q8xan57gksx5}"
 RESOURCE="https://default.logto.app/api"
 E2E_USER="${E2E_USER:-admin}"
 E2E_PASSWORD="${E2E_PASSWORD:-Admin@112104}"
@@ -184,43 +184,35 @@ run_test "TENANT" "audit_log Scoped" "audit_log RLS 可读" \
     "curl -sf '$BASE_URL/api/v1/platform/audit_log?select=id&limit=3' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 0'"
 
 # ==============================================================================
-# Phase 6: webhook 同步链路（Logto 事件 → sync_* RPC）
+# Phase 6: 同库只读视图 + PostSignIn 登录日志 webhook（D25）
 # ==============================================================================
 echo ""
-echo "📋 Phase 6: Webhook 同步链路"
+echo "📋 Phase 6: 同库只读视图 + PostSignIn"
 
 run_test "SYNC" "webhook RPC 存在" "webhook_logto 函数注册" \
-    "PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db -t -A -c \"SELECT proname FROM pg_proc WHERE proname='webhook_logto';\" 2>/dev/null | grep -q webhook_logto"
+    "PGPASSWORD=admin@password psql -h 127.0.0.1 -U app_owner -d app_db -t -A -c \"SELECT proname FROM pg_proc WHERE proname='webhook_logto';\" 2>/dev/null | grep -q webhook_logto"
 
-run_test "SYNC" "users 镜像有数据" "Logto 用户已同步" \
+run_test "SYNC" "users 只读投影有数据" "Logto users 直读可见" \
     "curl -sf '$BASE_URL/api/v1/platform/users?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
-run_test "SYNC" "role 镜像有数据" "Logto 角色已同步" \
+run_test "SYNC" "role 只读投影有数据" "Logto roles 直读可见（含 MachineToMachine）" \
     "curl -sf '$BASE_URL/api/v1/platform/role?select=id&limit=1' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
 
-# N17（2026-08-11）: 补齐 Phase 6 用例——验签失败 / 删除与封禁同步 / 对账 dry-run
-#   前置: gateway/.env 已配置 LOGTO_WEBHOOK_SIGNING_KEY（init-apisix-routes.sh fail-closed）
+run_test "SYNC" "tenant_role 只读投影可读" "Logto OrganizationRoles 直读可见" \
+    "curl -sf '$BASE_URL/api/v1/platform/tenant_role?select=id&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -e 'length >= 1'"
+
+# 前置: gateway/.env 已配置 LOGTO_WEBHOOK_SIGNING_KEY（init-apisix-routes.sh fail-closed）
 run_test "SYNC" "Webhook 无签名头被拒" "APISIX 验签 401（N15 fail-closed）" \
     "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/rpc/webhook_logto' \
-      -H 'Content-Type: application/json' -d '{\"event\":\"User.Created\",\"data\":{}}' | grep -q '401'"
+      -H 'Content-Type: application/json' -d '{\"event\":\"PostSignIn\",\"data\":{}}' | grep -q '401'"
 
 run_test "SYNC" "Webhook 错误签名被拒" "错误 HMAC 401" \
     "curl -s -o /dev/null -w '%{http_code}' -X POST '$BASE_URL/rpc/webhook_logto' \
       -H 'Content-Type: application/json' -H 'logto-signature-sha-256: ZmFrZXNpZw==' \
-      -d '{\"event\":\"User.Created\",\"data\":{}}' | grep -q '401'"
+      -d '{\"event\":\"PostSignIn\",\"data\":{}}' | grep -q '401'"
 
-# 真实 Logto 操作 → 镜像断言（需 Logto Console 权限；失败可跳过——手工执行段）
-echo "  ── N17 手工段（可选）: 在 Logto Console 删除/封禁一名用户后执行以下断言 ──"
-echo "     curl -sf '$BASE_URL/api/v1/platform/users?select=id,is_suspended&limit=5' -H \"Authorization: Bearer $TOKEN\" | jq -r '.[] | [.id,.is_suspended] | @tsv'"
-
-if [ -z "${LOGTO_M2M_APP_ID:-}" ]; then
-    echo "  [SYNC] 对账 dry-run 可执行: ⏭️ SKIP（LOGTO_M2M_APP_ID/SECRET 未配置，配置后自动启用）"
-else
-    run_test "SYNC" "对账 dry-run 可执行" "reconcile-logto.py --dry-run 正常退出" \
-        "cd $(pwd) && python3 scripts/phase2/reconcile-logto.py --dry-run \
-          --m2m-id \"\${LOGTO_M2M_APP_ID:-}\" --m2m-secret \"\${LOGTO_M2M_SECRET:-}\" \
-          --pg-dsn 'postgresql://app_owner@127.0.0.1:5432/app_db' >/dev/null 2>&1 && echo ok | grep -q ok"
-fi
+# D25: reconcile-logto.py 已退役（用户/角色/租户直读 Logto 公共表，无需对账）
+echo "  [SYNC] 提示: 对账脚本已移除（D25 同库只读，无需对账）"
 
 # ==============================================================================
 # Phase 7: 异常恢复

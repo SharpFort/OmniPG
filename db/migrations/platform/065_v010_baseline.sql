@@ -1,6 +1,7 @@
 -- 065_v010_baseline.sql
 -- v0.1.0 squash baseline（2026-08-16 用户拍板，方案 36-迁移基线合并）
---   业务表结构：department、position、user_profile、user_position、iam_menu、iam_role_menu、iam_role_data_scope、dict_type、dict_data、app_config、audit_log、login_log、cron_job_log、webhook_event_log、ip_geolite2_city/blocks/locations、ip_region_v4（18 张）。依赖 064 镜像表。
+--   业务表结构：department、position、user_profile、user_position、iam_menu、iam_role_menu、iam_role_data_scope、dict_type、dict_data、app_config、audit_log、login_log、cron_job_log、webhook_event_log、ip_geolite2_city/blocks/locations、ip_region_v4（18 张）。
+--   D25：不再指向 064 镜像表；用户/租户引用完整性改由 RPC + BEFORE 触发器 + pg_cron 清理任务保证。
 --   来源：现库 pg_dump 反写（2026-08-15 审计追平终态，含 059-063 全部变更）。
 --   17 号铁律：本文件仅承载表结构；RLS 策略/触发器/枚举/函数/视图归 src（apply-src 部署）。
 --   幂等：CREATE IF NOT EXISTS / 约束 DO 守卫 / COMMENT 覆盖——apply-src 全量重放安全。
@@ -140,7 +141,7 @@ CREATE TABLE IF NOT EXISTS platform.iam_menu (
     CONSTRAINT iam_menu_is_link_path_check CHECK (((NOT is_link) OR ((router)::text ~~ 'http://%'::text) OR ((router)::text ~~ 'https://%'::text))),
     CONSTRAINT iam_menu_link_path_check CHECK (((menu_type <> 'link'::platform.iam_menu_type) OR ((router)::text ~~ 'http://%'::text) OR ((router)::text ~~ 'https://%'::text)))
 );
-COMMENT ON TABLE platform.iam_menu IS '菜单树（PG 自主数据）；role_code 经 iam_role_menu 绑定角色';
+COMMENT ON TABLE platform.iam_menu IS '菜单树（PG 自主数据）；角色经 iam_role_menu 的 role_id/org_role_id 绑定（D26）';
 COMMENT ON COLUMN platform.iam_menu.router IS '路由地址（前端 vue-router path；link 类型为 http(s):// 外链 URL；原 path）';
 COMMENT ON COLUMN platform.iam_menu.menu_type IS '菜单类型: directory(目录) / menu(菜单) / button(按钮) / link(外链或iframe，032)';
 COMMENT ON COLUMN platform.iam_menu.api_code IS '权限码（单码制：与 iam_api.api_code 同码；button 必填，has_permission 双通道判定键；原 perms）';
@@ -157,12 +158,13 @@ COMMENT ON COLUMN platform.iam_menu.api_method IS 'API 端点方法（原 iam_ap
 COMMENT ON COLUMN platform.iam_menu.is_affix IS '是否固定标签页（Admin.NET IsAffix 借鉴；多页签前端布局使用，默认 false）';
 CREATE TABLE IF NOT EXISTS platform.iam_role_menu (
     id uuid DEFAULT uuidv7() NOT NULL,
-    role_code text NOT NULL,
+    role_id text,
+    org_role_id text,
     menu_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by text
 );
-COMMENT ON TABLE platform.iam_role_menu IS '角色→菜单绑定（PG 自主数据）';
+COMMENT ON TABLE platform.iam_role_menu IS '角色→菜单绑定（PG 自主数据；D26: role_id/org_role_id 双列 FK，恰好一个非空）';
 CREATE TABLE IF NOT EXISTS platform.login_log (
     id bigint CONSTRAINT sys_login_log_id_not_null NOT NULL,
     tenant_id text,
@@ -240,7 +242,8 @@ COMMENT ON COLUMN platform.user_profile.website IS '个人主页 URL';
 COMMENT ON COLUMN platform.user_profile.preferences IS '偏好扩展 JSONB（language/timezone/theme/通知开关等；前端自定义键，Auth0 user_metadata 模式）';
 CREATE TABLE IF NOT EXISTS platform.iam_role_data_scope (
     id uuid DEFAULT uuidv7() NOT NULL,
-    role_code text NOT NULL,
+    role_id text,
+    org_role_id text,
     scope_type platform.scope_type DEFAULT 'self'::platform.scope_type NOT NULL,
     dept_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -340,21 +343,15 @@ DO $$ BEGIN
         ALTER TABLE ONLY platform.iam_role_data_scope ADD CONSTRAINT iam_role_data_scope_pkey PRIMARY KEY (id);
     END IF;
 END $$;
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'iam_role_data_scope_role_code_scope_type_dept_id_key') THEN
-        ALTER TABLE ONLY platform.iam_role_data_scope ADD CONSTRAINT iam_role_data_scope_role_code_scope_type_dept_id_key UNIQUE (role_code, scope_type, dept_id);
-    END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS iam_role_data_scope_role_scope_key
+    ON platform.iam_role_data_scope (role_id, org_role_id, scope_type, dept_id);
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'iam_role_menu_pkey') THEN
         ALTER TABLE ONLY platform.iam_role_menu ADD CONSTRAINT iam_role_menu_pkey PRIMARY KEY (id);
     END IF;
 END $$;
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'iam_role_menu_role_code_menu_id_key') THEN
-        ALTER TABLE ONLY platform.iam_role_menu ADD CONSTRAINT iam_role_menu_role_code_menu_id_key UNIQUE (role_code, menu_id);
-    END IF;
-END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS iam_role_menu_role_menu_key
+    ON platform.iam_role_menu (role_id, org_role_id, menu_id);
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ip_geolite2_city_pkey') THEN
         ALTER TABLE ONLY platform.ip_geolite2_city ADD CONSTRAINT ip_geolite2_city_pkey PRIMARY KEY (network);
@@ -440,9 +437,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_iam_menu_api_url_method ON platform.iam_me
 CREATE INDEX IF NOT EXISTS idx_iam_menu_parent ON platform.iam_menu USING btree (parent_id);
 CREATE INDEX IF NOT EXISTS idx_iam_menu_type ON platform.iam_menu USING btree (menu_type);
 CREATE INDEX IF NOT EXISTS idx_iam_role_data_scope_dept ON platform.iam_role_data_scope USING btree (dept_id);
-CREATE INDEX IF NOT EXISTS idx_iam_role_data_scope_role ON platform.iam_role_data_scope USING btree (role_code);
+CREATE INDEX IF NOT EXISTS idx_iam_role_data_scope_role_id ON platform.iam_role_data_scope USING btree (role_id);
+CREATE INDEX IF NOT EXISTS idx_iam_role_data_scope_org_role_id ON platform.iam_role_data_scope USING btree (org_role_id);
 CREATE INDEX IF NOT EXISTS idx_iam_role_menu_menu ON platform.iam_role_menu USING btree (menu_id);
-CREATE INDEX IF NOT EXISTS idx_iam_role_menu_role ON platform.iam_role_menu USING btree (role_code);
+CREATE INDEX IF NOT EXISTS idx_iam_role_menu_role_id ON platform.iam_role_menu USING btree (role_id);
+CREATE INDEX IF NOT EXISTS idx_iam_role_menu_org_role_id ON platform.iam_role_menu USING btree (org_role_id);
 CREATE INDEX IF NOT EXISTS idx_ip_region_end ON platform.ip_region_v4 USING btree (end_ip);
 CREATE INDEX IF NOT EXISTS idx_ip_region_start ON platform.ip_region_v4 USING btree (start_ip);
 CREATE INDEX IF NOT EXISTS idx_login_log_created ON platform.login_log USING btree (created_at DESC);
@@ -487,23 +486,8 @@ DO $$ BEGIN
     END IF;
 END $$;
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_position_user_id_fkey') THEN
-        ALTER TABLE ONLY platform.user_position ADD CONSTRAINT user_position_user_id_fkey FOREIGN KEY (user_id) REFERENCES platform.users(id) ON DELETE CASCADE;
-    END IF;
-END $$;
-DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profile_dept_id_fkey') THEN
         ALTER TABLE ONLY platform.user_profile ADD CONSTRAINT user_profile_dept_id_fkey FOREIGN KEY (dept_id) REFERENCES platform.department(id) ON DELETE SET NULL;
-    END IF;
-END $$;
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profile_tenant_id_fkey') THEN
-        ALTER TABLE ONLY platform.user_profile ADD CONSTRAINT user_profile_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES platform.tenants(id) ON DELETE RESTRICT;
-    END IF;
-END $$;
-DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profile_user_id_fkey') THEN
-        ALTER TABLE ONLY platform.user_profile ADD CONSTRAINT user_profile_user_id_fkey FOREIGN KEY (user_id) REFERENCES platform.users(id) ON DELETE CASCADE;
     END IF;
 END $$;
 

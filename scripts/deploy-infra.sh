@@ -145,7 +145,7 @@ echo "[5/5] 验证服务状态..."
 ERRORS=0
 
 # PostgreSQL
-if PGPASSWORD=${DB_PASSWORD:-dev_password_change_me} psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     echo "  ✅ PostgreSQL: 连接成功"
 else
     echo "  ❌ PostgreSQL: 连接失败"
@@ -153,7 +153,7 @@ else
 fi
 
 # pgBouncer
-if PGPASSWORD=${DB_PASSWORD:-dev_password_change_me} psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     echo "  ✅ pgBouncer: 连接成功"
 else
     echo "  ❌ pgBouncer: 连接失败"

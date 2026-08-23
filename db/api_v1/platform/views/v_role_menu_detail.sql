@@ -1,15 +1,16 @@
 -- db/api_v1/platform/views/v_role_menu_detail.sql
--- T9: 列对齐当前 iam_menu（menu_name/menu_type/perms）；055: +api_url/api_method/is_affix
--- 来源: 20260707000013_postgrest_api_v1.sql（T9 改造）
+-- D27: 角色-菜单明细输出 tenant_id/organization_id 双列。
 
 DROP VIEW IF EXISTS api_v1_platform.v_role_menu_detail CASCADE;
 CREATE OR REPLACE VIEW api_v1_platform.v_role_menu_detail AS
 SELECT
     rm.id AS role_id,
+    rm.tenant_id,
+    rm.organization_id,
     rm.menu_id,
     rm.created_at,
-    rm.role_code,
-    COALESCE(r.name, rm.role_code) AS role_name,
+    COALESCE(r.role_code, tr.name) AS role_code,
+    COALESCE(r.name, tr.name) AS role_name,
     m.menu_name AS menu_name,
     m.menu_type AS menu_type,
     m.api_code AS permission_code,
@@ -20,6 +21,7 @@ SELECT
     m.api_method,
     m.is_affix
 FROM iam_role_menu rm
-JOIN role r ON r.role_code = rm.role_code
+LEFT JOIN platform.role r ON r.id = rm.role_id AND r.tenant_id = rm.tenant_id
+LEFT JOIN platform.tenant_role tr ON tr.id = rm.org_role_id AND tr.tenant_id = rm.tenant_id
 JOIN iam_menu m ON m.id = rm.menu_id;
-COMMENT ON VIEW api_v1_platform.v_role_menu_detail IS '角色-菜单明细视图（Logto 镜像：iam_role_menu；055: +端点/固定标签列）';
+COMMENT ON VIEW api_v1_platform.v_role_menu_detail IS '角色-菜单明细视图（D27：双列输出）';

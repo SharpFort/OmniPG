@@ -48,7 +48,7 @@ all:
           - pg_repack             # P1 膨胀治理
         pg_users:
           - name: app_owner
-            password: dev_password_change_me
+            password: admin@password
             pgbouncer: true
             privileges: CREATEDB
             comment: 'app owner'
@@ -60,7 +60,11 @@ all:
             comment: 'PostgREST anonymous role (NOLOGIN)'
           - name: logto
             password: logto_dev_pass_2026
-            comment: 'Logto OIDC service account（与业务库同机同集群，2026-08-20 决策）'
+            privileges: CREATEROLE
+            comment: 'Logto OIDC service account（与业务库同机同集群，2026-08-20 决策；public schema 归 Logto，需 CREATEROLE 建 logto_tenant_* 角色）'
+          - name: omnipg_logto_reader
+            privileges: BYPASSRLS
+            comment: 'Logto 同库只读投影视图 owner（D25；NOLOGIN + BYPASSRLS + 列级 SELECT，仅经 platform 视图/函数消费）'
         pg_databases:
           - name: app_db
             owner: app_owner
@@ -81,9 +85,6 @@ all:
               - { name: index_advisor }
               - { name: pg_repack }
               # 注: safeupdate 无需 CREATE EXTENSION（Load=是 Create=否），仅装包 + preload
-          - name: logto
-            owner: logto
-            comment: 'Logto OIDC 数据库（与业务库同机同集群，2026-08-20 决策；直连 5433，不经 pgbouncer）'
         pg_hba_builtin: []  # 禁用内置规则，使用自定义规则
         pg_hba_rules:
           - type: host

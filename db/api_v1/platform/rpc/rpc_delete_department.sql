@@ -1,6 +1,5 @@
 -- api_v1/platform/rpc/rpc_delete_department.sql
--- FUNCTION: api_v1_platform.rpc_delete_department（17 号文档归位：迁移 024_admin_crud_rpc.sql 删定义段，本文件为唯一权威）
--- 回放终态: 024_admin_crud_rpc.sql；幂等写法（§9 模板）
+-- D27: 部门删除按 organization_id + tenant_id 双维度。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_delete_department(p_id uuid)
 RETURNS json
@@ -10,14 +9,17 @@ BEGIN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF EXISTS (SELECT 1 FROM department
-               WHERE parent_id = p_id AND tenant_id = current_tenant_id()) THEN
+               WHERE parent_id = p_id AND organization_id = current_organization_id()
+                 AND tenant_id = current_logto_tenant_id()) THEN
         RAISE EXCEPTION 'has children, cannot delete' USING ERRCODE = '23503';
     END IF;
     IF EXISTS (SELECT 1 FROM user_profile
-               WHERE dept_id = p_id AND tenant_id = current_tenant_id()) THEN
+               WHERE dept_id = p_id AND organization_id = current_organization_id()
+                 AND tenant_id = current_logto_tenant_id()) THEN
         RAISE EXCEPTION 'has users, cannot delete' USING ERRCODE = '23503';
     END IF;
-    DELETE FROM department WHERE id = p_id AND tenant_id = current_tenant_id();
+    DELETE FROM department WHERE id = p_id
+      AND organization_id = current_organization_id() AND tenant_id = current_logto_tenant_id();
     PERFORM log_operate('dept', 'delete', 'department', p_id::text);
     RETURN json_build_object('ok', true);
 END $$;

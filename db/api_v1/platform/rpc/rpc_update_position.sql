@@ -1,6 +1,5 @@
 -- api_v1/platform/rpc/rpc_update_position.sql
--- FUNCTION: api_v1_platform.rpc_update_position（17 号文档归位：迁移 024_admin_crud_rpc.sql 删定义段，本文件为唯一权威）
--- 回放终态: 024_admin_crud_rpc.sql；幂等写法（§9 模板）
+-- D27: 岗位更新按 organization_id + tenant_id。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_update_position(
     p_id uuid, p_parent_id uuid DEFAULT NULL, p_pos_name text DEFAULT NULL,
@@ -12,7 +11,8 @@ BEGIN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM position
-                   WHERE id = p_id AND tenant_id = current_tenant_id()) THEN
+                   WHERE id = p_id AND organization_id = current_organization_id()
+                     AND tenant_id = current_logto_tenant_id()) THEN
         RAISE EXCEPTION 'position not found' USING ERRCODE = 'P0002';
     END IF;
     IF p_parent_id = p_id THEN
@@ -26,7 +26,8 @@ BEGIN
         status     = COALESCE(p_status, status),
         updated_at = now(),
         updated_by = current_user_id()
-    WHERE id = p_id AND tenant_id = current_tenant_id();
+    WHERE id = p_id AND organization_id = current_organization_id()
+      AND tenant_id = current_logto_tenant_id();
     PERFORM log_operate('position', 'update', 'position', p_id::text);
     RETURN json_build_object('ok', true);
 END $$;

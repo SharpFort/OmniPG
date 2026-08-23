@@ -8,7 +8,7 @@ init-logto.py — Logto OSS 配置自动化（T3，06-开发路线 §3 T3）
   2. 创建全局角色 role_super_admin（type=User）
   3. 创建组织模板 default：组织角色 tenant_admin/editor/viewer
   4. 创建演示组织（租户）+ 关联模板
-  5. 创建/更新 webhook（订阅 User.*/Organization.*/Membership/OrganizationRole.*/Role.*/PostSignIn 事件；已存在时 diff 补订阅）
+  5. 创建/更新 webhook（仅订阅 PostSignIn 登录日志事件；镜像同步事件已退役 D25）
   6. 配置 access-token Custom Token Claims 脚本（D19：roles + pg_role 注入）
   7. --verify 模式：核对全部配置并输出
 
@@ -57,9 +57,7 @@ const getCustomJwtClaims = async ({ token, context }) => {
     : [];
   // ③ 并集注入（网关/current_user_roles 判定用）
   const roles = [...new Set([...globalRoles, ...orgRoles])];
-  // ④ D5（2026-08-11）: 拆分注入 global_roles / org_roles——user_role 镜像
-  //    JIT 精确对齐用（全局段 organization_id=''，组织段 = 当前 organization_id）
-  // ⑤ D19: pg_role 映射（最高优先级 → PostgREST DB 角色）
+  // ④ D19: pg_role 映射（最高优先级 → PostgREST DB 角色）
   const priority = ['role_super_admin', 'role_admin', 'role_editor'];
   const pgRoleMap = {
     role_super_admin: 'super_admin',
@@ -68,7 +66,7 @@ const getCustomJwtClaims = async ({ token, context }) => {
     role_guest: 'role_guest'
   };
   const pgRole = priority.find((r) => roles.includes(r)) ?? 'role_guest';
-  return { roles, global_roles: globalRoles, org_roles: orgRoles, pg_role: pgRoleMap[pgRole] };
+  return { roles, pg_role: pgRoleMap[pgRole] };
 };
 """
 
@@ -208,25 +206,10 @@ def step4_demo_org(token, _template_id=None):
 
 
 def step5_webhook(token):
-    """创建/更新 webhook（订阅 User.*/Organization.*/Membership/OrganizationRole.*/Role.*/PostSignIn）"""
+    """创建/更新 webhook（仅订阅 PostSignIn 登录日志）"""
     print("[5] Webhook...")
-    # 事件清单（2026-08-11 决策定稿，与 020 webhook_logto 分发分支对齐）:
-    #   用户 4 项（含 SuspensionStatus.Updated）+ 组织 4 项（含 Membership.Updated）
-    #   + 组织角色 3 项（独立 organization_role 镜像，D4）+ 全局角色 3 项
-    #   + 登录交互 1 项（PostSignIn，登录日志链路 D-C）
-    # 不订阅: Role.Scopes.Updated / OrganizationRole.Scopes.Updated
-    #   （PG 侧 iam_role_api 自管绑定，与 §4 表设计核对一致）
-    # （官方事件注册表 hooks.ts 核实: 用户↔角色分配无事件 → user_role 走 JIT+对账）
-    events = [
-        "User.Created", "User.Data.Updated", "User.Deleted",
-        "User.SuspensionStatus.Updated",
-        "Organization.Created", "Organization.Data.Updated", "Organization.Deleted",
-        "Organization.Membership.Updated",
-        "OrganizationRole.Created", "OrganizationRole.Data.Updated",
-        "OrganizationRole.Deleted",
-        "Role.Created", "Role.Data.Updated", "Role.Deleted",
-        "PostSignIn",
-    ]
+    # D25: 用户/角色/租户已同库只读投影，无需 webhook 同步；仅保留 PostSignIn 登录日志。
+    events = ["PostSignIn"]
     _, hooks = http("GET", "/api/hooks", token)
     for h in (hooks or []):
         if h.get("name") == WEBHOOK_NAME:
@@ -311,12 +294,8 @@ def main():
         sys.exit(1)
     print("管理 token 获取成功\n")
 
-    # 步骤顺序（033 重排）：webhook 必须先于角色/组织创建——
-    # 否则 Role.Created / Organization.Created 事件在 webhook 配置前发生，
-    # PG role/tenants 镜像将缺失（如 role_super_admin 不在 role 镜像）。
-    # 重排后：① 配 webhook（订阅 User.*/Organization.*/Membership/
-    #         OrganizationRole.*/Role.*/PostSignIn —— 2026-08-11 决策补齐 15 项）
-    #         ② 建角色 → 事件推送 → 镜像自动同步
+    # 步骤顺序（D25）：webhook 仅 PostSignIn，逻辑上建角色/组织后生效即可；
+    # 保留 webhook 先配置，避免登录日志事件在配置前发生。
     step5_webhook(token)
     step2_global_role(token)
     step3_org_roles(token)

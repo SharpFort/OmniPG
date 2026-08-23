@@ -1,2 +1,2 @@
-database_url = "postgres://app_owner:dev_password_change_me@127.0.0.1:5432/app_db?sslmode=disable"
+database_url = "postgres://app_owner:admin%40password@127.0.0.1:5432/app_db?sslmode=disable"
 migrations_dir = "./migrations/platform"

@@ -94,8 +94,8 @@ fi
 
 # ---------------------------------------------------------------- 3/10 PostgREST
 echo ""
-echo "【3/10】PostgREST OpenAPI（:3001）..."
-LEN=$(curl -s --max-time 10 http://localhost:3001/ | wc -c)
+echo "【3/10】PostgREST OpenAPI（:3100）..."
+LEN=$(curl -s --max-time 10 http://localhost:3100/ | wc -c)
 if [ "${LEN:-0}" -gt 2000 ]; then
     log_pass "OpenAPI 完整（$LEN 字符）"
 else

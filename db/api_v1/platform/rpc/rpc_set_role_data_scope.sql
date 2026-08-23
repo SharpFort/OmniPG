@@ -1,6 +1,7 @@
 -- api_v1/platform/rpc/rpc_set_role_data_scope.sql
 -- FUNCTION: api_v1_platform.rpc_set_role_data_scope（17 号文档归位：迁移 042_role_data_scope.sql 删定义段，本文件为唯一权威）
 -- 回放终态: 042_role_data_scope.sql；幂等写法（§9 模板）
+-- D26: 落库改 role_id/org_role_id（FK 指向 Logto 基表）；入参保持 p_role_code 兼容前端。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_set_role_data_scope(
     p_role_code text, p_scope_type text, p_dept_ids uuid[] DEFAULT NULL)
@@ -10,18 +11,16 @@ SECURITY DEFINER
 SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
+    v_role_id text;
+    v_org_role_id text;
     v_dept uuid;
 BEGIN
     IF NOT has_permission('platform:data-scope:bind') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
-    -- 角色校验同 041（镜像表 OR 已有绑定——镜像同步缺口兜底）
-    IF p_role_code IS NULL OR NOT (
-        EXISTS (SELECT 1 FROM role WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_api WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_menu WHERE role_code = p_role_code)
-        OR EXISTS (SELECT 1 FROM iam_role_data_scope WHERE role_code = p_role_code)
-    ) THEN
+    SELECT r.role_id, r.org_role_id INTO v_role_id, v_org_role_id
+    FROM platform.resolve_role_ident(p_role_code) r;
+    IF v_role_id IS NULL AND v_org_role_id IS NULL THEN
         RAISE EXCEPTION 'role not found' USING ERRCODE = 'P0002';
     END IF;
     IF p_scope_type IS NULL OR p_scope_type NOT IN ('all','dept_and_child','self','custom') THEN
@@ -35,18 +34,20 @@ BEGIN
     END IF;
 
     -- 全量覆盖（单事务）
-    DELETE FROM iam_role_data_scope WHERE role_code = p_role_code;
+    DELETE FROM iam_role_data_scope
+    WHERE role_id IS NOT DISTINCT FROM v_role_id
+      AND org_role_id IS NOT DISTINCT FROM v_org_role_id;
     IF p_scope_type = 'custom' THEN
         FOREACH v_dept IN ARRAY p_dept_ids LOOP
             IF NOT EXISTS (SELECT 1 FROM department WHERE id = v_dept AND deleted_at IS NULL) THEN
                 RAISE EXCEPTION 'dept not found: %', v_dept USING ERRCODE = 'P0002';
             END IF;
-            INSERT INTO iam_role_data_scope (role_code, scope_type, dept_id, created_by)
-            VALUES (p_role_code, 'custom', v_dept, current_user_id());
+            INSERT INTO iam_role_data_scope (role_id, org_role_id, scope_type, dept_id, created_by)
+            VALUES (v_role_id, v_org_role_id, 'custom', v_dept, current_user_id());
         END LOOP;
     ELSE
-        INSERT INTO iam_role_data_scope (role_code, scope_type, created_by)
-        VALUES (p_role_code, p_scope_type, current_user_id());
+        INSERT INTO iam_role_data_scope (role_id, org_role_id, scope_type, created_by)
+        VALUES (v_role_id, v_org_role_id, p_scope_type, current_user_id());
     END IF;
 
     PERFORM log_operate('role', 'set-data-scope', 'iam_role_data_scope',

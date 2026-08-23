@@ -1,6 +1,5 @@
 -- src/platform/functions/sync_login_log_write.sql
--- FUNCTION: platform.sync_login_log_write（17 号文档归位：迁移 023_admin_p0_naming_perm.sql 删定义段，本文件为唯一权威）
--- 回放终态: 023_admin_p0_naming_perm.sql；幂等写法（§9 模板）
+-- FUNCTION: platform.sync_login_log_write（D27: login_log 新增 tenant_id/organization_id 双列）
 
 CREATE OR REPLACE FUNCTION sync_login_log_write(payload jsonb) RETURNS void
 LANGUAGE plpgsql
@@ -30,10 +29,10 @@ BEGIN
     LIMIT 1;
 
     INSERT INTO login_log
-        (tenant_id, user_id, username, login_type, result, ip, user_agent,
+        (tenant_id, organization_id, user_id, username, login_type, result, ip, user_agent,
          region, logto_event, created_at)
     VALUES
-        (NULL, v_user_id, v_username, COALESCE(v_login_type, 'unknown'), 'success',
+        (current_logto_tenant_id(), NULL, v_user_id, v_username, COALESCE(v_login_type, 'unknown'), 'success',
          v_ip, v_agent, ip2region(v_ip), 'PostSignIn', COALESCE(v_ts, now()));
 EXCEPTION WHEN OTHERS THEN
     NULL;

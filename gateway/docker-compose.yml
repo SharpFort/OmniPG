@@ -121,7 +121,7 @@ services:
 
   # ===========================================================================
   # Logto IAM/OAuth 服务 — 自部署 OSS v1.42（替代 Casdoor，05 方案 §4）
-  #   DB: 宿主 Pigsty PG logto 库（host.docker.internal:6432）
+  #   DB: 宿主 PG app_db 的 public schema（host.docker.internal:5432，直连不经 pgbouncer）
   #   端口: 主机 3001(core)/3002(console)，容器内对等（官方默认）
   #   PostgREST 主机端口已平移至 3100
   # ===========================================================================
@@ -140,7 +140,7 @@ services:
       - "3002:3002"   # Admin Console
     environment:
       TRUST_PROXY_HEADER: "1"
-      DB_URL: "postgres://logto:${LOGTO_DB_PASSWORD:-logto_dev_pass_2026}@host.docker.internal:5433/logto?sslmode=disable"
+      DB_URL: "postgres://logto:${LOGTO_DB_PASSWORD:-logto_dev_pass_2026}@host.docker.internal:5433/app_db?sslmode=disable"
       DATABASE_STATEMENT_TIMEOUT: "DISABLE_TIMEOUT"   # pgBouncer 兼容（v1.36.0+）
       ENDPOINT: "http://localhost:3001"
       ADMIN_ENDPOINT: "http://localhost:3002"

@@ -1,9 +1,9 @@
+DROP VIEW IF EXISTS api_v1_platform.v_dict_list CASCADE;
 -- api_v1/platform/views/v_dict_list.sql
--- VIEW: api_v1_platform.v_dict_list（17 号文档归位：迁移 024_admin_crud_rpc.sql 删定义段，本文件为唯一权威）
--- 回放终态: 024_admin_crud_rpc.sql；幂等写法（§9 模板）
+-- D27: 字典列表输出 tenant_id/organization_id 双列。
 
 CREATE OR REPLACE VIEW api_v1_platform.v_dict_list AS
-SELECT t.id, t.tenant_id, t.dict_name, t.dict_label, t.status, t.sort_no, t.remark,
+SELECT t.id, t.tenant_id, t.organization_id, t.dict_name, t.dict_label, t.status, t.sort_no, t.remark,
        COALESCE((
            SELECT json_agg(json_build_object(
                'id', d.id, 'label', d.item_label, 'value', d.item_value,
@@ -11,7 +11,8 @@ SELECT t.id, t.tenant_id, t.dict_name, t.dict_label, t.status, t.sort_no, t.rema
                'sort_no', d.sort_no, 'status', d.status) ORDER BY d.sort_no)
            FROM dict_data d
            WHERE d.dict_name = t.dict_name
-             AND d.tenant_id IS NOT DISTINCT FROM t.tenant_id
+             AND d.tenant_id = t.tenant_id
+             AND d.organization_id IS NOT DISTINCT FROM t.organization_id
              AND d.status),
            '[]'::json) AS items
 FROM dict_type t;

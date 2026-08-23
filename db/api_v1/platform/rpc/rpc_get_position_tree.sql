@@ -1,6 +1,5 @@
 -- api_v1/platform/rpc/rpc_get_position_tree.sql
--- FUNCTION: api_v1_platform.rpc_get_position_tree（17 号文档归位：迁移 024_admin_crud_rpc.sql 删定义段，本文件为唯一权威）
--- 回放终态: 024_admin_crud_rpc.sql；幂等写法（§9 模板）
+-- D27: 岗位树按 organization_id + tenant_id 双维度。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_get_position_tree()
 RETURNS json
@@ -14,12 +13,14 @@ BEGIN
         SELECT id, parent_id, pos_name, pos_code, sort_no, status,
                1 AS depth, pos_name::text AS path_name
         FROM position
-        WHERE parent_id IS NULL AND tenant_id = current_tenant_id()
+        WHERE parent_id IS NULL AND organization_id = current_organization_id()
+          AND tenant_id = current_logto_tenant_id()
         UNION ALL
         SELECT p.id, p.parent_id, p.pos_name, p.pos_code, p.sort_no, p.status,
                t.depth + 1, t.path_name::text || ' / ' || p.pos_name::text
         FROM position p JOIN tree t ON p.parent_id = t.id
-        WHERE p.tenant_id = current_tenant_id()
+        WHERE p.organization_id = current_organization_id()
+          AND p.tenant_id = current_logto_tenant_id()
     )
     SELECT json_agg(row_to_json(x) ORDER BY x.path_name)
       INTO v_result

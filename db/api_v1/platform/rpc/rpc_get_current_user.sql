@@ -1,8 +1,5 @@
 -- db/api_v1/platform/rpc/rpc_get_current_user.sql
--- 获取当前登录用户信息 RPC（T7: Logto 镜像语义 users+user_profile+tenants+department）
--- 来源: 20260707000014_auth_rpc_functions.sql → T7 适配
--- 061（2026-08-15）: 镜像表无 updated_at/deleted_at——updated_at 映射 logto_updated_at，
---   去 deleted_at 过滤（镜像表无软删，Logto 删除=行删除）
+-- D27: 当前用户信息输出 tenant_id（Logto 租户）与 organization_id（业务组织）。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.get_current_user()
 RETURNS json
@@ -15,21 +12,21 @@ DECLARE
     v_user RECORD;
 BEGIN
     v_user_id := current_user_id();
-
     IF v_user_id IS NULL OR v_user_id = '' THEN
         RAISE EXCEPTION 'Unauthorized' USING ERRCODE = 'P0001';
     END IF;
 
     SELECT u.id, u.username, u.primary_email AS email, u.primary_phone AS phone,
-           p.tenant_id, p.dept_id, (NOT u.is_suspended) AS is_active,
-           u.created_at, u.logto_updated_at AS updated_at,
-           t.name AS tenant_name,
+           u.tenant_id, p.organization_id, p.dept_id, (NOT u.is_suspended) AS is_active,
+           u.created_at, u.updated_at,
+           t.name AS tenant_name, o.name AS organization_name,
            d.dept_name,
            (current_setting('request.jwt.claims', true)::json->'roles')::jsonb AS roles
     INTO v_user
     FROM platform.users u
     LEFT JOIN platform.user_profile p ON p.user_id = u.id
-    LEFT JOIN platform.tenants t ON p.tenant_id = t.id
+    LEFT JOIN platform.tenants t ON u.tenant_id = t.id
+    LEFT JOIN platform.organizations o ON p.organization_id = o.id
     LEFT JOIN platform.department d ON p.dept_id = d.id
     WHERE u.id = v_user_id;
 
@@ -44,6 +41,8 @@ BEGIN
         'phone', v_user.phone,
         'tenant_id', v_user.tenant_id,
         'tenant_name', v_user.tenant_name,
+        'organization_id', v_user.organization_id,
+        'organization_name', v_user.organization_name,
         'dept_id', v_user.dept_id,
         'dept_name', v_user.dept_name,
         'is_active', v_user.is_active,
@@ -53,5 +52,5 @@ BEGIN
     );
 END;
 $$;
-COMMENT ON FUNCTION api_v1_platform.get_current_user() IS '获取当前登录用户信息（Logto 镜像：users+user_profile+tenants）';
+COMMENT ON FUNCTION api_v1_platform.get_current_user() IS '获取当前登录用户信息（D27：tenant_id/organization_id 双列）';
 GRANT EXECUTE ON FUNCTION api_v1_platform.get_current_user() TO authenticated;
