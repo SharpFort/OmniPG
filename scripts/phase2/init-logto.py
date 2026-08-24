@@ -43,7 +43,7 @@ ORG_TEMPLATE_ROLES = ["tenant_admin", "editor", "viewer"]
 DEMO_ORG_NAME = "默认租户"
 DEMO_ORG_DESC = "OmniPG 默认租户（由 init-logto.py 创建）"
 WEBHOOK_NAME = "omnipg-webhook"
-# Custom Token Claims 脚本（05 §5.1.1 + D19 pg_role 映射）
+# Custom Token Claims 脚本（05 §5.1.1 + D19 pg_role 映射 + D27 tenant_id/organization_id）
 CLAIMS_SCRIPT = r"""
 const getCustomJwtClaims = async ({ token, context }) => {
   // ① 全局角色：context.user.roles（Logto roles 表，type=User）
@@ -66,7 +66,18 @@ const getCustomJwtClaims = async ({ token, context }) => {
     role_guest: 'role_guest'
   };
   const pgRole = priority.find((r) => roles.includes(r)) ?? 'role_guest';
-  return { roles, pg_role: pgRoleMap[pgRole] };
+  // ⑤ D27: Logto Tenant id 从 context.application.tenantId 取得（恒存在）；
+  //    Organization id 仅组织 token（context.organization?.id）存在，全局 token 为 null。
+  const tenantId = context.application?.tenantId ?? 'default';
+  const organizationId = orgId ?? null;
+  return {
+    roles,
+    global_roles: globalRoles,
+    org_roles: orgRoles,
+    pg_role: pgRoleMap[pgRole],
+    tenant_id: tenantId,
+    organization_id: organizationId,
+  };
 };
 """
 

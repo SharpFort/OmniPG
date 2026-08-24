@@ -89,8 +89,7 @@
 
 ## 5. 遗留/注意
 
-1. **Logto 实例侧**：重跑 `init-logto.py` 前如需双租户运行时路由，需在 Custom Claims 注入 `tenant_id`；
-   否则 `current_logto_tenant_id()` 恒为 `default`（当前业务约定）。
+1. **Logto 实例侧**：CLAIMS_SCRIPT 已更新为注入 `tenant_id`（context.application.tenantId）与 `organization_id`（组织 token）；仍需重跑 `init-logto.py` 把新脚本写入 Logto 实例。
 2. **db/schema.sql**：仍为 D25 前快照，待重建。
 3. **前端**：RPC 参数从 `p_tenant_id` 改为 `p_organization_id`，字段新增 `tenant_id/organization_id`，
    需按“API 全面双列”契约同步前端。
