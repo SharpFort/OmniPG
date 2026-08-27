@@ -70,26 +70,26 @@ LOGIN_PASS="${LOGIN_PASS:-admin123}"
 
 # ---------------------------------------------------------------- 1/10 网络链路
 echo ""
-echo "【1/10】网络链路（容器 → 宿主 pgbouncer）..."
+echo "【1/10】网络链路（容器 → 宿主 pgBouncer 6432）..."
 NET=$(docker network ls --format '{{.Name}}' | grep -E 'app-net$' | head -1)
 if [ -z "$NET" ]; then
     log_fail "找不到 app-net 网络（是否已 docker compose up -d？）"
 else
     if docker run --rm --network "$NET" --add-host host.docker.internal:host-gateway \
         alpine sh -c 'nc -z -w3 host.docker.internal 6432' >/dev/null 2>&1; then
-        log_pass "容器→宿主 pgbouncer(6432) 可达（网络: $NET）"
+        log_pass "容器→宿主 pgBouncer(6432) 可达（网络: $NET）"
     else
-        log_fail "容器→宿主 pgbouncer(6432) 不可达。检查: Win11 mirrored / scripts/wsl-portproxy.ps1"
+        log_fail "容器→宿主 pgBouncer(6432) 不可达。检查: Win11 mirrored / scripts/wsl-portproxy.ps1"
     fi
 fi
 
-# ---------------------------------------------------------------- 2/10 宿主 pgbouncer
+# ---------------------------------------------------------------- 2/10 宿主 pgBouncer
 echo ""
-echo "【2/10】宿主 pgbouncer（127.0.0.1:6432）..."
+echo "【2/10】宿主 pgBouncer（127.0.0.1:6432）..."
 if PGPASSWORD="$AUTHENTICATOR_PASSWORD" psql -h 127.0.0.1 -p 6432 -U authenticator -d app_db -tAc "SELECT 1" >/dev/null 2>&1; then
-    log_pass "pgbouncer 连接成功（authenticator 角色可登录）"
+    log_pass "pgBouncer 连接成功（authenticator 角色可登录；PostgREST 经 6432）"
 else
-    log_fail "pgbouncer 连接失败。检查: systemctl 状态 / userlist.txt / pg_hba"
+    log_fail "pgBouncer 连接失败。检查: userlist.txt 是否已重载（pkill pgbouncer && sudo -u postgres /usr/sbin/pgbouncer /etc/pgbouncer/pgbouncer.ini &）/ systemctl 状态 / pg_hba"
 fi
 
 # ---------------------------------------------------------------- 3/10 PostgREST

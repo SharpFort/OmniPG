@@ -70,7 +70,7 @@ curl -s -X POST "$LOGTO/oidc/token" \
 
 - 业务流量入口：**APISIX http://localhost:9080**，请求头 `Authorization: Bearer <access_token>`。
 - 直接调试 PostgREST：**http://localhost:3100**（compose 映射 3100→3000，同样需要 Bearer）。暴露 schema 为 `api_v1_platform`，因此路径即视图名/RPC 名（如 `/role`、`/v_user_list`、`/rpc/get_current_user`）。
-- ⚠️ `gateway/.env.example` 中 `PGRST_PORT=3001` 与 compose 的 3100 映射不一致（Swagger 的 API_URL 也引用该变量）；以 3100 为准，详见 [常见问题排查](常见问题排查.md)。
+- `gateway/.env.example` 的 `PGRST_PORT` 已统一为 **3100**（2026-08-27），与 compose 的 `3100:3000` 映射一致；3001/3002 已让给 Logto。
 
 APISIX 路由（`scripts/init-apisix-routes.sh`，代码事实）：
 

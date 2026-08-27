@@ -70,7 +70,10 @@ services:
       - etcd
 
   # ===========================================================================
-  # PostgREST API 引擎（数据源: 宿主 Pigsty pgBouncer，经 host.docker.internal）
+  # PostgREST API 引擎（数据源: 宿主 Pigsty pgBouncer，经 host.docker.internal:6432）
+  #   ⚠️ 依赖宿主 pgBouncer 已重载 /etc/pgbouncer/userlist.txt；若仍报
+  #      "SASL authentication failed"，需在 WSL 宿主侧重载/重启 pgbouncer：
+  #        pkill pgbouncer && sudo -u postgres /usr/sbin/pgbouncer /etc/pgbouncer/pgbouncer.ini &
   # ===========================================================================
   postgrest:
     image: postgrest/postgrest:v14.15
@@ -90,7 +93,7 @@ services:
       # Logto customizer 注入 pg_role claim（. 开头 = JSPath 语法）
       PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
       PGRST_DB_PRE_REQUEST: ""
-      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"
+      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:9080"   # Swagger Base URL 显示网关地址（业务唯一入口 9080）；spec 本体仍由 Swagger 从 3100 拉取
       PGRST_SERVER_HOST: "0.0.0.0"
       PGRST_SERVER_PORT: "3000"
       PGRST_CORS_ORIGINS: "*"           # Swagger 浏览器端直连拉取 spec，必须开启
@@ -115,13 +118,14 @@ services:
         ipv4_address: 172.20.0.4
     environment:
       # 浏览器端拉取 spec: 与 Docker 同机时 localhost 即宿主机映射端口（IP 漂移免疫）
-      API_URL: "http://localhost:${PGRST_PORT:-3001}/"
+      # 3001/3002 已让给 Logto；PostgREST 宿主端口为 3100，故默认值取 3100
+      API_URL: "http://localhost:${PGRST_PORT:-3100}/"
     ports:
       - "8082:8080"
 
   # ===========================================================================
   # Logto IAM/OAuth 服务 — 自部署 OSS v1.42（替代 Casdoor，05 方案 §4）
-  #   DB: 宿主 PG app_db 的 public schema（host.docker.internal:5432，直连不经 pgbouncer）
+  #   DB: 宿主 PG app_db 的 public schema（host.docker.internal:5433，直连不经 pgbouncer）
   #   端口: 主机 3001(core)/3002(console)，容器内对等（官方默认）
   #   PostgREST 主机端口已平移至 3100
   # ===========================================================================
@@ -144,8 +148,8 @@ services:
       DATABASE_STATEMENT_TIMEOUT: "DISABLE_TIMEOUT"   # pgBouncer 兼容（v1.36.0+）
       ENDPOINT: "http://localhost:3001"
       ADMIN_ENDPOINT: "http://localhost:3002"
-      # CSP frame-ancestors 注入（logto-csp-patch.js 启动时打补丁；OmniAdmin 3006/3007 嵌入登录页用）
+      # CSP frame-ancestors 注入（logto-csp-patch.js 启动时打补丁；OmniAdmin 固定 3006/3007 嵌入登录页用）
       # ⚠️ 与 .env VITE_PORT 保持一致；改端口后须 --force-recreate 重建容器（幂等补丁不会自动改）
-      LOGTO_EXTRA_FRAME_ANCESTOR: "http://localhost:3006 http://localhost:3007"
+      LOGTO_EXTRA_FRAME_ANCESTOR: "http://localhost:3006 http://localhost:3007 http://172.28.32.1:3006 http://172.28.32.1:3007"
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -12,10 +12,10 @@ PostgREST 以 Docker 容器运行（`gateway/docker-compose.yml` 中 `postgrest`
 | 宿主机映射 | `3100:3000` | `docker-compose.yml` |
 | OpenAPI / 根路径 | `http://localhost:3100/` | 返回 OpenAPI JSON |
 | Swagger UI | `http://localhost:8082/` | 独立 `swagger-ui` 容器 |
-| 数据库连接 | `postgres://authenticator:***@host.docker.internal:6432/app_db?sslmode=disable`（经 Pigsty pgBouncer） | compose 环境变量 |
+| 数据库连接 | `postgres://authenticator:***@host.docker.internal:6432/app_db?sslmode=disable`（经宿主 pgBouncer） | compose 环境变量 |
 | 匿名角色 | `web_anon` | `db-anon-role` |
 
-> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_platform、`.pg_role`、无 pre-request）。另外 `gateway/.env.example` 与 `scripts/verify-stack.sh` 仍写着 `PGRST_PORT=3001`，那是 Logto 时代的旧值——**当前 PostgREST 宿主端口是 3100**（3001 已让给 Logto core）。
+> ⚠️ 配置优先级（运行态权威）：PostgREST 环境变量（compose 的 `PGRST_*`）覆盖配置文件。**运行态以 `gateway/docker-compose.yml` 为权威**，`gateway/postgrest/postgrest.conf` 仅是参考文件（2026-08-19 已与运行态对齐：单 schema api_v1_platform、`.pg_role`、无 pre-request）。当前 PostgREST 宿主端口为 **3100**（3001/3002 已让给 Logto core/console）；`PGRST_PORT` 已在各 `.env*` 与 `gateway/.env.example` 统一定为 3100（2026-08-27）。
 
 ### 实际生效的关键配置（compose 环境变量为准）
 
@@ -135,7 +135,7 @@ curl -H "Authorization: Bearer $TOKEN" 'http://localhost:3100/rpc/get_current_us
 ## OpenAPI / Swagger
 
 - PostgREST 自动生成 OpenAPI：`curl http://localhost:3100/`（内容为 spec JSON，含全部视图与 RPC，函数/视图的 `COMMENT ON` 会作为描述）。
-- Swagger UI：`http://localhost:8082/`，浏览器端从 `API_URL`（compose 默认 `http://localhost:${PGRST_PORT:-3001}/`）拉取 spec。**注意**：`.env.example` 的 `PGRST_PORT=3001` 与当前 3100 端口映射不一致，部署时 `gateway/.env` 必须设置 `PGRST_PORT=3100`，否则 Swagger 拉取失败（TODO：`.env.example` 与 `verify-stack.sh` 中的 3001 旧值待同步）。
+- Swagger UI：`http://localhost:8082/`，浏览器端从 `API_URL`（compose 默认 `http://localhost:${PGRST_PORT:-3100}/`，spec 本体）拉取；OpenAPI 的 Base URL 由 `PGRST_OPENAPI_SERVER_PROXY_URI=http://localhost:9080` 决定，因此 Swagger 页显示 **Base URL: localhost:9080/**（业务唯一入口 9080）。
 - 用 "Try it out" 可在线测试接口；Swagger 按 schema 分组为 Tag，运行态（compose 权威）仅 `api_v1_platform` 一个 tag。
 
 ## 常见错误与排查
