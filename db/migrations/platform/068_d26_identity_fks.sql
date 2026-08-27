@@ -34,8 +34,17 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+-- D27 幂等重放防护：069 已把本列改名为 organization_id 并重命名约束；
+-- 仅当 organization_id 列尚不存在（D27 尚未执行）时才允许重建本约束，
+-- 否则旧守卫会把“组织语义”FK 挂到 069 新增的 tenant_id 列上（脏约束）。
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profile_tenant_id_fkey') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'platform' AND table_name = 'user_profile'
+                 AND column_name = 'tenant_id')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'platform' AND table_name = 'user_profile'
+                 AND column_name = 'organization_id')
+       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_profile_tenant_id_fkey') THEN
         ALTER TABLE ONLY platform.user_profile
             ADD CONSTRAINT user_profile_tenant_id_fkey
             FOREIGN KEY (tenant_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
@@ -50,8 +59,15 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+-- D27 幂等重放防护：同 user_profile（防止把组织语义 FK 挂到新的 tenant_id 列）。
 DO $$ BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_position_tenant_id_fkey') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'platform' AND table_name = 'user_position'
+                 AND column_name = 'tenant_id')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = 'platform' AND table_name = 'user_position'
+                 AND column_name = 'organization_id')
+       AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_position_tenant_id_fkey') THEN
         ALTER TABLE ONLY platform.user_position
             ADD CONSTRAINT user_position_tenant_id_fkey
             FOREIGN KEY (tenant_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
