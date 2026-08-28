@@ -6,4 +6,5 @@ CREATE OR REPLACE VIEW api_v1_platform.v_user_roles AS
 SELECT u.id AS user_id, u.username, u.primary_email AS email,
        ur.role_code, ur.role_id, ur.tenant_id, ur.organization_id
 FROM platform.users u
-LEFT JOIN platform.user_role ur ON ur.user_id = u.id;
+LEFT JOIN platform.user_role ur ON ur.user_id = u.id AND ur.tenant_id = u.tenant_id
+WHERE u.tenant_id = current_logto_tenant_id();
