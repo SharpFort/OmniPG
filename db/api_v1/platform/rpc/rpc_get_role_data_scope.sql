@@ -12,7 +12,7 @@ AS $$
 DECLARE
     v_role_id text;
     v_org_role_id text;
-    v_scope_type text;
+    v_scope_type scope_type;
     v_depts      json;
 BEGIN
     IF NOT has_permission('platform:data-scope:bind') THEN
@@ -41,7 +41,7 @@ BEGIN
 
     RETURN json_build_object(
         'role_code', p_role_code,
-        'scope_type', COALESCE(v_scope_type, 'self'),
+        'scope_type', COALESCE(v_scope_type::text, 'self'),
         'depts', v_depts);
 END;
 $$;

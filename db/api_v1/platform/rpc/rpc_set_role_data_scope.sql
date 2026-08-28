@@ -47,7 +47,7 @@ BEGIN
         END LOOP;
     ELSE
         INSERT INTO iam_role_data_scope (role_id, org_role_id, scope_type, created_by)
-        VALUES (v_role_id, v_org_role_id, p_scope_type, current_user_id());
+        VALUES (v_role_id, v_org_role_id, p_scope_type::scope_type, current_user_id());
     END IF;
 
     PERFORM log_operate('role', 'set-data-scope', 'iam_role_data_scope',
