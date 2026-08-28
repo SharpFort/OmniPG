@@ -4,7 +4,7 @@
 CREATE OR REPLACE FUNCTION api_v1_platform.get_all_public_configs()
 RETURNS json
 LANGUAGE sql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = platform, ext, pg_temp
 AS $$
     SELECT COALESCE(

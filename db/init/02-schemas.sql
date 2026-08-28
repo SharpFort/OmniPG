@@ -47,10 +47,14 @@ GRANT USAGE ON SCHEMA api_v1_platform TO authenticator;
 GRANT USAGE ON SCHEMA platform TO web_anon;
 GRANT USAGE ON SCHEMA platform TO authenticated;
 GRANT USAGE ON SCHEMA platform TO authenticator;
+-- D27 修复：super_admin 等 JWT 业务角色缺 platform USAGE，
+--   导致 SECURITY INVOKER RPC 内 current_organization_id() 等报 42883 "does not exist"
+GRANT USAGE ON SCHEMA platform TO super_admin, role_admin, role_editor, role_guest;
 GRANT USAGE ON SCHEMA ext TO app_owner;
 GRANT USAGE ON SCHEMA ext TO web_anon;
 GRANT USAGE ON SCHEMA ext TO authenticated;
 GRANT USAGE ON SCHEMA ext TO authenticator;
+GRANT USAGE ON SCHEMA ext TO super_admin, role_admin, role_editor, role_guest;
 
 -- 40 号方案 §4.3：app_owner 默认 search_path 收敛为 platform, ext, pg_temp（不含 public，
 --   防业务误命中 Logto 表）；PostgREST 侧由 PGRST_DB_EXTRA_SEARCH_PATH 控制；
