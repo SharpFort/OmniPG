@@ -15,10 +15,12 @@ DB_NAME=${DB_NAME:-app_db}
 DB_PORT=${DB_PORT:-5432}
 PG_SUPER_CMD=${PG_SUPER_CMD:-}
 
-if [ -z "$PG_SUPER_CMD" ] && command -v sudo >/dev/null 2>&1; then
-  PG_SUPER_CMD="sudo -u postgres psql"
-elif [ -z "$PG_SUPER_CMD" ] && command -v runuser >/dev/null 2>&1; then
+# 优先 runuser（root 场景更可靠；no-new-privileges 沙箱中 sudo 会失败），
+# 无 runuser 时回退 sudo。
+if [ -z "$PG_SUPER_CMD" ] && command -v runuser >/dev/null 2>&1; then
   PG_SUPER_CMD="runuser -u postgres -- psql"
+elif [ -z "$PG_SUPER_CMD" ] && command -v sudo >/dev/null 2>&1; then
+  PG_SUPER_CMD="sudo -u postgres psql"
 fi
 if [ -z "$PG_SUPER_CMD" ]; then
   echo "ERROR: 无法确定超级用户执行方式，请设置 PG_SUPER_CMD" >&2

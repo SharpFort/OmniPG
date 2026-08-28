@@ -116,3 +116,20 @@ $(for m in $MODULES; do find "$DB_DIR/migrations/$m" -name "*.sql" 2>/dev/null |
 apply_files_converge "$FILES" || exit 1
 
 echo "All SQL files applied successfully."
+
+# ---------------------------------------------------------------------------
+# 重放后必须恢复 Logto 只读投影视图 owner（BYPASSRLS），否则 Logto RLS 会把
+# platform.users/role 等过滤为 0 行 → get_current_user 'User not found'（前端 500）。
+# 设置了 PG_SUPER_CMD 时自动重跑；否则打印醒目警告（deploy-db.sh 3.5 会兜底重跑）。
+# ---------------------------------------------------------------------------
+if [ -n "${PG_SUPER_CMD:-}" ]; then
+    echo "[apply-src] PG_SUPER_CMD 已设置，自动重跑 init-logto-reader 恢复投影视图 owner..."
+    DB_NAME="${DB_NAME:-app_db}" DB_PORT="${DB_PORT:-5432}" bash "$(dirname "$0")/init-logto-reader.sh"
+else
+    echo ""
+    echo "⚠️  [apply-src] 全量重放已重建 platform.* 只读投影视图（owner 变回当前执行角色，"
+    echo "    BYPASSRLS 丢失）。若该库使用 Logto RLS 同库直读，请立即重跑："
+    echo "      PG_SUPER_CMD='sudo -u postgres psql' ./scripts/init-logto-reader.sh"
+    echo "    否则 get_current_user/ensure_user 会报 'User not found'，前端登录后跳 500。"
+    echo ""
+fi
