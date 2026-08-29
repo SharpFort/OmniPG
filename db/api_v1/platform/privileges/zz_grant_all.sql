@@ -37,6 +37,10 @@ GRANT SELECT ON api_v1_platform.dict_type TO authenticated;
 GRANT SELECT ON api_v1_platform.dict_data TO authenticated;
 GRANT SELECT ON api_v1_platform.v_dict_list TO authenticated;
 
+-- 岗位管理/用户岗位页面补齐（漏授：position/user_position 视图一直无法经 PostgREST 读取）
+GRANT SELECT ON api_v1_platform.position TO authenticated;
+GRANT SELECT ON api_v1_platform.user_position TO authenticated;
+
 -- =============================================================================
 -- 3.3 role_guest: 只读访问（同 authenticated）
 -- =============================================================================

@@ -26,8 +26,9 @@ WITH CHECK (
 ALTER TABLE department ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS dept_tenant_isolation_policy ON department;
+-- 必须 PERMISSIVE：本表无其他 permissive 策略，RESTRICTIVE 会与"无策略=默认拒绝"做 AND，
+-- 等价于对 authenticated 全拒绝（get_dept_tree 恒返回空）
 CREATE POLICY dept_tenant_isolation_policy ON department
-AS RESTRICTIVE
 USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
 WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
 
@@ -117,8 +118,8 @@ USING (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organizati
 ALTER TABLE position ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS position_tenant_isolation_policy ON position;
+-- 同 department：必须 PERMISSIVE，否则 authenticated 全拒绝
 CREATE POLICY position_tenant_isolation_policy ON platform.position
-AS RESTRICTIVE
 USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
 WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
 
@@ -137,8 +138,8 @@ FOR SELECT USING (tenant_id = current_logto_tenant_id());
 ALTER TABLE user_position ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS user_position_tenant_isolation_policy ON user_position;
+-- 同 department：必须 PERMISSIVE，否则 authenticated 全拒绝
 CREATE POLICY user_position_tenant_isolation_policy ON platform.user_position
-AS RESTRICTIVE
 USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
 WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
 
