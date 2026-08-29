@@ -9,6 +9,10 @@ init-logto.py — Logto OSS 配置自动化（T3，06-开发路线 §3 T3）
   3. 创建组织模板 default：组织角色 tenant_admin/editor/viewer
   4. 创建演示组织（租户）+ 关联模板
   5. 创建/更新 webhook（仅订阅 PostSignIn 登录日志事件；镜像同步事件已退役 D25）
+     signingKey 由 Logto 服务端生成且 Management API 不可写入，故以 Logto 实际 key 为
+     事实源，自动回写 gateway/.env 与 .env.development（回写后需重跑 init-apisix-routes.sh）。
+     背景事故：两边 key 漂移时 APISIX 验签恒 401，PostSignIn 全部投递失败、登录日志为空
+     （2026-08-29 排查：39 次 PostSignIn 投递全部 401）
   6. 配置 access-token Custom Token Claims 脚本（D19：roles + pg_role 注入）
   7. --verify 模式：核对全部配置并输出
 
@@ -43,6 +47,13 @@ ORG_TEMPLATE_ROLES = ["tenant_admin", "editor", "viewer"]
 DEMO_ORG_NAME = "默认租户"
 DEMO_ORG_DESC = "OmniPG 默认租户（由 init-logto.py 创建）"
 WEBHOOK_NAME = "omnipg-webhook"
+# Webhook HMAC 验签 key 的事实源是 Logto hook 的 signingKey（Management API 只读，
+# 2026-08-29 实测 PATCH 传 signingKey 返回 200 但字段被忽略，key 始终由 Logto 生成）。
+# step5 会把 Logto 实际 key 回写 gateway/.env 与 .env.development，杜绝与网关
+# init-apisix-routes.sh 验签 key 漂移导致的 401（2026-08-29 登录日志 401 事故根因）。
+# 此处仅作为 gateway/.env 缺失时的兜底比对值。
+WEBHOOK_SIGNING_KEY = os.environ.get("LOGTO_WEBHOOK_SIGNING_KEY", "")
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 # Custom Token Claims 脚本（05 §5.1.1 + D19 pg_role 映射 + D27 tenant_id/organization_id）
 CLAIMS_SCRIPT = r"""
 const getCustomJwtClaims = async ({ token, context }) => {
@@ -216,41 +227,113 @@ def step4_demo_org(token, _template_id=None):
     return org.get("id") if org else None
 
 
-def step5_webhook(token):
-    """创建/更新 webhook（仅订阅 PostSignIn 登录日志）"""
+def step5_webhook(token, check_only=False):
+    """创建/更新 webhook（仅订阅 PostSignIn 登录日志），并把 Logto 实际 signingKey
+    回写 gateway/.env 与 .env.development（事实源 = Logto，防止网关验签 key 漂移）。
+
+    check_only=True: --verify 模式，仅核对不修改；返回 hook id=一致，None=漂移/缺失。
+    """
     print("[5] Webhook...")
     # D25: 用户/角色/租户已同库只读投影，无需 webhook 同步；仅保留 PostSignIn 登录日志。
     events = ["PostSignIn"]
     _, hooks = http("GET", "/api/hooks", token)
-    for h in (hooks or []):
-        if h.get("name") == WEBHOOK_NAME:
-            existing = set(h.get("events") or [])
-            want = set(events)
-            if existing == want:
-                print(f"  已存在且事件齐全: {WEBHOOK_NAME} (id={h['id']})")
-                return h["id"]
-            # N3 修复: hook 已存在但订阅有差异 → PATCH 补齐（历史环境升级路径，
-            # 不再直接 return——否则 PostSignIn/SuspensionStatus/OrgRole 永不补订阅）
-            missing = sorted(want - existing)
-            extra = sorted(existing - want)
-            print(f"  已存在但订阅差异: 缺 {missing} 多 {extra} → PATCH /api/hooks/{h['id']}")
-            status, _ = http("PATCH", f"/api/hooks/{h['id']}", token, {"events": events})
-            if status in (200, 201, 204):
-                print(f"  已更新订阅: {WEBHOOK_NAME} (id={h['id']})")
-            else:
-                print(f"  !! 订阅更新失败: {status}")
-            return h["id"]
-    _, hook = http("POST", "/api/hooks", token, {
-        "name": WEBHOOK_NAME,
-        "config": {
-            "url": "http://host.docker.internal:9080/rpc/webhook_logto",
-            "headers": {},
-        },
-        "events": events,
-        "enabled": True,
-    })
-    print(f"  已创建: {WEBHOOK_NAME} (id={hook.get('id') if hook else '?'})")
-    return hook.get("id") if hook else None
+    hook = next((h for h in (hooks or []) if h.get("name") == WEBHOOK_NAME), None)
+
+    if hook is None:
+        if check_only:
+            print(f"  !! webhook 不存在: {WEBHOOK_NAME}")
+            return None
+        _, hook = http("POST", "/api/hooks", token, {
+            "name": WEBHOOK_NAME,
+            "config": {
+                "url": "http://host.docker.internal:9080/rpc/webhook_logto",
+                "headers": {},
+            },
+            "events": events,
+            "enabled": True,
+        })
+        if not hook:
+            print("  !! 创建失败", file=sys.stderr)
+            return None
+        print(f"  已创建: {WEBHOOK_NAME} (id={hook.get('id')})")
+
+    # N3 修复: 订阅差异 PATCH 补齐（历史环境升级路径）
+    patch = {}
+    if sorted(hook.get("events") or []) != sorted(events):
+        patch["events"] = events
+    if patch:
+        if check_only:
+            print(f"  !! 订阅漂移: 现有 {sorted(hook.get('events') or [])} ≠ 期望 {sorted(events)}")
+            return None
+        status, _ = http("PATCH", f"/api/hooks/{hook['id']}", token, patch)
+        if status not in (200, 201, 204):
+            print(f"  !! 订阅更新失败: {status}", file=sys.stderr)
+            return None
+        print(f"  已更新订阅: {WEBHOOK_NAME}")
+
+    # signingKey 只读（Logto 服务端生成）→ 反向同步到网关配置
+    actual_key = hook.get("signingKey") or ""
+    if not actual_key:
+        print("  !! hook 响应未含 signingKey，无法同步网关验签 key", file=sys.stderr)
+        return None
+    gateway_key = _read_configured_signing_key()
+    if gateway_key == actual_key:
+        print("  signingKey 与网关配置一致 ✅")
+    elif check_only:
+        print("  !! signingKey 漂移: Logto 实际值 ≠ 网关配置值 → 运行本脚本同步后重跑 init-apisix-routes.sh")
+        return None
+    else:
+        n = _sync_signing_key(actual_key)
+        if n:
+            print(f"  已把 Logto 实际 signingKey 回写 {n}（原值与 Logto 漂移，401 事故根因）")
+            print("  ⚠️ 请重跑 scripts/init-apisix-routes.sh 使网关验签 key 生效")
+        else:
+            print("  gateway 配置文件未找到，signingKey 未同步（手动配置 LOGTO_WEBHOOK_SIGNING_KEY）")
+    return hook["id"]
+
+
+def _read_configured_signing_key():
+    """读取网关侧当前配置的 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env 优先，回退环境变量）"""
+    for path in (os.path.join(PROJECT_ROOT, "gateway", ".env"),):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("LOGTO_WEBHOOK_SIGNING_KEY="):
+                        return line.strip().split("=", 1)[1]
+        except OSError:
+            pass
+    return WEBHOOK_SIGNING_KEY or None
+
+
+def _sync_signing_key(actual_key):
+    """把 Logto 实际 signingKey 回写 .env.development 与 gateway/.env，返回更新的文件列表"""
+    new_line = f"LOGTO_WEBHOOK_SIGNING_KEY={actual_key}\n"
+    updated = []
+    for path in (os.path.join(PROJECT_ROOT, ".env.development"),
+                 os.path.join(PROJECT_ROOT, "gateway", ".env")):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError:
+            continue
+        found = False
+        changed = False
+        for i, line in enumerate(lines):
+            if line.startswith("LOGTO_WEBHOOK_SIGNING_KEY="):
+                found = True
+                if line != new_line:
+                    lines[i] = new_line
+                    changed = True
+                break
+        if not found:
+            lines.append("" if not lines or lines[-1].endswith("\n") else "\n")
+            lines.append(new_line)
+            changed = True
+        if changed:
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+            updated.append(os.path.relpath(path, PROJECT_ROOT))
+    return updated
 
 
 def step6_claims_script(token):
@@ -289,6 +372,19 @@ def main():
 
     if args.verify:
         print("== verify 模式 ==")
+        # 核对需读 Logto 实际配置 → 同样需要管理 token
+        app_secret = args.m2m_secret or os.environ.get("LOGTO_M2M_SECRET", "")
+        if not app_secret:
+            print("verify 模式需核对 Logto 实际配置：请用 --m2m-secret 或环境变量 LOGTO_M2M_SECRET 提供",
+                  file=sys.stderr)
+            sys.exit(1)
+        token = get_m2m_token(args.m2m_app_id or "omnipg_management_m2m", app_secret)
+        if not token:
+            print("无法获取管理 token（检查 secret / 角色授权）", file=sys.stderr)
+            sys.exit(1)
+        if step5_webhook(token, check_only=True) is None:
+            sys.exit(1)
+        print("verify 通过 ✅")
         return
 
     app_id = args.m2m_app_id or "omnipg_management_m2m"
