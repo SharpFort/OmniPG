@@ -1,5 +1,7 @@
 -- api_v1/platform/rpc/rpc_search_login_logs.sql
 -- D27: 登录日志查询按 organization_id + tenant_id 双维度。
+-- organization_id IS NULL 放行：PostSignIn webhook 无组织上下文，sync_login_log_write
+-- 落租户全局行（NULL），与 rls_policies 的全局行模式对齐；否则非超管恒 0 行。
 
 CREATE OR REPLACE FUNCTION api_v1_platform.rpc_search_login_logs(
     p_user_id  text DEFAULT NULL,
@@ -36,7 +38,8 @@ BEGIN
                     AND (p_region     IS NULL OR l.region ILIKE '%' || p_region || '%')
                     AND (p_from     IS NULL OR l.created_at >= p_from)
                     AND (p_to       IS NULL OR l.created_at <= p_to)
-                    AND (is_super_admin() OR (l.tenant_id = v_tenant AND l.organization_id = v_org))),
+                    AND (is_super_admin() OR (l.tenant_id = v_tenant
+                         AND (l.organization_id IS NULL OR l.organization_id = v_org)))),
         'limit', GREATEST(1, LEAST(p_limit, 100)),
         'offset', GREATEST(0, p_offset),
         'items', COALESCE((
@@ -52,7 +55,8 @@ BEGIN
                   AND (p_region     IS NULL OR l.region ILIKE '%' || p_region || '%')
                   AND (p_from     IS NULL OR l.created_at >= p_from)
                   AND (p_to       IS NULL OR l.created_at <= p_to)
-                  AND (is_super_admin() OR (l.tenant_id = v_tenant AND l.organization_id = v_org))
+                  AND (is_super_admin() OR (l.tenant_id = v_tenant
+                       AND (l.organization_id IS NULL OR l.organization_id = v_org)))
                 ORDER BY l.created_at DESC
                 LIMIT GREATEST(1, LEAST(p_limit, 100)) OFFSET GREATEST(0, p_offset)
             ) u),
