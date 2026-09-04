@@ -84,16 +84,24 @@ services:
         ipv4_address: 172.20.0.2
     environment:
       PGRST_DB_URI: "postgres://authenticator:${AUTHENTICATOR_PASSWORD:-authenticator_dev_pass}@host.docker.internal:6432/app_db?sslmode=disable"
-      PGRST_DB_SCHEMAS: "api_v1_platform, api_v1_masterdata"
+      # 多模块暴露（2026-09-05 全量接入）：首个 schema 为默认 profile（Accept-Profile 切换，
+      # URL 路径无 schema 前缀）；与 gateway/swagger/swagger-initializer.js 的 MODULES 保持一致
+      PGRST_DB_SCHEMAS: "api_v1_platform, api_v1_masterdata, api_v1_commons, api_v1_content, api_v1_content_comment, api_v1_content_feedback, api_v1_content_notes, api_v1_content_places, api_v1_content_reaction, api_v1_content_translations, api_v1_creator, api_v1_business, api_v1_payout, api_v1_rewards, api_v1_files, api_v1_identity, api_v1_social, api_v1_chat, api_v1_map, api_v1_search, api_v1_notification, api_v1_moderation, api_v1_fraud"
       PGRST_DB_ANON_ROLE: web_anon
-      PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_platform, api_v1_masterdata, platform, masterdata, ext"
+      # extra-search-path 必须含各模块业务 schema（视图/函数跨 schema 解析依赖）+ ext（postgis/pgcrypto）
+      PGRST_DB_EXTRA_SEARCH_PATH: "api_v1_platform, api_v1_masterdata, api_v1_commons, api_v1_content, api_v1_content_comment, api_v1_content_feedback, api_v1_content_notes, api_v1_content_places, api_v1_content_reaction, api_v1_content_translations, api_v1_creator, api_v1_business, api_v1_payout, api_v1_rewards, api_v1_files, api_v1_identity, api_v1_social, api_v1_chat, api_v1_map, api_v1_search, api_v1_notification, api_v1_moderation, api_v1_fraud, platform, commons, content, content_comment, content_feedback, content_notes, content_places, content_reaction, content_translations, creator, business, payout, rewards, files, identity, social, chat, map, search, notification, moderation, fraud, masterdata, ext"
+      # OpenAPI 文档忽略权限过滤：spec 完整呈现模块全部视图/RPC（数据访问仍受真实 GRANT 管控）；
+      # 默认 follow-privileges 下匿名角色几乎无授权，Swagger 只能看到 PUBLIC 默认 EXECUTE 的 RPC
+      PGRST_OPENAPI_MODE: "ignore-privileges"
       # Logto JWKS（ES384 公钥 JSON）作为 JWT 验签密钥；容器内同时暴露 JWKS_JSON 供 conf 引用
       JWKS_JSON: '${JWKS_JSON}'
       PGRST_JWT_SECRET: '${JWKS_JSON}'
       # Logto customizer 注入 pg_role claim（. 开头 = JSPath 语法）
       PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
       PGRST_DB_PRE_REQUEST: ""
-      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:9080"   # Swagger Base URL 显示网关地址（业务唯一入口 9080）；spec 本体仍由 Swagger 从 3100 拉取
+      # Swagger try-it-out 直连 PostgREST（3100）：APISIX 仅有 /rpc/* 与 /api/v1/platform/* 路由，
+      # 无 /v_* 通配路由，指向 9080 时视图端点 try-it-out 会 404；前端业务入口仍走 9080 网关
+      PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"   # spec 的 servers 字段 = try-it-out 目标
       PGRST_SERVER_HOST: "0.0.0.0"
       PGRST_SERVER_PORT: "3000"
       PGRST_CORS_ORIGINS: "*"           # Swagger 浏览器端直连拉取 spec，必须开启
@@ -108,6 +116,9 @@ services:
 
   # ===========================================================================
   # Swagger UI
+  #   多模块切换：挂载自定义 swagger-initializer.js（urls 下拉 + Accept-Profile 注入）。
+  #   注意：必须移除 API_URL env——镜像 entrypoint 的 configurator 检测到 URL/URLS/CONFIG_URL
+  #   类 env 会重写容器内 swagger-initializer.js，覆盖挂载的自定义文件。
   # ===========================================================================
   swagger-ui:
     image: swaggerapi/swagger-ui:v5.2.0
@@ -116,10 +127,8 @@ services:
     networks:
       app-net:
         ipv4_address: 172.20.0.4
-    environment:
-      # 浏览器端拉取 spec: 与 Docker 同机时 localhost 即宿主机映射端口（IP 漂移免疫）
-      # 3001/3002 已让给 Logto；PostgREST 宿主端口为 3100，故默认值取 3100
-      API_URL: "http://localhost:${PGRST_PORT:-3100}/"
+    volumes:
+      - ./swagger/swagger-initializer.js:/usr/share/nginx/html/swagger-initializer.js:ro
     ports:
       - "8082:8080"
 
