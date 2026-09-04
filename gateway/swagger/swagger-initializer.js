@@ -2,14 +2,15 @@
 // Swagger UI 多模块初始化器（OmniPG × citywalk PostgREST）
 // 机制：PostgREST v14 多 schema（db-schemas）的 OpenAPI spec 按 profile 提供——
 //       GET / 默认只返回第一个 schema；带 `Accept-Profile: api_v1_<module>` 头
-//       则返回对应模块的完整 spec。Swagger UI 原生不支持该头，因此：
-//       ① 每个模块一个 spec URL（用 #profile= 片段编码模块名，fragment 不发给服务端）
-//       ② requestInterceptor 从 URL 提取模块名注入 Accept-Profile 头
-//       ③ try-it-out 请求无 ?profile= 标记，复用最近一次 spec 加载的模块
-// 新增模块：在 MODULES 数组加一行即可（保持与部署 compose 的 PGRST_DB_SCHEMAS 一致）。
+//       则返回对应模块的完整 spec。Swagger UI 无法为 spec 拉取带自定义头
+//       （fragment 会被改写成 query、query 会被 PostgREST 当过滤器解析），
+//       因此由本容器 nginx 的 /pgrst-spec/<module> location 注入该头（见
+//       gateway/swagger/default.conf），spec URL 全部走同源路径。
+//       try-it-out 请求指向 spec 的 servers（PostgREST :3100 直连），
+//       requestInterceptor 按最近一次 spec 加载的模块补注 Accept-Profile 头。
+// 新增模块：MODULES 数组加一行，并保持与部署 compose 的 PGRST_DB_SCHEMAS 一致。
 // =============================================================================
 (function () {
-  var PGRST = 'http://localhost:3100';
   var MODULES = [
     'api_v1_platform',
     'api_v1_masterdata',
@@ -37,17 +38,15 @@
   ];
 
   var activeProfile = MODULES[0];
-  // 模块名编码在 fragment（#profile=...）——query 参数（?profile=...）会被 PostgREST
-  // 当作过滤器解析报 PGRST100；fragment 不随请求发给服务端，仅拦截器内部解析后剥离
   function profileFromUrl(url) {
-    var m = /#?profile=([\w.]+)/.exec(url || '');
+    var m = /pgrst-spec\/([\w.]+)/.exec(url || '');
     return m ? m[1] : null;
   }
 
   window.onload = function () {
     window.ui = SwaggerUIBundle({
       urls: MODULES.map(function (m) {
-        return { name: m.replace(/^api_v1_/, ''), url: PGRST + '/#profile=' + m };
+        return { name: m.replace(/^api_v1_/, ''), url: '/pgrst-spec/' + m };
       }),
       'urls.primaryName': MODULES[0].replace(/^api_v1_/, ''),
       dom_id: '#swagger-ui',
@@ -56,11 +55,7 @@
       tryItOutEnabled: true,
       requestInterceptor: function (req) {
         var p = profileFromUrl(req.url);
-        if (p) {
-          activeProfile = p;
-          // 剥离 fragment，服务端收到干净的 /
-          req.url = req.url.replace(/#.*$/, '');
-        }
+        if (p) { activeProfile = p; }
         req.headers['Accept-Profile'] = activeProfile;
         return req;
       },

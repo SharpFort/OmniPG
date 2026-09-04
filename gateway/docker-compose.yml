@@ -129,6 +129,7 @@ services:
         ipv4_address: 172.20.0.4
     volumes:
       - ./swagger/swagger-initializer.js:/usr/share/nginx/html/swagger-initializer.js:ro
+      - ./swagger/default.conf:/etc/nginx/templates/default.conf.template:ro
     ports:
       - "8082:8080"
 
