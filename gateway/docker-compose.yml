@@ -146,9 +146,11 @@ services:
     networks:
       app-net:
         ipv4_address: 172.20.0.9
-    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && node /tmp/logto-csp-patch.js && npm start"]
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && node /tmp/logto-patch/logto-csp-patch.js && npm start"]
     volumes:
-      - "./logto-csp-patch.js:/tmp/logto-csp-patch.js:ro"
+      # 目录挂载而非单文件挂载：Docker Desktop 重启后 WSL 单文件 bind mount 登记会失效，
+      # 导致容器 Exited(127) "mount a directory onto a file"；目录挂载无此问题
+      - "./logto-patch:/tmp/logto-patch:ro"
     ports:
       - "3001:3001"   # Core API / OIDC / Management API
       - "3002:3002"   # Admin Console
