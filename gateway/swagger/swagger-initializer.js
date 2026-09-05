@@ -34,7 +34,10 @@
     'api_v1_search',
     'api_v1_notification',
     'api_v1_moderation',
-    'api_v1_fraud'
+    'api_v1_fraud',
+    'api_v1_seo',
+    'api_v1_observation',
+    'api_v1_ai'
   ];
 
   var activeProfile = MODULES[0];
