@@ -4,7 +4,8 @@
 -- 055: +menu_type/api_code/api_url/api_method/is_affix——管理树 + 授权弹窗数据源
 -- 来源: 20260707000015_system_management_api.sql → T7 适配 → 055 单表化
 
-CREATE OR REPLACE FUNCTION api_v1_platform.get_menu_tree_admin()
+DROP FUNCTION IF EXISTS api_v1_platform.get_menu_tree_admin();
+CREATE OR REPLACE FUNCTION api_v1_platform.get_menu_tree_admin(p_limit INTEGER DEFAULT 500)
 RETURNS json
 LANGUAGE plpgsql
 SET search_path = platform, ext, pg_temp
@@ -39,10 +40,10 @@ BEGIN
         'api_url', mt.api_url, 'api_method', mt.api_method, 'is_affix', mt.is_affix,
         'is_active', mt.is_active, 'level', mt.level
     ) ORDER BY mt.level, mt.sort_order, mt.id), '[]'::json) INTO v_result
-    FROM menu_tree mt;
+    FROM (SELECT * FROM menu_tree LIMIT LEAST(COALESCE(p_limit, 500), 5000)) mt;
 
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_platform.get_menu_tree_admin() IS '获取完整菜单树形结构（管理用），按层级和排序（055: +menu_type/api_code/api_url/api_method/is_affix——授权弹窗数据源）';
-GRANT EXECUTE ON FUNCTION api_v1_platform.get_menu_tree_admin() TO authenticated;
+COMMENT ON FUNCTION api_v1_platform.get_menu_tree_admin(INTEGER) IS '获取完整菜单树形结构（管理用），按层级和排序（055: +menu_type/api_code/api_url/api_method/is_affix——授权弹窗数据源）';
+GRANT EXECUTE ON FUNCTION api_v1_platform.get_menu_tree_admin(INTEGER) TO authenticated;

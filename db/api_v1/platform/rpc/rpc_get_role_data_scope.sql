@@ -3,7 +3,8 @@
 -- 回放终态: 042_role_data_scope.sql；幂等写法（§9 模板）
 -- D26: 查询改按 role_id/org_role_id；入参仍为 p_role_code。
 
-CREATE OR REPLACE FUNCTION api_v1_platform.rpc_get_role_data_scope(p_role_code text)
+DROP FUNCTION IF EXISTS api_v1_platform.rpc_get_role_data_scope(text);
+CREATE OR REPLACE FUNCTION api_v1_platform.rpc_get_role_data_scope(p_role_code text, p_limit INTEGER DEFAULT 200)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -33,11 +34,13 @@ BEGIN
 
     SELECT COALESCE(json_agg(json_build_object('id', d.id, 'name', d.dept_name)
                              ORDER BY d.dept_name), '[]'::json) INTO v_depts
-    FROM iam_role_data_scope rs
+    FROM (SELECT d.id, d.dept_name
+      FROM iam_role_data_scope rs
     JOIN department d ON d.id = rs.dept_id
     WHERE rs.role_id IS NOT DISTINCT FROM v_role_id
-      AND rs.org_role_id IS NOT DISTINCT FROM v_org_role_id
-      AND rs.dept_id IS NOT NULL;
+        AND rs.org_role_id IS NOT DISTINCT FROM v_org_role_id
+        AND rs.dept_id IS NOT NULL
+      LIMIT LEAST(COALESCE(p_limit, 200), 2000)) d;
 
     RETURN json_build_object(
         'role_code', p_role_code,
@@ -45,4 +48,4 @@ BEGIN
         'depts', v_depts);
 END;
 $$;
-GRANT EXECUTE ON FUNCTION api_v1_platform.rpc_get_role_data_scope(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_platform.rpc_get_role_data_scope(text, INTEGER) TO authenticated;

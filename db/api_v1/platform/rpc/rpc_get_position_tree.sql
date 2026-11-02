@@ -1,7 +1,8 @@
 -- api_v1/platform/rpc/rpc_get_position_tree.sql
 -- D27: 岗位树按 organization_id + tenant_id 双维度。
 
-CREATE OR REPLACE FUNCTION api_v1_platform.rpc_get_position_tree()
+DROP FUNCTION IF EXISTS api_v1_platform.rpc_get_position_tree();
+CREATE OR REPLACE FUNCTION api_v1_platform.rpc_get_position_tree(p_limit INTEGER DEFAULT 500)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE v_result json;
@@ -25,7 +26,7 @@ BEGIN
     SELECT json_agg(row_to_json(x) ORDER BY x.path_name)
       INTO v_result
     FROM (SELECT id, parent_id, pos_name, pos_code, sort_no, status, depth, path_name
-          FROM tree) x;
+          FROM tree LIMIT LEAST(COALESCE(p_limit, 500), 5000)) x;
     RETURN COALESCE(v_result, '[]'::json);
 END $$;
-GRANT EXECUTE ON FUNCTION api_v1_platform.rpc_get_position_tree() TO authenticated;
+GRANT EXECUTE ON FUNCTION api_v1_platform.rpc_get_position_tree(INTEGER) TO authenticated;

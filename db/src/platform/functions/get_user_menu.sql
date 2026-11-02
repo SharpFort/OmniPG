@@ -14,7 +14,8 @@
 --      前端 MenuProcessor 读 is_cache → meta.keepAlive，Vue 侧 meta.keepAlive 不改；
 --      038/044/056 重放会用旧版覆盖，057 迁移自带重建段兜底）
 
-CREATE OR REPLACE FUNCTION get_user_menu()
+DROP FUNCTION IF EXISTS platform.get_user_menu();
+CREATE OR REPLACE FUNCTION get_user_menu(p_limit INTEGER DEFAULT 200)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -74,9 +75,10 @@ BEGIN
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
         ORDER BY c.order_num
+    LIMIT LEAST(COALESCE(p_limit, 200), 2000)
     ) t;
 
     RETURN v_menu_tree;
 END;
 $$;
-COMMENT ON FUNCTION get_user_menu() IS '获取用户菜单树（D26：角色匹配改 role_id/org_role_id；057: keep_alive→is_cache 输出键——前端 MenuProcessor 映射同步，Vue meta.keepAlive 不改；056: -query B1 清理；055: +is_affix）';
+COMMENT ON FUNCTION get_user_menu(INTEGER) IS '获取用户菜单树（D26：角色匹配改 role_id/org_role_id；057: keep_alive→is_cache 输出键——前端 MenuProcessor 映射同步，Vue meta.keepAlive 不改；056: -query B1 清理；055: +is_affix）';

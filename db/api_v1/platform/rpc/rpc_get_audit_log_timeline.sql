@@ -4,10 +4,12 @@
 -- 073: p_start_date/p_end_date 改为 DEFAULT NULL + 函数体内 COALESCE 回退
 --   （PG 显式传 NULL 不会触发参数默认值，前端不传日期时原实现恒返回空）。
 
+DROP FUNCTION IF EXISTS api_v1_platform.get_audit_log_timeline(timestamp, timestamp);
 CREATE OR REPLACE FUNCTION api_v1_platform.get_audit_log_timeline(
     p_start_date timestamp DEFAULT NULL,
     p_end_date timestamp DEFAULT NULL
-)
+,
+    p_limit INTEGER DEFAULT 200)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -26,6 +28,7 @@ BEGIN
              FROM (
                  SELECT * FROM api_v1_platform.v_audit_log_timeline
                  WHERE log_date >= v_start AND log_date <= v_end
+             LIMIT LEAST(COALESCE(p_limit, 200), 2000)
              ) t),
             '[]'::json
         )
@@ -34,5 +37,5 @@ BEGIN
     RETURN v_result;
 END;
 $$;
-COMMENT ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp) IS '获取审计时间线（按天聚合；073: 传 NULL 回退最近 7 天）';
-GRANT EXECUTE ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp) TO authenticated;
+COMMENT ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp, INTEGER) IS '获取审计时间线（按天聚合；073: 传 NULL 回退最近 7 天）';
+GRANT EXECUTE ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp, INTEGER) TO authenticated;
