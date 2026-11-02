@@ -13,9 +13,13 @@
 -- 057: keep_alive→is_cache 输出键（SharpFort IsCache 语义 + is_ 前缀统一；
 --      前端 MenuProcessor 读 is_cache → meta.keepAlive，Vue 侧 meta.keepAlive 不改；
 --      038/044/056 重放会用旧版覆盖，057 迁移自带重建段兜底）
+-- 44号 P0-2 回归修正（2026-11-02）：角色绑定改 EXISTS 半连接——原 JOIN iam_role_menu
+--      在 role_id/org_role_id 双通道同时命中时逐层乘性重复（目录×2/页面×4/按钮×8，
+--      82 菜单→402 行），叠加 LIMIT 200 截掉父目录致侧边栏菜单缺失/子页漂到顶层；
+--      同序号按 id 定序；默认上限 200→1000
 
 DROP FUNCTION IF EXISTS platform.get_user_menu();
-CREATE OR REPLACE FUNCTION get_user_menu(p_limit INTEGER DEFAULT 200)
+CREATE OR REPLACE FUNCTION get_user_menu(p_limit INTEGER DEFAULT 1000)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -46,10 +50,11 @@ BEGIN
             m.is_link, m.is_iframe, m.is_cache, m.redirect, m.route_name,
             m.is_affix
         FROM iam_menu m
-        JOIN iam_role_menu rm ON m.id = rm.menu_id
-        WHERE (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
-          AND rm.tenant_id = current_logto_tenant_id()
-          AND m.parent_id IS NULL AND m.is_active
+        WHERE m.parent_id IS NULL AND m.is_active
+          AND EXISTS (SELECT 1 FROM iam_role_menu rm
+                      WHERE rm.menu_id = m.id
+                        AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
+                        AND rm.tenant_id = current_logto_tenant_id())
 
         UNION ALL
 
@@ -59,11 +64,12 @@ BEGIN
             m.is_link, m.is_iframe, m.is_cache, m.redirect, m.route_name,
             m.is_affix
         FROM iam_menu m
-        JOIN iam_role_menu rm ON m.id = rm.menu_id
         JOIN menu_cte c ON m.parent_id = c.id
-        WHERE (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
-          AND rm.tenant_id = current_logto_tenant_id()
-          AND m.is_active
+        WHERE m.is_active
+          AND EXISTS (SELECT 1 FROM iam_role_menu rm
+                      WHERE rm.menu_id = m.id
+                        AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
+                        AND rm.tenant_id = current_logto_tenant_id())
     )
     SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO v_menu_tree
     FROM (
@@ -74,8 +80,8 @@ BEGIN
             c.is_affix,
             json_build_object('title', c.name, 'icon', c.icon) AS meta
         FROM menu_cte c
-        ORDER BY c.order_num
-    LIMIT LEAST(COALESCE(p_limit, 200), 2000)
+        ORDER BY c.order_num, c.id
+        LIMIT LEAST(COALESCE(p_limit, 1000), 2000)
     ) t;
 
     RETURN v_menu_tree;
