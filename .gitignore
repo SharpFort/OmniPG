@@ -22,3 +22,6 @@ wsl-setup/
 
 # wiki 拍平输出（CI 临时生成，不入库）
 wiki-flat/
+
+# ZCode 本地工作区（会话计划等，不入库）
+.zcode/
