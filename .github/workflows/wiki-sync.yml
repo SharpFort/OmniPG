@@ -2,7 +2,7 @@ name: Publish wiki
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'wiki/**'
       - 'scripts/flatten_wiki.py'

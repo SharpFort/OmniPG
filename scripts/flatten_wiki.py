@@ -21,7 +21,7 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(REPO, "wiki")
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(REPO, "wiki-flat")
-BLOB = "https://github.com/SharpFort/OmniPG/blob/master/"
+BLOB = "https://github.com/SharpFort/OmniPG/blob/main/"
 
 LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 
