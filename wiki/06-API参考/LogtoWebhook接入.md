@@ -28,7 +28,7 @@ Logto（自部署 OSS，compose 服务名 `logto`）是用户/组织（租户）
 
 ## 入口：rpc_webhook_logto 调用约定
 
-函数定义：`db/api_v1/public/rpc/rpc_webhook_logto.sql`
+函数定义：`db/api_v1/platform/rpc/rpc_webhook_logto.sql`
 
 | 项 | 值 |
 |:---|:---|
@@ -43,6 +43,8 @@ Logto（自部署 OSS，compose 服务名 `logto`）是用户/组织（租户）
 
 ⚠️ 两条铁律（脚本注释强调）：**不可叠加 request-validation 插件**（其 JSON 重排会破坏 rawBody 签名）；**缺 `LOGTO_WEBHOOK_SIGNING_KEY` 时部署脚本 exit 1**（fail-closed，N15）。
 
+⚠️ signingKey 事实源 = **Logto hook 的 `signing_key`**（Management API 只读，PATCH 传该字段会被忽略）。`init-logto.py` step5 在创建/更新 hook 后自动把 Logto 实际 key 回写 `gateway/.env` 与 `.env.development`，回写后必须重跑 `init-apisix-routes.sh` 使网关验签 key 生效。**切勿只在一侧手工改 key**——两边漂移时 APISIX 验签恒 401，PostSignIn 全部投递失败、登录日志为空（2026-08-29 事故根因）；`init-logto.py --verify` 可检出漂移。另注意：Logto `public.logs` 里 `TriggerHook.*` 日志的 payload **不含顶层 `event` 字段**，回放历史事件需从 `error` 文本中 `options.body` 提取原始 webhook body，不能直接重放日志 payload。
+
 ### 载荷结构要点
 
 - 数据变更事件：顶层 `event` 字段 + 受影响实体在 `data`；删除类事件 **data 为 null**，ID 在 `params`（User.Deleted → params.userId；Organization/Role/OrganizationRole.Deleted → params.id）。webhook_logto 统一三键兜底：`COALESCE(params->>'userId', params->>'id', data->>'id')`（N1 修复）。
@@ -50,7 +52,7 @@ Logto（自部署 OSS，compose 服务名 `logto`）是用户/组织（租户）
 - PostSignIn：顶层平铺，无 data 包装（官方 payload 结构核实，v2.4）。
 - 时间戳（createdAt/updatedAt 等毫秒/ISO）经 `logto_ts(text)` 归一化为 timestamptz。
 
-## sync_* 函数（db/src/public/functions/）
+## sync_* 函数（db/src/platform/functions/）
 
 全部 SECURITY DEFINER、幂等（ON CONFLICT），由 webhook_logto 调用；对账脚本也直接复用：
 

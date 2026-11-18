@@ -1,0 +1,13 @@
+-- 064_v010_mirror_tables.sql
+-- v0.1.0 squash baseline（2026-08-16 用户拍板，方案 36-迁移基线合并）
+-- D25（2026-08-23 定稿）：Logto 与业务同库后，六张 Logto 镜像表退役。
+--   用户/角色/租户/成员/角色分配改为 platform 内只读投影视图，直读 Logto public 表：
+--     platform.users / platform.tenants / platform.role / platform.tenant_role
+--     / platform.user_tenants / platform.user_role（owner = omnipg_logto_reader）
+--   同步链路（webhook 数据事件、sync_*、reconcile）全部退役；仅保留 PostSignIn 登录日志链路。
+-- 本文件不再创建任何镜像表；历史镜像表由 067_d25_retire_mirrors.sql 负责清理（存量库）。
+-- migrate:up
+-- （无 DDL：D25 后镜像表定义全部移除，业务读写全部走只读投影视图）
+
+-- migrate:down
+-- （无回滚：squash baseline。历史镜像表与回滚路径见 git tag v0.1.0 / 全库快照）

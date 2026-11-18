@@ -3,13 +3,21 @@
 -- ==============================================================================
 
 -- 系统管理 API Schema
---   api_v1_public: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
-CREATE SCHEMA IF NOT EXISTS api_v1_public;
-COMMENT ON SCHEMA api_v1_public IS '系统管理 API 暴露层（027 定稿：视图名=底层表名）';
+--   api_v1_platform: 系统管理 API 暴露层（027 定稿名；视图名 = 底层表名）
+CREATE SCHEMA IF NOT EXISTS api_v1_platform;
+COMMENT ON SCHEMA api_v1_platform IS '系统管理 API 暴露层（027 定稿：视图名=底层表名）';
 
 CREATE SCHEMA IF NOT EXISTS net;
 -- net schema 注释不在此处维护：pg_net 扩展宿主 schema（owner=postgres），
 --   app_owner 执行 COMMENT 必炸（must be owner）；注释由扩展安装方（superuser）负责
+
+-- 业务核心 Schema（40 号方案：Logto 留 public，业务迁出至 platform）
+CREATE SCHEMA IF NOT EXISTS platform AUTHORIZATION app_owner;
+COMMENT ON SCHEMA platform IS '业务核心层（40 号方案：Logto 留 public，业务迁出 platform）';
+
+-- 扩展宿主 Schema（40 号方案：pgcrypto/pgtap 等扩展迁出 public 至 ext）
+CREATE SCHEMA IF NOT EXISTS ext;
+COMMENT ON SCHEMA ext IS '扩展宿主（40 号方案：扩展迁出 public）';
 
 -- ==============================================================================
 -- 角色与成员关系：由 Pigsty 管理（2026-08-16 拍板，安全第一/最小权限分层）
@@ -30,14 +38,32 @@ CREATE SCHEMA IF NOT EXISTS net;
 --       - { name: tenant_admin,      nologin: true, roles: [role_admin] }
 -- ==============================================================================
 
--- Schema 使用权（api_v1 已随 027 收敛为 api_v1_public）
-GRANT USAGE ON SCHEMA api_v1_public TO web_anon;
-GRANT USAGE ON SCHEMA api_v1_public TO authenticated;
-GRANT USAGE ON SCHEMA api_v1_public TO authenticator;
+-- Schema 使用权（api_v1 已随 027 收敛为 api_v1_platform）
+GRANT USAGE ON SCHEMA api_v1_platform TO web_anon;
+GRANT USAGE ON SCHEMA api_v1_platform TO authenticated;
+GRANT USAGE ON SCHEMA api_v1_platform TO authenticator;
+
+-- 业务核心/扩展宿主 Schema 使用权（40 号方案 §4.3）
+GRANT USAGE ON SCHEMA platform TO web_anon;
+GRANT USAGE ON SCHEMA platform TO authenticated;
+GRANT USAGE ON SCHEMA platform TO authenticator;
+-- D27 修复：super_admin 等 JWT 业务角色缺 platform USAGE，
+--   导致 SECURITY INVOKER RPC 内 current_organization_id() 等报 42883 "does not exist"
+GRANT USAGE ON SCHEMA platform TO super_admin, role_admin, role_editor, role_guest;
+GRANT USAGE ON SCHEMA ext TO app_owner;
+GRANT USAGE ON SCHEMA ext TO web_anon;
+GRANT USAGE ON SCHEMA ext TO authenticated;
+GRANT USAGE ON SCHEMA ext TO authenticator;
+GRANT USAGE ON SCHEMA ext TO super_admin, role_admin, role_editor, role_guest;
+
+-- 40 号方案 §4.3：app_owner 默认 search_path 收敛为 platform, ext, pg_temp（不含 public，
+--   防业务误命中 Logto 表）；PostgREST 侧由 PGRST_DB_EXTRA_SEARCH_PATH 控制；
+--   服务端级默认 search_path 保留 public（Logto 原生依赖 public）
+ALTER ROLE app_owner SET search_path = platform, ext, pg_temp;
 
 -- web_anon 默认无任何表权限（安全第一）
--- authenticated 的权限由 db/api_v1/public/privileges/zz_grant_all.sql 与
---   db/src/public/privileges/rls_policies.sql 显式授予（RLS 为安全边界）
+-- authenticated 的权限由 db/api_v1/platform/privileges/zz_grant_all.sql 与
+--   db/src/platform/privileges/rls_policies.sql 显式授予（RLS 为安全边界）
 
 -- pg_net 权限收紧（2026-08-16 拍板）：pg_net 可发任意外网 HTTP 请求，
 --   直接授 EXECUTE 给 authenticated = SSRF 后门；调用一律经 SECURITY DEFINER 封装函数

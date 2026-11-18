@@ -70,32 +70,32 @@ LOGIN_PASS="${LOGIN_PASS:-admin123}"
 
 # ---------------------------------------------------------------- 1/10 网络链路
 echo ""
-echo "【1/10】网络链路（容器 → 宿主 pgbouncer）..."
+echo "【1/10】网络链路（容器 → 宿主 pgBouncer 6432）..."
 NET=$(docker network ls --format '{{.Name}}' | grep -E 'app-net$' | head -1)
 if [ -z "$NET" ]; then
     log_fail "找不到 app-net 网络（是否已 docker compose up -d？）"
 else
     if docker run --rm --network "$NET" --add-host host.docker.internal:host-gateway \
         alpine sh -c 'nc -z -w3 host.docker.internal 6432' >/dev/null 2>&1; then
-        log_pass "容器→宿主 pgbouncer(6432) 可达（网络: $NET）"
+        log_pass "容器→宿主 pgBouncer(6432) 可达（网络: $NET）"
     else
-        log_fail "容器→宿主 pgbouncer(6432) 不可达。检查: Win11 mirrored / scripts/wsl-portproxy.ps1"
+        log_fail "容器→宿主 pgBouncer(6432) 不可达。检查: Win11 mirrored / scripts/wsl-portproxy.ps1"
     fi
 fi
 
-# ---------------------------------------------------------------- 2/10 宿主 pgbouncer
+# ---------------------------------------------------------------- 2/10 宿主 pgBouncer
 echo ""
-echo "【2/10】宿主 pgbouncer（127.0.0.1:6432）..."
+echo "【2/10】宿主 pgBouncer（127.0.0.1:6432）..."
 if PGPASSWORD="$AUTHENTICATOR_PASSWORD" psql -h 127.0.0.1 -p 6432 -U authenticator -d app_db -tAc "SELECT 1" >/dev/null 2>&1; then
-    log_pass "pgbouncer 连接成功（authenticator 角色可登录）"
+    log_pass "pgBouncer 连接成功（authenticator 角色可登录；PostgREST 经 6432）"
 else
-    log_fail "pgbouncer 连接失败。检查: systemctl 状态 / userlist.txt / pg_hba"
+    log_fail "pgBouncer 连接失败。检查: userlist.txt 是否已重载（pkill pgbouncer && sudo -u postgres /usr/sbin/pgbouncer /etc/pgbouncer/pgbouncer.ini &）/ systemctl 状态 / pg_hba"
 fi
 
 # ---------------------------------------------------------------- 3/10 PostgREST
 echo ""
-echo "【3/10】PostgREST OpenAPI（:3001）..."
-LEN=$(curl -s --max-time 10 http://localhost:3001/ | wc -c)
+echo "【3/10】PostgREST OpenAPI（:3100）..."
+LEN=$(curl -s --max-time 10 http://localhost:3100/ | wc -c)
 if [ "${LEN:-0}" -gt 2000 ]; then
     log_pass "OpenAPI 完整（$LEN 字符）"
 else
@@ -127,7 +127,7 @@ ROUTE_COUNT=$(curl -s --max-time 5 http://localhost:9180/apisix/admin/routes \
     -H "X-API-KEY: ${APISIX_ADMIN_KEY}" \
     | "$PYTHON_BIN" -c 'import sys,json; print(len(json.load(sys.stdin)["list"]))' 2>/dev/null || echo "err")
 if [ "$ROUTE_COUNT" = "7" ]; then
-    log_pass "路由 7/7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_public/rpc_all/catch_all）"
+    log_pass "路由 7/7（logto_jwks/logto_proxy/webhook_logto/ensure_user/api_v1_platform/rpc_all/catch_all）"
 elif [ "$ROUTE_COUNT" = "err" ] || [ -z "$ROUTE_COUNT" ]; then
     log_fail "Admin API 不可用（检查 APISIX_ADMIN_KEY / 9180 内网可达）"
 else

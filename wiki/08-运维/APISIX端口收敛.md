@@ -155,7 +155,7 @@ curl -sf http://localhost:9180/ui | grep -qi html && echo "Dashboard OK"
 curl -s http://localhost:9180/apisix/admin/routes -H "X-API-KEY: $APISIX_ADMIN_KEY" | python3 -m json.tool | head
 
 # ④ 无 token 业务请求应 401
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9080/api/v1/public/role   # 401
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9080/api/v1/platform/role   # 401
 ```
 
 局域网另一台机器：
@@ -165,7 +165,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:9080/api/v1/public/rol
 curl -s http://<服务器内网IP>:9180/apisix/admin/routes -H "X-API-KEY: <key>" | head -c 200
 
 # 业务可达
-curl -s -o /dev/null -w '%{http_code}\n' http://<服务器内网IP>:9080/api/v1/public/role   # 401（未带 token）
+curl -s -o /dev/null -w '%{http_code}\n' http://<服务器内网IP>:9080/api/v1/platform/role   # 401（未带 token）
 
 # 探针不可达（回环绑定，预期失败）
 curl -s --max-time 3 http://<服务器内网IP>:7085/status && echo "⚠️ 不应成功" || echo "OK 不可达"

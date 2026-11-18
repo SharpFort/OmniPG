@@ -108,7 +108,7 @@ log_step "4/5 验证服务状态..."
 ERRORS=0
 
 # PostgreSQL
-if PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD=admin@password psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     log_info "PostgreSQL: 连接成功"
 else
     log_error "PostgreSQL: 连接失败"
@@ -116,7 +116,7 @@ else
 fi
 
 # pgBouncer
-if PGPASSWORD=dev_password_change_me psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD=admin@password psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     log_info "pgBouncer: 连接成功"
 else
     log_error "pgBouncer: 连接失败"
@@ -154,7 +154,7 @@ echo "=========================================="
 echo "  服务访问地址"
 echo "=========================================="
 echo ""
-echo "  PostgreSQL:      localhost:5432 (app_owner/dev_password_change_me)"
+echo "  PostgreSQL:      localhost:5432 (app_owner/admin@password)"
 echo "  pgBouncer:       localhost:6432 (Pigsty 内置)"
 echo "  Redis:           localhost:6379"
 echo "  etcd:            https://localhost:2379"

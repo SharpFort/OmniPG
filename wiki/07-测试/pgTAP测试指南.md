@@ -27,13 +27,13 @@ psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT extname, extversion FROM pg_
 
 ## 测试目录与文件组织
 
-- 测试目录：`db/tests/`（当前仅 `public/` 子目录，对应 public 业务域）。
+- 测试目录：`db/tests/`（当前仅 `platform/` 子目录，对应 platform 业务域）。
 - 命名规范：数字前缀控制执行顺序 + 描述性名称，例如 `01_schema_test.sql`、`02_function_test.sql`、`03_trigger_test.sql`、`05_rls_test.sql`；行为类测试用完整描述名（`test_casbin_view.sql`、`test_rls_isolation.sql`）。
 - 收集方式：pg_prove 以 `--ext .sql` + `-r`（递归）扫描目录。
 
 当前文件清单（计划断言合计 115 条）：
 
-> 兼容视图说明：`public.sys_user` / `casbin_rule` 兼容视图已于 2026-08-20 移除；`01_schema_test.sql` 用 `hasnt_table('sys_user')`、`hasnt_view('sys_user')`、`hasnt_view('casbin_rule')` 断言其不存在。
+> 兼容视图说明：`platform.sys_user` / `casbin_rule` 兼容视图已于 2026-08-20 移除；`01_schema_test.sql` 用 `hasnt_table('sys_user')`、`hasnt_view('sys_user')`、`hasnt_view('casbin_rule')` 断言其不存在。
 
 | 文件 | 计划断言数 | 主题 |
 | --- | ---: | --- |
@@ -106,7 +106,7 @@ cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || tr
 cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/
 
 # 单个文件
-pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql db/tests/public/02_function_test.sql
+pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql db/tests/platform/02_function_test.sql
 
 # 全新库验证（verify-fresh-db.sh 内部自动执行 pg_prove，并处理 casbin 预期差异）
 bash scripts/verify-fresh-db.sh
@@ -126,7 +126,7 @@ pg_prove 常用参数：
 
 ## 新增测试的检查清单
 
-- [ ] 文件放入 `db/tests/public/`，命名遵循数字前缀或描述性名称；
+- [ ] 文件放入 `db/tests/platform/`，命名遵循数字前缀或描述性名称；
 - [ ] `BEGIN` + `plan(N)` + `finish()` + `ROLLBACK` 四件套齐全；
 - [ ] 断言只读、幂等、可重复执行；
 - [ ] 涉及种子外数据时注明依赖（如 casbin 运行时绑定）；

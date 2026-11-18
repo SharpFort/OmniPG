@@ -6,11 +6,11 @@ set -e
 # 用法: ./scripts/apply-src.sh <database_url> [--bootstrap]
 #   --bootstrap : 仅执行 bootstrap 子集（init + src/*/types），供 deploy-db.sh
 #                 冷启动前置——扩展/枚举必须先于迁移存在（§3.4 依赖倒置陷阱：
-#                 059/060 迁移引用 public.scope_type/iam_gender 等 src 枚举）
+#                 059/060 迁移引用 platform.scope_type/iam_gender 等 src 枚举）
 # 全量顺序: §6.3 迁移代码对象扫描（P0-5 零容忍）→ src → api_v1 → init → migrations
 # 模块声明（2026-08-16: net 模块退役——net.request_status 零引用删除；pg_net
 #   schema 属扩展所有，项目对象不入驻）:
-#   public（基础/系统层，无前缀函数落 public schema）
+#   platform（基础/系统层，无前缀函数落 platform schema）
 #   依赖方向: 后置模块可依赖前置模块，反之不可；新增模块须在此声明位置
 #   api_v1 层前缀 _shared（跨模块共享 API）置首
 #   （2026-08-15: inventory/sales 测试模块全链路退役移除，后续按需重建）
@@ -24,8 +24,8 @@ fi
 
 DB_DIR="$(cd "$(dirname "$0")/../db" && pwd)"
 
-MODULES="public"
-API_MODULES="_shared public"
+MODULES="platform"
+API_MODULES="_shared platform"
 
 BOOTSTRAP_ONLY=false
 if [ "$2" = "--bootstrap" ]; then
@@ -116,3 +116,20 @@ $(for m in $MODULES; do find "$DB_DIR/migrations/$m" -name "*.sql" 2>/dev/null |
 apply_files_converge "$FILES" || exit 1
 
 echo "All SQL files applied successfully."
+
+# ---------------------------------------------------------------------------
+# 重放后必须恢复 Logto 只读投影视图 owner（BYPASSRLS），否则 Logto RLS 会把
+# platform.users/role 等过滤为 0 行 → get_current_user 'User not found'（前端 500）。
+# 设置了 PG_SUPER_CMD 时自动重跑；否则打印醒目警告（deploy-db.sh 3.5 会兜底重跑）。
+# ---------------------------------------------------------------------------
+if [ -n "${PG_SUPER_CMD:-}" ]; then
+    echo "[apply-src] PG_SUPER_CMD 已设置，自动重跑 init-logto-reader 恢复投影视图 owner..."
+    DB_NAME="${DB_NAME:-app_db}" DB_PORT="${DB_PORT:-5432}" bash "$(dirname "$0")/init-logto-reader.sh"
+else
+    echo ""
+    echo "⚠️  [apply-src] 全量重放已重建 platform.* 只读投影视图（owner 变回当前执行角色，"
+    echo "    BYPASSRLS 丢失）。若该库使用 Logto RLS 同库直读，请立即重跑："
+    echo "      PG_SUPER_CMD='sudo -u postgres psql' ./scripts/init-logto-reader.sh"
+    echo "    否则 get_current_user/ensure_user 会报 'User not found'，前端登录后跳 500。"
+    echo ""
+fi

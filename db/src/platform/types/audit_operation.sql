@@ -1,0 +1,9 @@
+-- db/src/platform/types/audit_operation.sql
+-- 审计操作类型枚举
+-- 来源: audit_log.operation 字段（T7）
+
+DO $$ BEGIN
+    CREATE TYPE platform.audit_operation AS ENUM ('INSERT', 'UPDATE', 'DELETE');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+COMMENT ON TYPE platform.audit_operation IS '审计操作类型';
