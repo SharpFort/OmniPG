@@ -5,7 +5,10 @@ CREATE OR REPLACE FUNCTION api_v1_platform.rpc_list_tenants(
     p_query text DEFAULT NULL, p_limit int DEFAULT 20, p_offset int DEFAULT 0)
 RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
-DECLARE v_result json;
+DECLARE
+    v_result json;
+    v_tenant text := current_logto_tenant_id();
+    v_is_super boolean := is_super_admin();
 BEGIN
     IF NOT has_permission('platform:tenant:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
@@ -13,7 +16,7 @@ BEGIN
     SELECT json_build_object(
         'total', (SELECT count(*) FROM platform.organizations o
                   WHERE (p_query IS NULL OR o.name ILIKE '%' || p_query || '%')
-                    AND (current_logto_tenant_id() = 'default' OR o.tenant_id = current_logto_tenant_id())),
+                    AND (v_is_super OR o.tenant_id = v_tenant)),
         'limit', GREATEST(1, LEAST(p_limit, 100)),
         'offset', GREATEST(0, p_offset),
         'items', COALESCE((
@@ -26,7 +29,7 @@ BEGIN
                 FROM platform.organizations o
                 LEFT JOIN platform.tenants t ON o.tenant_id = t.id
                 WHERE (p_query IS NULL OR o.name ILIKE '%' || p_query || '%')
-                  AND (current_logto_tenant_id() = 'default' OR o.tenant_id = current_logto_tenant_id())
+                  AND (v_is_super OR o.tenant_id = v_tenant)
                 ORDER BY o.created_at DESC
                 LIMIT GREATEST(1, LEAST(p_limit, 100)) OFFSET GREATEST(0, p_offset)
             ) x), '[]'::json)

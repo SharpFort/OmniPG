@@ -17,8 +17,18 @@ BEGIN
     IF current_organization_id() IS NULL THEN
         RAISE EXCEPTION 'organization required' USING ERRCODE = '22023';
     END IF;
+    -- 校验 parent_id 必须属于当前组织与租户且未软删除，防止跨租户孤儿节点与越权挂载
+    IF p_parent_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM position
+        WHERE id = p_parent_id
+          AND organization_id = current_organization_id()
+          AND tenant_id = current_logto_tenant_id()
+          AND deleted_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'parent position not found in organization' USING ERRCODE = 'P0002';
+    END IF;
     INSERT INTO position (organization_id, tenant_id, pos_name, pos_code, parent_id, sort_no, created_by)
-    VALUES (current_organization_id(), current_logto_tenant_id(), p_pos_name, p_pos_code, p_parent_id, p_sort_no, current_user_id())
+    VALUES (current_organization_id(), current_logto_tenant_id(), trim(p_pos_name), trim(p_pos_code), p_parent_id, COALESCE(p_sort_no, 0), current_user_id())
     RETURNING id INTO v_id;
     PERFORM log_operate('position', 'create', 'position', v_id::text,
                         'success', jsonb_build_object('name', p_pos_name));

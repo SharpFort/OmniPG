@@ -10,6 +10,10 @@ AS $$
 DECLARE
     v_cnt int;
 BEGIN
+    -- 仅当在 Web/API 请求上下文中有 JWT 用户时校验超管；psql/pg_cron 本地直接执行不受限
+    IF current_user_id() IS NOT NULL AND NOT is_super_admin() THEN
+        RAISE EXCEPTION 'permission denied: super admin required' USING ERRCODE = '42501';
+    END IF;
     TRUNCATE ip_geolite2_city;
     INSERT INTO ip_geolite2_city
         (network, geoname_id, latitude, longitude, accuracy_radius,
@@ -23,3 +27,5 @@ BEGIN
     RETURN v_cnt;
 END;
 $$;
+REVOKE ALL ON FUNCTION import_geolite2_city() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION import_geolite2_city() TO role_super_admin;

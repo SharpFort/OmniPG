@@ -19,10 +19,12 @@ BEGIN
     IF (TG_OP = 'INSERT') THEN
         NEW.created_by := current_user_id();
     ELSIF (TG_OP = 'UPDATE') THEN
+        -- 审计防篡改：created_by 必须保持原有创建人，禁止被后续 UPDATE 覆写伪造
+        NEW.created_by := OLD.created_by;
         NEW.updated_by := current_user_id();
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = platform, ext, pg_temp;
 
 COMMENT ON FUNCTION audit_user_fields() IS '自动填充审计用户字段：INSERT 时填充 created_by，UPDATE 时填充 updated_by。无 JWT 上下文时设为 NULL（Logto 用户 id，text）。';

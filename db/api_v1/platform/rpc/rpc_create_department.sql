@@ -16,8 +16,18 @@ BEGIN
     IF current_organization_id() IS NULL THEN
         RAISE EXCEPTION 'organization required' USING ERRCODE = '22023';
     END IF;
+    -- 校验 parent_id 必须属于当前组织与租户且未软删除
+    IF p_parent_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM department
+        WHERE id = p_parent_id
+          AND organization_id = current_organization_id()
+          AND tenant_id = current_logto_tenant_id()
+          AND deleted_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'parent department not found in organization' USING ERRCODE = 'P0002';
+    END IF;
     INSERT INTO department (organization_id, tenant_id, dept_name, parent_id, sort_order, created_by)
-    VALUES (current_organization_id(), current_logto_tenant_id(), p_dept_name, p_parent_id, p_sort_order, current_user_id())
+    VALUES (current_organization_id(), current_logto_tenant_id(), trim(p_dept_name), p_parent_id, COALESCE(p_sort_order, 0), current_user_id())
     RETURNING id INTO v_id;
     PERFORM log_operate('dept', 'create', 'department', v_id::text,
                         'success', jsonb_build_object('name', p_dept_name));

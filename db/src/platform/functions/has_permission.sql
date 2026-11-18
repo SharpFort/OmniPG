@@ -21,19 +21,17 @@ BEGIN
     IF is_super_admin() THEN
         RETURN true;
     END IF;
-    -- 从 JWT claims 提取角色（零查询原则：角色在 claims，绑定查小表）
-    SELECT ARRAY(SELECT jsonb_array_elements_text(
-                    current_setting('request.jwt.claims', true)::jsonb->'roles'))
-      INTO v_roles;
+    -- 从 JWT claims 提取角色（复用 STABLE 函数 current_user_roles 避免重复解析 JSON）
+    v_roles := current_user_roles();
     IF v_roles IS NULL OR cardinality(v_roles) = 0 THEN
         RETURN false;
     END IF;
 
-    -- D26: 角色名 → Logto 角色标识
+    -- D26: 角色名 → Logto 角色标识（强制锁定当前租户范围，消除跨租户角色 ID 碰撞）
     SELECT ARRAY(SELECT r.id FROM platform.role r
                  WHERE r.name = ANY(v_roles)) INTO v_role_ids;
     SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
-                 WHERE tr.name = ANY(v_roles)) INTO v_org_role_ids;
+                 WHERE tr.name = ANY(v_roles) AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
 
     -- 单通道（055 D3）：权限点 = button 行 api_code（非 button 行 api_code 已收敛置空）
     RETURN EXISTS (

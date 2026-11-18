@@ -21,6 +21,6 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SET search_path = platform, ext, pg_temp;
 
 COMMENT ON FUNCTION audit_deletion_user() IS '自动填充删除审计字段：deleted_at 从 NULL 变为非 NULL 时填充 deleted_by。无 JWT 上下文时设为 NULL。';

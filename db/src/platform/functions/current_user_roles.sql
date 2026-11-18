@@ -10,11 +10,12 @@
 
 CREATE OR REPLACE FUNCTION current_user_roles() RETURNS text[]
 LANGUAGE sql
-STABLE
+STABLE PARALLEL SAFE
+SET search_path = platform, ext, pg_temp
 AS $$
     SELECT ARRAY(
         SELECT jsonb_array_elements_text(
-            COALESCE(current_setting('request.jwt.claims', true)::jsonb -> 'roles', '[]'::jsonb)
+            COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb -> 'roles', '[]'::jsonb)
         )
     );
 $$;

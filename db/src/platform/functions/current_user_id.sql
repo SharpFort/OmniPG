@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION current_user_id()
 RETURNS text AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'sub', '')
+    SELECT NULLIF(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb->>'sub', '')
 $$ LANGUAGE sql STABLE PARALLEL SAFE
 SECURITY DEFINER
 SET search_path = platform, ext, pg_temp;

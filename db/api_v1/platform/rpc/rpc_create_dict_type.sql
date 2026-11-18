@@ -14,12 +14,15 @@ BEGIN
     IF p_dict_name IS NULL OR trim(p_dict_name) = '' THEN
         RAISE EXCEPTION 'dict_name required' USING ERRCODE = '22023';
     END IF;
+    IF p_dict_label IS NULL OR trim(p_dict_label) = '' THEN
+        RAISE EXCEPTION 'dict_label required' USING ERRCODE = '22023';
+    END IF;
     v_org := CASE WHEN p_tenant_scoped THEN current_organization_id() ELSE NULL END;
     IF v_org IS NULL AND NOT is_super_admin() THEN
         RAISE EXCEPTION 'global dict requires super admin' USING ERRCODE = '42501';
     END IF;
     INSERT INTO dict_type (organization_id, tenant_id, dict_name, dict_label, sort_no, created_by)
-    VALUES (v_org, current_logto_tenant_id(), p_dict_name, p_dict_label, p_sort_no, current_user_id())
+    VALUES (v_org, current_logto_tenant_id(), trim(p_dict_name), trim(p_dict_label), COALESCE(p_sort_no, 0), current_user_id())
     RETURNING id INTO v_id;
     PERFORM log_operate('dict', 'create', 'dict_type', v_id::text,
                         'success', jsonb_build_object('name', p_dict_name, 'tenant_scoped', p_tenant_scoped));

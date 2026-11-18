@@ -7,7 +7,7 @@
 CREATE OR REPLACE FUNCTION current_logto_tenant_id()
 RETURNS text AS $$
     SELECT COALESCE(
-        NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'tenant_id', ''),
+        NULLIF(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb->>'tenant_id', ''),
         'default'
     )
 $$ LANGUAGE sql STABLE PARALLEL SAFE

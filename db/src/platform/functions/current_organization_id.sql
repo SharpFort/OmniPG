@@ -4,7 +4,7 @@
 
 CREATE OR REPLACE FUNCTION current_organization_id()
 RETURNS text AS $$
-    SELECT NULLIF(current_setting('request.jwt.claims', true)::jsonb->>'organization_id', '')
+    SELECT NULLIF(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb->>'organization_id', '')
 $$ LANGUAGE sql STABLE PARALLEL SAFE
 SECURITY DEFINER
 SET search_path = platform, ext, pg_temp;

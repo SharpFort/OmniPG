@@ -22,26 +22,28 @@ DROP FUNCTION IF EXISTS platform.get_user_menu();
 CREATE OR REPLACE FUNCTION get_user_menu(p_limit INTEGER DEFAULT 1000)
 RETURNS json
 LANGUAGE plpgsql
+STABLE
 SECURITY DEFINER
 SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
-    v_roles jsonb;
+    v_roles_arr text[];
     v_role_ids text[];
     v_org_role_ids text[];
     v_menu_tree json;
 BEGIN
-    v_roles := current_setting('request.jwt.claims', true)::jsonb->'roles';
+    v_roles_arr := current_user_roles();
 
-    IF v_roles IS NULL OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_roles)) THEN
+    IF v_roles_arr IS NULL OR cardinality(v_roles_arr) = 0 THEN
         RETURN '[]'::json;
     END IF;
 
-    -- D26: JWT 角色名 → Logto 角色标识
+    -- D26: JWT 角色名 → Logto 角色标识（限定当前租户范围）
     SELECT ARRAY(SELECT r.id FROM platform.role r
-                 WHERE r.name IN (SELECT jsonb_array_elements_text(v_roles))) INTO v_role_ids;
+                 WHERE r.name = ANY(v_roles_arr)) INTO v_role_ids;
     SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
-                 WHERE tr.name IN (SELECT jsonb_array_elements_text(v_roles))) INTO v_org_role_ids;
+                 WHERE tr.name = ANY(v_roles_arr)
+                   AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
 
     WITH RECURSIVE menu_cte AS (
         SELECT

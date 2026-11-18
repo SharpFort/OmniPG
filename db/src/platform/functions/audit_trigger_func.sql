@@ -34,5 +34,6 @@ BEGIN
         RETURN NEW;
     END IF;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp;
+REVOKE ALL ON FUNCTION audit_trigger_func() FROM PUBLIC;
 COMMENT ON FUNCTION audit_trigger_func() IS '审计触发器函数：使用 write_audit_log() 标准化写入';

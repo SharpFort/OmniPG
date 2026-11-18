@@ -17,13 +17,13 @@ BEGIN
     IF v_org IS NULL AND NOT is_super_admin() THEN
         RAISE EXCEPTION 'global dict requires super admin' USING ERRCODE = '42501';
     END IF;
-    IF v_org IS NOT NULL AND v_org <> current_organization_id() THEN
+    IF v_org IS NOT NULL AND v_org IS DISTINCT FROM current_organization_id() THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     DELETE FROM dict_data WHERE dict_name = v_name
         AND tenant_id = current_logto_tenant_id()
         AND organization_id IS NOT DISTINCT FROM v_org;
-    DELETE FROM dict_type WHERE id = p_id;
+    DELETE FROM dict_type WHERE id = p_id AND tenant_id = current_logto_tenant_id();
     PERFORM log_operate('dict', 'delete', 'dict_type', p_id::text,
                         'success', jsonb_build_object('name', v_name));
     RETURN json_build_object('ok', true);

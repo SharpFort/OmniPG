@@ -24,9 +24,7 @@
 
 CREATE OR REPLACE FUNCTION is_uuid_v7(p_uuid uuid)
 RETURNS boolean AS $$
-BEGIN
-    RETURN p_uuid ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
-END;
-$$ LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE;
+    SELECT p_uuid::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+$$ LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE;
 
 COMMENT ON FUNCTION is_uuid_v7(uuid) IS '验证 UUID 是否为 v7 版本（时间有序 UUID）。用于 CHECK 约束或数据质量检查。';

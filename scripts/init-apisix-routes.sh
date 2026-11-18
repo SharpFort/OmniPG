@@ -105,8 +105,17 @@ return function(conf, ctx)
   local hmac = resty_hmac.new(key, 'sha256')
   hmac:update(body)
   local expected = resty_str.to_hex(hmac:final())
-  if expected ~= sig then
-    ngx.log(ngx.ERR, 'webhook signature mismatch: expected=' .. expected .. ' got=' .. sig)
+  -- 常量时间逐字节对比（防范时序分析反推哈希攻击）
+  local match = (#expected == #sig)
+  local len = math.min(#expected, #sig)
+  for i = 1, len do
+    if expected:byte(i) ~= sig:byte(i) then
+      match = false
+    end
+  end
+  if not match then
+    -- 安全日志脱敏：严禁在服务端日志中明文打印期望生成的哈希签名
+    ngx.log(ngx.WARN, 'webhook signature verification failed: invalid signature')
     return ngx.exit(401)
   end
 end

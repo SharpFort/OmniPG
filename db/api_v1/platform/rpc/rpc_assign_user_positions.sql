@@ -20,10 +20,28 @@ BEGIN
     END IF;
     DELETE FROM user_position
     WHERE user_id = p_user_id AND organization_id = v_org AND tenant_id = current_logto_tenant_id();
-    IF p_position_ids IS NOT NULL THEN
+    IF p_position_ids IS NOT NULL AND cardinality(p_position_ids) > 0 THEN
+        -- 校验所有 position_id 均属于当前组织和租户，且未软删除（防止跨租户越权分配）
+        IF EXISTS (
+            SELECT 1 FROM unnest(p_position_ids) AS pid
+            WHERE NOT EXISTS (
+                SELECT 1 FROM platform.position
+                WHERE id = pid AND organization_id = v_org
+                  AND tenant_id = current_logto_tenant_id()
+                  AND deleted_at IS NULL
+            )
+        ) THEN
+            RAISE EXCEPTION 'one or more positions not found in organization' USING ERRCODE = 'P0002';
+        END IF;
+
+        -- 若指定主岗位，主岗位必须在 position_ids 列表中
+        IF p_primary_position_id IS NOT NULL AND NOT (p_primary_position_id = ANY(p_position_ids)) THEN
+            RAISE EXCEPTION 'primary position must be in position_ids' USING ERRCODE = '22023';
+        END IF;
+
         INSERT INTO user_position (user_id, position_id, organization_id, tenant_id, is_primary, created_by)
         SELECT p_user_id, g, v_org, current_logto_tenant_id(),
-               (g = p_primary_position_id), current_user_id()
+               COALESCE(g = p_primary_position_id, false), current_user_id()
         FROM unnest(p_position_ids) AS g;
     END IF;
     PERFORM log_operate('position', 'assign', 'user_position', p_user_id,
