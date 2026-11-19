@@ -21,9 +21,19 @@ BEGIN
     END IF;
 
     v_res := api_v1_platform.webhook_logto(v_payload);
-    PERFORM log_operate('webhook', 'replay', 'webhook_event_log', p_event_id::text,
-                        'success', jsonb_build_object('event', v_event, 'result', v_res));
-    RETURN json_build_object('ok', true, 'event', v_event, 'replay', v_res);
+    -- 回放结果校验（2026-11-19 修补）：ok 仅是传输标记——degraded（日志写入失败）与
+    -- ignored（非 PostSignIn 事件未处理）任一为真都不算成功回放
+    IF COALESCE((v_res->>'ok')::boolean, false)
+       AND NOT COALESCE((v_res->>'degraded')::boolean, false)
+       AND NOT COALESCE((v_res->>'ignored')::boolean, false) THEN
+        PERFORM log_operate('webhook', 'replay', 'webhook_event_log', p_event_id::text,
+                            'success', jsonb_build_object('event', v_event, 'result', v_res));
+        RETURN json_build_object('ok', true, 'event', v_event, 'replay', v_res);
+    ELSE
+        PERFORM log_operate('webhook', 'replay', 'webhook_event_log', p_event_id::text,
+                            'error', jsonb_build_object('event', v_event, 'result', v_res));
+        RETURN json_build_object('ok', false, 'event', v_event, 'replay', v_res);
+    END IF;
 END;
 $$;
 GRANT EXECUTE ON FUNCTION api_v1_platform.rpc_replay_webhook_event(uuid) TO authenticated;

@@ -21,6 +21,14 @@ BEGIN
     IF v_org IS NULL AND NOT is_super_admin() THEN
         RAISE EXCEPTION 'global dict requires super admin' USING ERRCODE = '42501';
     END IF;
+    -- 重名预检（2026-11-19 修复）：dict_type 现行唯一键存在 NULLS DISTINCT 缺陷（068 遗留，
+    -- 全局字典 organization_id=NULL 不受约束），075+ 迁移修正索引前由应用层拦截重名
+    IF EXISTS (SELECT 1 FROM dict_type
+               WHERE dict_name = trim(p_dict_name)
+                 AND tenant_id = current_logto_tenant_id()
+                 AND organization_id IS NOT DISTINCT FROM v_org) THEN
+        RAISE EXCEPTION 'dict name already exists' USING ERRCODE = '23505';
+    END IF;
     INSERT INTO dict_type (organization_id, tenant_id, dict_name, dict_label, sort_no, created_by)
     VALUES (v_org, current_logto_tenant_id(), trim(p_dict_name), trim(p_dict_label), COALESCE(p_sort_no, 0), current_user_id())
     RETURNING id INTO v_id;

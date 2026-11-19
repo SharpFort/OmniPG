@@ -5,4 +5,4 @@
 DROP TRIGGER IF EXISTS trg_audit_role_menu ON iam_role_menu;
 CREATE TRIGGER trg_audit_role_menu
     AFTER INSERT OR UPDATE OR DELETE ON iam_role_menu
-    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func('tenant_aware');

@@ -16,8 +16,12 @@ BEGIN
         RAISE EXCEPTION 'user_profile.user_id cannot be null' USING ERRCODE = '23502';
     END IF;
     IF NEW.organization_id IS NOT NULL THEN
+        -- FOR KEY SHARE（2026-11-19 修复 TOCTOU）：锁定成员关系行直至本事务提交，
+        -- 并发的成员移除（organization_user_relations 删除）会阻塞等待，
+        -- 消除"校验通过后成员被移除、档案成为孤儿归属"的竞态
         IF NOT EXISTS (SELECT 1 FROM platform.user_tenants
-                       WHERE user_id = NEW.user_id AND organization_id = NEW.organization_id) THEN
+                       WHERE user_id = NEW.user_id AND organization_id = NEW.organization_id
+                       FOR KEY SHARE) THEN
             RAISE EXCEPTION 'user % is not a member of organization %', NEW.user_id, NEW.organization_id
                 USING ERRCODE = '23503';
         END IF;
@@ -43,7 +47,8 @@ BEGIN
         RAISE EXCEPTION 'user_position.user_id/organization_id cannot be null' USING ERRCODE = '23502';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM platform.user_tenants
-                   WHERE user_id = NEW.user_id AND organization_id = NEW.organization_id) THEN
+                   WHERE user_id = NEW.user_id AND organization_id = NEW.organization_id
+                   FOR KEY SHARE) THEN
         RAISE EXCEPTION 'user % is not a member of organization %', NEW.user_id, NEW.organization_id
             USING ERRCODE = '23503';
     END IF;

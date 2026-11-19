@@ -3,7 +3,9 @@
 -- 回放终态: 021_cron_rpc_geolite2.sql；幂等写法（§9 模板）
 
 CREATE OR REPLACE FUNCTION ip2region(ip inet) RETURNS text
-LANGUAGE sql IMMUTABLE STRICT
+-- STABLE（2026-11-19 修正）：函数做表查询（ip_region_v4），结果随表数据变化——
+-- IMMUTABLE 会被规划器常量折叠/用于索引表达式，违反语义
+LANGUAGE sql STABLE STRICT
 SET search_path = platform, ext, pg_temp
 AS $$
     SELECT country

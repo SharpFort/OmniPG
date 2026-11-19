@@ -24,10 +24,12 @@ BEGIN
         'start_date', v_start,
         'end_date', v_end,
         'items', COALESCE(
-            (SELECT json_agg(row_to_json(t.*) ORDER BY t.log_date DESC)
+            (SELECT json_agg(row_to_json(t.*) ORDER BY t.log_date DESC, t.change_count DESC, t.table_name, t.operation)
              FROM (
                  SELECT * FROM api_v1_platform.v_audit_log_timeline
                  WHERE log_date >= v_start AND log_date <= v_end
+             -- 先排序后截断（2026-11-19 修复）：原 LIMIT 施加在无序子查询上，截掉哪部分不确定
+             ORDER BY log_date DESC, change_count DESC
              LIMIT LEAST(COALESCE(p_limit, 200), 2000)
              ) t),
             '[]'::json

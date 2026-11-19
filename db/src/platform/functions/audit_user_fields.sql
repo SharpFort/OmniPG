@@ -17,11 +17,25 @@ CREATE OR REPLACE FUNCTION audit_user_fields()
 RETURNS TRIGGER AS $$
 BEGIN
     IF (TG_OP = 'INSERT') THEN
-        NEW.created_by := current_user_id();
+        -- 列存在性守卫（2026-11-19 修补）：绑定了 created_by 但无 updated_by 的表
+        -- 直接赋值会抛 42703（record "new" has no field）导致整表 DML 失败
+        IF EXISTS (SELECT 1 FROM pg_attribute
+                   WHERE attrelid = TG_RELID AND attname = 'created_by' AND NOT attisdropped) THEN
+            NEW.created_by := current_user_id();
+        END IF;
+        -- INSERT 时归一 updated_by（2026-11-19 修复）：调用方显式传入的值不再原样落库
+        IF EXISTS (SELECT 1 FROM pg_attribute
+                   WHERE attrelid = TG_RELID AND attname = 'updated_by' AND NOT attisdropped) THEN
+            NEW.updated_by := current_user_id();
+        END IF;
     ELSIF (TG_OP = 'UPDATE') THEN
         -- 审计防篡改：created_by 必须保持原有创建人，禁止被后续 UPDATE 覆写伪造
         NEW.created_by := OLD.created_by;
         NEW.updated_by := current_user_id();
+    ELSE
+        -- 防御（2026-11-19）：误绑 DELETE/TRUNCATE 时 NEW 为 NULL，隐式返回 NULL 会
+        -- 静默取消整条 DML——显式报错暴露误用
+        RAISE EXCEPTION 'audit_user_fields() only supports INSERT/UPDATE, got %', TG_OP;
     END IF;
     RETURN NEW;
 END;

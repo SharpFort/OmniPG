@@ -22,11 +22,9 @@ BEGIN
     v_region := ip2region(ip);
 
     -- ② GeoLite2 兜底（IPv4 未命中 或 IPv6）
-    BEGIN
-        v_cidr := ip::cidr;   -- inet → cidr（/32 或 /128）
-    EXCEPTION WHEN OTHERS THEN
-        RETURN NULL;
-    END;
+    -- inet→cidr 对合法 inet 恒不报错（仅清零主机位），原 EXCEPTION 块为死代码，
+    -- 徒增 plpgsql 子事务开销（2026-11-19 清理）
+    v_cidr := ip::cidr;
 
     SELECT g.latitude, g.longitude, g.timezone, g.country_name, g.city_name
       INTO v_lat, v_lon, v_tz, v_country, v_city

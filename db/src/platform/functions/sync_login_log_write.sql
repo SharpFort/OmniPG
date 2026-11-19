@@ -24,8 +24,12 @@ BEGIN
         v_ip := NULL;
     END;
 
+    -- identities 为 JSON null/非对象时按"无身份信息"处理（2026-11-19 修补）：
+    -- 原 COALESCE 不替换 JSON null 标量，jsonb_each_text 会抛 22023
     SELECT key INTO v_login_type
-    FROM jsonb_each_text(COALESCE(payload->'user'->'identities', '{}'::jsonb))
+    FROM jsonb_each_text(
+        CASE WHEN jsonb_typeof(payload->'user'->'identities') = 'object'
+             THEN payload->'user'->'identities' ELSE '{}'::jsonb END)
     LIMIT 1;
 
     INSERT INTO login_log
@@ -40,10 +44,9 @@ BEGIN
         (COALESCE(NULLIF(payload->>'tenantId', ''), current_logto_tenant_id()), NULL,
          v_user_id, v_username, COALESCE(v_login_type, 'unknown'), 'success',
          v_ip, v_agent, ip2region(v_ip), 'PostSignIn', COALESCE(v_ts, now()));
-EXCEPTION WHEN OTHERS THEN
-    -- 故障容忍保留（webhook 不因日志失败而中断重试），但不再静默：
-    -- RAISE WARNING 留下服务端日志线索（2026-11-19 修复"吞错无痕"）
-    RAISE WARNING 'sync_login_log_write failed: % (payload userId=%)', SQLERRM, v_user_id;
+-- 2026-11-19 修补：移除函数级 EXCEPTION 吞错——本函数唯一的调用方
+-- rpc_webhook_logto 在 PostSignIn 分支自行捕获并置 degraded（容错在调用方维护）；
+-- 若此处再吞错，v_failed 永不置位、degraded 恒为假，回放校验形同虚设
 END;
 $$;
 REVOKE EXECUTE ON FUNCTION sync_login_log_write(jsonb) FROM PUBLIC;

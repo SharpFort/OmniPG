@@ -3,7 +3,9 @@
 -- 回放终态: 010_logto_webhook_rpc.sql；幂等写法（§9 模板）
 
 CREATE OR REPLACE FUNCTION logto_ts(v text) RETURNS timestamptz
-LANGUAGE plpgsql IMMUTABLE AS $$
+-- STABLE（2026-11-19 修正）：ISO 字符串分支依赖会话 TimeZone/DateStyle，
+-- 同一输入可随会话设置返回不同结果，不满足 IMMUTABLE
+LANGUAGE plpgsql STABLE AS $$
 BEGIN
     IF v IS NULL OR v = '' THEN RETURN NULL; END IF;
     IF v ~ '^[0-9]+$' THEN

@@ -47,22 +47,21 @@ BEGIN
         UPDATE webhook_event_log SET result = 'success' WHERE id = v_log_id;
     END IF;
 
-    RETURN jsonb_build_object('ok', true);
+    -- ok 仅为"传输成功"标记（避免 Logto 端重试风暴造成双写）；
+    -- degraded 标记 PostSignIn 日志写入失败，ignored 标记非登录事件未处理，
+    -- 供 rpc_replay_webhook_event 区分真实处理结果（2026-11-19 修补）
+    RETURN jsonb_build_object('ok', true, 'degraded', v_failed, 'ignored', v_event IS DISTINCT FROM 'PostSignIn');
 EXCEPTION WHEN OTHERS THEN
     BEGIN
-        UPDATE webhook_event_log
-           SET result = 'error', error = SQLERRM
-         WHERE id = (SELECT id FROM webhook_event_log
-                     WHERE payload = $1 AND result = 'received'
-                     ORDER BY created_at DESC LIMIT 1);
-        IF NOT FOUND THEN
-            INSERT INTO webhook_event_log (hook_id, event, logto_created, payload, result, error)
-            VALUES ($1->>'hookId', $1->>'event', logto_ts($1->>'createdAt'), $1, 'error', SQLERRM);
-        END IF;
+        -- 外层异常会回滚函数体内全部写入（含 :19 的事件行 INSERT）——v_log_id 已失效，
+        -- 不能按其 UPDATE（2026-11-19 修补），必须重新插入一条 error 记录
+        INSERT INTO webhook_event_log (hook_id, event, logto_created, payload, result, error)
+        VALUES ($1->>'hookId', v_event, logto_ts($1->>'createdAt'), $1, 'error', SQLERRM);
     EXCEPTION WHEN OTHERS THEN
         NULL;
     END;
-    RETURN jsonb_build_object('ok', false, 'error', SQLERRM);
+    -- SQLERRM 不再返回给调用方（web_anon，S-C22）：详细信息只入 webhook_event_log.error
+    RETURN jsonb_build_object('ok', false, 'error', 'internal error');
 END;
 $$;
 GRANT EXECUTE ON FUNCTION api_v1_platform.webhook_logto(jsonb) TO web_anon;

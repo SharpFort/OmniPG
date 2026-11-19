@@ -29,12 +29,16 @@ BEGIN
     WHERE s.scope_type = 'dept_and_child'
       AND (d.id = current_user_dept_id() OR d.id IN (
           WITH RECURSIVE subtree AS (
-              SELECT id FROM department WHERE id = current_user_dept_id()
-              UNION ALL
-              SELECT c.id FROM department c
-              JOIN subtree p ON c.parent_id = p.id
-          )
-          SELECT id FROM subtree));
+               -- 环保护说明（2026-11-19 修补注释）：真正的环防护是深度上限——
+               -- UNION 去重键含 depth 列，同一节点在不同深度仍是不同行、并不能终止成环；
+               -- UNION 仅用于去重合法的重复可达路径。深度上限保证最坏情况有界
+               SELECT id, 1 AS depth FROM department WHERE id = current_user_dept_id()
+               UNION
+               SELECT c.id, p.depth + 1 FROM department c
+               JOIN subtree p ON c.parent_id = p.id
+               WHERE p.depth < 100
+           )
+           SELECT id FROM subtree));
 END;
 $$;
 GRANT EXECUTE ON FUNCTION current_visible_dept_ids() TO authenticated;

@@ -21,8 +21,11 @@ FROM iam_role_menu rm
 LEFT JOIN platform.role r ON r.id = rm.role_id
 LEFT JOIN platform.tenant_role tr ON tr.id = rm.org_role_id
 JOIN iam_menu m ON rm.menu_id = m.id
-WHERE m.is_active AND m.api_url IS NOT NULL
-UNION ALL
+WHERE m.is_active AND m.api_url IS NOT NULL AND m.api_url <> ''
+  AND m.api_method IS NOT NULL
+  -- 无主体的策略行非法（2026-11-19 修复）：角色回卷失败（孤儿绑定）不再产出 NULL v0
+  AND COALESCE(r.role_code, tr.name) IS NOT NULL
+UNION
 -- 菜单段（原样保留：role_menu → router/'menu'）
 SELECT
     NULL::integer AS id,
@@ -37,7 +40,11 @@ FROM iam_role_menu rm
 LEFT JOIN platform.role r ON r.id = rm.role_id
 LEFT JOIN platform.tenant_role tr ON tr.id = rm.org_role_id
 JOIN iam_menu m ON rm.menu_id = m.id
-WHERE m.is_active;
+WHERE m.is_active
+  -- button 行 router 为 NULL、目录行 router 可能为空串（2026-11-19 修复）：
+  -- 原样投影会产出 p,role,NULL,menu 的非法策略；主体回卷失败的孤儿绑定同理过滤
+  AND m.router IS NOT NULL AND m.router <> ''
+  AND COALESCE(r.role_code, tr.name) IS NOT NULL;
 
 COMMENT ON VIEW casbin_rule IS 'Casbin 策略运行视图（055 双段）：API 段 = role_menu→button 行端点（v1=api_url, v2=api_method）+ 菜单段 = role_menu→router（v2=menu）原样保留；D26 按 role_id/org_role_id 回卷 role_code';
 COMMENT ON COLUMN casbin_rule.v0 IS '策略主体：角色代码（role_code，由 role_id/org_role_id 回卷）';

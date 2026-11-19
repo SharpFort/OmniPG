@@ -7,12 +7,13 @@
 -- 使用说明：建表时按需复制对应模板的字段代码块。
 --
 -- 重要提示：
---   1. 模板中的 _by 字段（created_by/updated_by/deleted_by）定义为普通 UUID，
+--   1. 模板中的 _by 字段（created_by/updated_by/deleted_by）定义为 TEXT（v4.5 对齐 Logto
+--       用户 id：21 位 nanoid，非 UUID；platform.users.id / audit_user_fields() 均为 TEXT），
 --       不强制外键约束（避免循环引用问题，特别是 tenants 镜像表（T7））
---   2. 如需外键约束，建议在表创建后通过 ALTER TABLE 单独添加
---   3. 所有模板中的索引使用 PostgreSQL 标准写法（CREATE INDEX），非内联索引
---   4. _by 字段推荐使用 UUID v7（时间有序），可通过 is_uuid_v7() 函数验证
---       如需严格验证，请取消注释对应的 CHECK 约束行
+--       如需外键约束，建议在表创建后通过 ALTER TABLE 单独添加
+--   2. 所有模板中的索引使用 PostgreSQL 标准写法（CREATE INDEX），非内联索引
+--   3. is_uuid_v7() 校验仅适用于 uuid 主键列，不适用于 _by 文本列
+--   4. _by 字段的填充统一交给 audit_user_fields() 触发器（无 JWT 上下文时置 NULL）
 -- =============================================================================
 
 -- =============================================================================
@@ -38,9 +39,8 @@
 /*
     -- 审计字段：创建者用户 ID（NULL 表示系统/匿名创建）
     -- 注意：不强制外键约束，避免循环引用
-    -- 可选：如需强制 UUID v7 格式，请取消注释下一行
-    -- CHECK (created_by IS NULL OR is_uuid_v7(created_by)),
-    created_by UUID,
+    -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（面向 uuid 主键）
+    created_by TEXT,
 */
 
 -- =============================================================================
@@ -53,7 +53,7 @@
 /*
     -- 审计字段：创建者 + 创建时间
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID,  -- 可选: CHECK (created_by IS NULL OR is_uuid_v7(created_by)),
+    created_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
 */
 
 -- =============================================================================
@@ -78,7 +78,7 @@
 /*
     -- 审计字段：最后修改时间 + 最后修改者
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by UUID,  -- 可选: CHECK (updated_by IS NULL OR is_uuid_v7(updated_by)),
+    updated_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     -- 注释：updated_at 由 update_updated_at() 触发器自动维护
     -- 注释：updated_by 由应用层或 audit_user_fields() 触发器填充
 */
@@ -93,9 +93,9 @@
 /*
     -- 审计字段：创建 + 修改
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID,  -- 可选: CHECK (created_by IS NULL OR is_uuid_v7(created_by)),
+    created_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by UUID,  -- 可选: CHECK (updated_by IS NULL OR is_uuid_v7(updated_by)),
+    updated_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     -- 注释：updated_at 由 update_updated_at() 触发器自动维护
     -- 注释：updated_by 由应用层或 audit_user_fields() 触发器填充
 */
@@ -133,7 +133,7 @@
 -- =============================================================================
 -- 【模板 9】接口 IDeletionAuditedObject
 -- 性质：IsDeleted, DeletionTime, DeleterId（继承 8 + 新增）
--- PostgreSQL 实现：deleted_at TIMESTAMPTZ, deleted_by UUID
+-- PostgreSQL 实现：deleted_at TIMESTAMPTZ, deleted_by TEXT
 -- 适用：需要完整删除审计的实体（删除标记+时间+删除者）
 -- PostgreSQL 字段：deleted_at, deleted_by
 -- =============================================================================
@@ -141,7 +141,7 @@
 /*
     -- 审计字段：完整删除审计
     deleted_at TIMESTAMPTZ,
-    deleted_by UUID,  -- 可选: CHECK (deleted_by IS NULL OR is_uuid_v7(deleted_by)),
+    deleted_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     -- 注释：deleted_at = 删除时间（NULL=未删除）
     -- 注释：deleted_by = 执行删除操作的用户 ID
     -- 注释：deleted_by 由应用层或 audit_deletion_user() 触发器填充
@@ -159,11 +159,11 @@
 /*
     -- 审计字段：完整审计（创建 + 修改 + 软删除）
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    created_by UUID,  -- 可选: CHECK (created_by IS NULL OR is_uuid_v7(created_by)),
+    created_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by UUID,  -- 可选: CHECK (updated_by IS NULL OR is_uuid_v7(updated_by)),
+    updated_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     deleted_at TIMESTAMPTZ,
-    deleted_by UUID,  -- 可选: CHECK (deleted_by IS NULL OR is_uuid_v7(deleted_by)),
+    deleted_by TEXT,  -- 注意：Logto 用户 id 为 TEXT（21 位 nanoid），is_uuid_v7 校验不适用（该函数面向 uuid 主键）
     -- 注释：created_at = 创建时间，不可变
     -- 注释：created_by = 创建者（NULL=系统创建）
     -- 注释：updated_at = 最后修改时间（触发器自动维护）
@@ -204,12 +204,15 @@ CREATE TRIGGER trg_<表名>_audit_created_at
     FOR EACH ROW EXECUTE FUNCTION audit_created_at();
 */
 
--- 5. UUID v7 严格验证（可选，按需启用）
+-- 5. _by 文本列格式校验（可选，按需启用）
+--    Logto 用户 id 为 21 位 nanoid 文本，is_uuid_v7()（面向 uuid 主键）不适用；
+--    如需底线校验可限制长度（nanoid=21）：
 /*
-ALTER TABLE <表名> ADD CONSTRAINT chk_<表名>_created_by_uuid7
-    CHECK (created_by IS NULL OR is_uuid_v7(created_by));
-ALTER TABLE <表名> ADD CONSTRAINT chk_<表名>_updated_by_uuid7
-    CHECK (updated_by IS NULL OR is_uuid_v7(updated_by));
-ALTER TABLE <表名> ADD CONSTRAINT chk_<表名>_deleted_by_uuid7
-    CHECK (deleted_by IS NULL OR is_uuid_v7(deleted_by));
+ALTER TABLE <表名> ADD CONSTRAINT chk_<表名>_created_by_len
+    CHECK (created_by IS NULL OR length(created_by) = 21);
+*/
+--    uuid 主键列（如 id uuid）如需 UUID v7 校验仍可用：
+/*
+ALTER TABLE <表名> ADD CONSTRAINT chk_<表名>_id_uuid7
+    CHECK (id IS NULL OR is_uuid_v7(id));
 */

@@ -12,9 +12,10 @@ SELECT
     l.payload->>'userIp' AS ip,
     l.payload->>'userAgent' AS user_agent,
     l.payload->>'createdAt' AS logto_created_at,
-    l.payload->'application'->>'id' AS application_id,
-    l.payload->>'result' AS result,
     l.created_at AS created_at
+    -- 2026-11-19 修复：移除 payload->'application'->>'id' 与 payload->>'result'——
+    -- PostSignIn TriggerHook 载荷为扁平结构（无嵌套 application、无 result 键），
+    -- 原两列恒为 NULL，误导排查（与 sync_login_log_write 实际消费的键位对齐）
 FROM public.logs l
 WHERE l.key = 'TriggerHook.PostSignIn';
 GRANT SELECT ON platform.v_logto_login_events TO app_owner;
