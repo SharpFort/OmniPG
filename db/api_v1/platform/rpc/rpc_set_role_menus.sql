@@ -18,13 +18,25 @@ BEGIN
     IF v_role_id IS NULL AND v_org_role_id IS NULL THEN
         RAISE EXCEPTION 'role not found' USING ERRCODE = 'P0002';
     END IF;
+    -- 菜单 id 必须属于当前租户：否则可把其他租户的菜单挂进本租户绑定，
+    -- has_permission 的 JOIN（iam_menu m ON m.id = rm.menu_id，无租户过滤）会借道解析越权 api_code
+    IF p_menu_ids IS NOT NULL AND EXISTS (
+        SELECT 1 FROM unnest(p_menu_ids) AS g
+        WHERE NOT EXISTS (SELECT 1 FROM iam_menu m
+                          WHERE m.id = g AND m.tenant_id = current_logto_tenant_id())
+    ) THEN
+        RAISE EXCEPTION 'one or more menus not found in tenant' USING ERRCODE = 'P0002';
+    END IF;
     DELETE FROM iam_role_menu
     WHERE role_id IS NOT DISTINCT FROM v_role_id
-      AND org_role_id IS NOT DISTINCT FROM v_org_role_id;
+      AND org_role_id IS NOT DISTINCT FROM v_org_role_id
+      AND tenant_id = current_logto_tenant_id();
     IF p_menu_ids IS NOT NULL THEN
-        INSERT INTO iam_role_menu (role_id, org_role_id, menu_id, created_by)
-        SELECT v_role_id, v_org_role_id, g, current_user_id()
-        FROM unnest(p_menu_ids) AS g
+        INSERT INTO iam_role_menu (role_id, org_role_id, menu_id, tenant_id, created_by)
+        SELECT v_role_id, v_org_role_id, g, current_logto_tenant_id(), current_user_id()
+        -- DISTINCT 去重：iam_role_menu 唯一索引存在 NULLS DISTINCT 缺陷（068:168，待 075+
+        -- 迁移改为 NULLS NOT DISTINCT），ON CONFLICT 实际不触发，同批重复 id 会落重复行
+        FROM (SELECT DISTINCT u AS g FROM unnest(p_menu_ids) AS u) AS g
         ON CONFLICT (role_id, org_role_id, menu_id) DO NOTHING;
     END IF;
     PERFORM log_operate('role', 'bind-menus', 'role', p_role_code,

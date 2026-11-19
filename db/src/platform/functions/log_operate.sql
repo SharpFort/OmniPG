@@ -17,3 +17,8 @@ BEGIN
          p_detail, current_user_id(), current_logto_tenant_id(), current_organization_id(), now());
 END;
 $$;
+
+-- 权限收口：本函数为 SECURITY DEFINER 且直写 append-only 审计表，
+-- 不得保持 PostgreSQL 默认的 PUBLIC EXECUTE（否则任意会话可伪造审计记录）。
+-- 仅由业务函数（DEFINER，以 owner 身份）内部调用，无需授予 API 登录角色。
+REVOKE EXECUTE ON FUNCTION log_operate(text, text, text, text, text, jsonb) FROM PUBLIC;

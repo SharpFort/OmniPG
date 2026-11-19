@@ -17,7 +17,9 @@ USING (
 )
 WITH CHECK (
     is_super_admin()
-    OR user_id = current_user_id()
+    OR (user_id = current_user_id()
+        AND tenant_id = current_logto_tenant_id()
+        AND (organization_id IS NULL OR organization_id = current_organization_id()))
 );
 
 -- =============================================================================
@@ -28,9 +30,11 @@ ALTER TABLE department ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS dept_tenant_isolation_policy ON department;
 -- 必须 PERMISSIVE：本表无其他 permissive 策略，RESTRICTIVE 会与"无策略=默认拒绝"做 AND，
 -- 等价于对 authenticated 全拒绝（get_dept_tree 恒返回空）
+-- is_super_admin 旁路（2026-11-19 补丁）：与 audit_log/dict/login 系策略语义统一——
+-- 否则 department 视图 INVOKER 化后超管反而只能看到自己租户/组织的行
 CREATE POLICY dept_tenant_isolation_policy ON department
-USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
-WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
+USING (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()))
+WITH CHECK (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()));
 
 -- =============================================================================
 -- iam_menu 自主表：按 Logto 租户系统级共享
@@ -38,9 +42,11 @@ WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_
 ALTER TABLE iam_menu ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS menu_read_policy ON iam_menu;
+-- is_super_admin 旁路：管理树（get_menu_tree_admin）需展示停用菜单；
+-- 普通用户仅见本租户激活菜单
 CREATE POLICY menu_read_policy ON iam_menu
 FOR SELECT
-USING (is_active = TRUE AND tenant_id = current_logto_tenant_id());
+USING (is_super_admin() OR (is_active = TRUE AND tenant_id = current_logto_tenant_id()));
 
 -- =============================================================================
 -- iam_role_menu 自主表：按 Logto 租户系统级共享读
@@ -118,10 +124,10 @@ USING (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organizati
 ALTER TABLE position ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS position_tenant_isolation_policy ON position;
--- 同 department：必须 PERMISSIVE，否则 authenticated 全拒绝
+-- 同 department：必须 PERMISSIVE；is_super_admin 旁路与其他策略语义统一（2026-11-19 补丁）
 CREATE POLICY position_tenant_isolation_policy ON platform.position
-USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
-WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
+USING (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()))
+WITH CHECK (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()));
 
 -- =============================================================================
 -- iam_role_data_scope 表
@@ -138,10 +144,10 @@ FOR SELECT USING (tenant_id = current_logto_tenant_id());
 ALTER TABLE user_position ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS user_position_tenant_isolation_policy ON user_position;
--- 同 department：必须 PERMISSIVE，否则 authenticated 全拒绝
+-- 同 department：必须 PERMISSIVE；is_super_admin 旁路与其他策略语义统一（2026-11-19 补丁）
 CREATE POLICY user_position_tenant_isolation_policy ON platform.user_position
-USING (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id())
-WITH CHECK (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id());
+USING (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()))
+WITH CHECK (is_super_admin() OR (tenant_id = current_logto_tenant_id() AND organization_id = current_organization_id()));
 
 -- =============================================================================
 -- webhook_event_log 表（仅超管）
@@ -152,3 +158,16 @@ DROP POLICY IF EXISTS webhook_event_log_select_policy ON webhook_event_log;
 CREATE POLICY webhook_event_log_select_policy ON webhook_event_log
 FOR SELECT
 USING (is_super_admin());
+
+-- =============================================================================
+-- cron_job_log 表：pg_cron 执行日志（api_v1_platform.cron_job_log 视图已改
+-- security_invoker，本策略为其提供行级边界）
+-- =============================================================================
+ALTER TABLE cron_job_log ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS cron_job_log_read_policy ON cron_job_log;
+CREATE POLICY cron_job_log_read_policy ON platform.cron_job_log
+FOR SELECT
+USING (is_super_admin()
+       OR (tenant_id = current_logto_tenant_id()
+           AND (organization_id IS NULL OR organization_id = current_organization_id())));

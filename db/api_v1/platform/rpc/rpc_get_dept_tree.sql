@@ -20,7 +20,9 @@ BEGIN
             ARRAY[d.dept_name::text] AS path_names
         FROM platform.department d
         WHERE d.parent_id IS NULL AND d.deleted_at IS NULL
-          AND (p_organization_id IS NULL OR d.organization_id = p_organization_id)
+          -- 统一使用 v_org（COALESCE(p_organization_id, current_organization_id())）：
+          -- 参数缺省时回落当前组织，避免裸参数过滤导致全组织树越权可见
+          AND d.organization_id = v_org
           AND d.tenant_id = current_logto_tenant_id()
 
         UNION ALL

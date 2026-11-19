@@ -21,18 +21,20 @@ BEGIN
     END IF;
 
     SELECT ARRAY(SELECT jsonb_array_elements_text(
-                    current_setting('request.jwt.claims', true)::jsonb->'roles'))
+                    NULLIF(current_setting('request.jwt.claims', true), '')::jsonb->'roles'))
       INTO v_roles;
 
     IF v_roles IS NULL OR cardinality(v_roles) = 0 THEN
         RETURN jsonb_build_object('scope_type', 'self', 'dept_ids', '[]'::jsonb);
     END IF;
 
-    -- D26: 角色名 → Logto 角色标识
+    -- D26: 角色名 → Logto 角色标识（限定当前租户范围，对齐 resolve_role_ident 的租户过滤）
     SELECT ARRAY(SELECT r.id FROM platform.role r
-                 WHERE r.name = ANY(v_roles)) INTO v_role_ids;
+                 WHERE r.name = ANY(v_roles)
+                   AND r.tenant_id = current_logto_tenant_id()) INTO v_role_ids;
     SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
-                 WHERE tr.name = ANY(v_roles)) INTO v_org_role_ids;
+                 WHERE tr.name = ANY(v_roles)
+                   AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
 
     -- 多角色取最宽: all > dept_and_child > custom > self（RuoYi 同语义）
     SELECT jsonb_build_object(

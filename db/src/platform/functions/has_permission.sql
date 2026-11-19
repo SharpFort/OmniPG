@@ -29,7 +29,8 @@ BEGIN
 
     -- D26: 角色名 → Logto 角色标识（强制锁定当前租户范围，消除跨租户角色 ID 碰撞）
     SELECT ARRAY(SELECT r.id FROM platform.role r
-                 WHERE r.name = ANY(v_roles)) INTO v_role_ids;
+                 WHERE r.name = ANY(v_roles)
+                   AND r.tenant_id = current_logto_tenant_id()) INTO v_role_ids;
     SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
                  WHERE tr.name = ANY(v_roles) AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
 
@@ -40,6 +41,7 @@ BEGIN
         JOIN iam_menu m ON m.id = rm.menu_id
         WHERE (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
           AND rm.tenant_id = current_logto_tenant_id()
+          AND m.tenant_id = current_logto_tenant_id()
           AND m.api_code = p_code
           AND m.is_active
     );

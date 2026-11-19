@@ -22,8 +22,9 @@ BEGIN
     END IF;
     v_org := NULLIF(v_claims->>'organization_id', '');
     IF v_org IS NOT NULL THEN
-        INSERT INTO user_profile (user_id, organization_id, deleted_at)
-        VALUES (v_sub, v_org, NULL)
+        -- tenant_id 显式取当前租户（不再依赖列默认 'default'，杜绝跨租户误归因）
+        INSERT INTO user_profile (user_id, organization_id, tenant_id, deleted_at)
+        VALUES (v_sub, v_org, current_logto_tenant_id(), NULL)
         ON CONFLICT (user_id) DO NOTHING;
     END IF;
     RETURN v_sub;

@@ -18,6 +18,29 @@ BEGIN
     IF p_parent_id = p_id THEN
         RAISE EXCEPTION 'parent cannot be self' USING ERRCODE = '22023';
     END IF;
+    -- 新父必须存在、属于当前组织/租户且未软删除（与 create 路径同等校验，堵住 COALESCE 更新旁路）
+    IF p_parent_id IS NOT NULL THEN
+        IF NOT EXISTS (SELECT 1 FROM position
+                       WHERE id = p_parent_id
+                         AND organization_id = current_organization_id()
+                         AND tenant_id = current_logto_tenant_id()
+                         AND deleted_at IS NULL) THEN
+            RAISE EXCEPTION 'parent position not found in organization' USING ERRCODE = 'P0002';
+        END IF;
+        -- 防环：新父不得位于本岗位子树内（深度上限防既有脏环导致递归失控）
+        IF EXISTS (
+            WITH RECURSIVE sub AS (
+                SELECT id, 1 AS depth FROM position WHERE id = p_id
+                UNION ALL
+                SELECT p.id, s.depth + 1
+                FROM position p JOIN sub s ON p.parent_id = s.id
+                WHERE s.depth < 100
+            )
+            SELECT 1 FROM sub WHERE id = p_parent_id
+        ) THEN
+            RAISE EXCEPTION 'parent cannot be a descendant of the position' USING ERRCODE = '22023';
+        END IF;
+    END IF;
     UPDATE position SET
         parent_id  = COALESCE(p_parent_id, parent_id),
         pos_name   = COALESCE(p_pos_name, pos_name),

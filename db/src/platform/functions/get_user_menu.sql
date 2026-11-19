@@ -40,7 +40,8 @@ BEGIN
 
     -- D26: JWT 角色名 → Logto 角色标识（限定当前租户范围）
     SELECT ARRAY(SELECT r.id FROM platform.role r
-                 WHERE r.name = ANY(v_roles_arr)) INTO v_role_ids;
+                 WHERE r.name = ANY(v_roles_arr)
+                   AND r.tenant_id = current_logto_tenant_id()) INTO v_role_ids;
     SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
                  WHERE tr.name = ANY(v_roles_arr)
                    AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
@@ -53,6 +54,7 @@ BEGIN
             m.is_affix
         FROM iam_menu m
         WHERE m.parent_id IS NULL AND m.is_active
+          AND m.tenant_id = current_logto_tenant_id()
           AND EXISTS (SELECT 1 FROM iam_role_menu rm
                       WHERE rm.menu_id = m.id
                         AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
@@ -68,6 +70,7 @@ BEGIN
         FROM iam_menu m
         JOIN menu_cte c ON m.parent_id = c.id
         WHERE m.is_active
+          AND m.tenant_id = current_logto_tenant_id()
           AND EXISTS (SELECT 1 FROM iam_role_menu rm
                       WHERE rm.menu_id = m.id
                         AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))

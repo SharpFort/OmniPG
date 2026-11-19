@@ -9,11 +9,15 @@ BEGIN
     IF NOT has_permission('platform:menu:delete') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
-    IF EXISTS (SELECT 1 FROM iam_menu WHERE parent_id = p_id) THEN
+    IF EXISTS (SELECT 1 FROM iam_menu WHERE parent_id = p_id AND tenant_id = current_logto_tenant_id()) THEN
         RAISE EXCEPTION 'has children, cannot delete' USING ERRCODE = '23503';
     END IF;
+    -- 存在性与删除均限定当前租户（DEFINER 绕过 RLS，须自带租户边界）
+    IF NOT EXISTS (SELECT 1 FROM iam_menu WHERE id = p_id AND tenant_id = current_logto_tenant_id()) THEN
+        RAISE EXCEPTION 'menu not found' USING ERRCODE = 'P0002';
+    END IF;
     DELETE FROM iam_role_menu WHERE menu_id = p_id;
-    DELETE FROM iam_menu WHERE id = p_id;
+    DELETE FROM iam_menu WHERE id = p_id AND tenant_id = current_logto_tenant_id();
     PERFORM log_operate('menu', 'delete', 'iam_menu', p_id::text);
     RETURN json_build_object('ok', true);
 END $$;

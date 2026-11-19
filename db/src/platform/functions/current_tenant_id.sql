@@ -7,6 +7,6 @@ CREATE OR REPLACE FUNCTION current_tenant_id()
 RETURNS text AS $$
     SELECT NULLIF(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb->>'organization_id', '')
 $$ LANGUAGE sql STABLE PARALLEL SAFE
-SECURITY DEFINER
-SET search_path = platform, ext, pg_temp;
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp;
 COMMENT ON FUNCTION current_tenant_id() IS '当前业务组织（Logto Organization）ID；保留名兼容历史代码，D27 后请优先使用 current_organization_id()';

@@ -12,7 +12,10 @@ AS $$
         '{}'::json
     )
     FROM platform.app_config
-    WHERE is_public = TRUE;
+    WHERE is_public = TRUE
+      -- 租户边界：公开配置仅暴露当前租户（DEFINER 绕过 RLS，须自带过滤；
+      -- web_anon 无 claims → current_logto_tenant_id() = 'default'，与前端初始化契约一致）
+      AND tenant_id = current_logto_tenant_id();
 $$;
 COMMENT ON FUNCTION api_v1_platform.get_all_public_configs() IS '获取所有公开配置（前端初始化）';
 GRANT EXECUTE ON FUNCTION api_v1_platform.get_all_public_configs() TO authenticated;

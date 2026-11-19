@@ -42,7 +42,8 @@ BEGIN
         INSERT INTO user_position (user_id, position_id, organization_id, tenant_id, is_primary, created_by)
         SELECT p_user_id, g, v_org, current_logto_tenant_id(),
                COALESCE(g = p_primary_position_id, false), current_user_id()
-        FROM unnest(p_position_ids) AS g;
+        -- DISTINCT 去重：重复 id 直接撞 user_position_pkey(23505) 导致整调用失败
+        FROM (SELECT DISTINCT u AS g FROM unnest(p_position_ids) AS u) AS g;
     END IF;
     PERFORM log_operate('position', 'assign', 'user_position', p_user_id,
                         'success', jsonb_build_object('positions', p_position_ids));

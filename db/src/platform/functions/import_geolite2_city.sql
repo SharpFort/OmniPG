@@ -28,4 +28,6 @@ BEGIN
 END;
 $$;
 REVOKE ALL ON FUNCTION import_geolite2_city() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION import_geolite2_city() TO role_super_admin;
+-- PostgREST 运行时按 JWT .pg_role 切换到 super_admin（init-logto 映射 role_super_admin→super_admin）；
+-- 此前误授 role_super_admin（nologin 组角色，无人继承其 EXECUTE），导致 Web 超管路径实际不可用
+GRANT EXECUTE ON FUNCTION import_geolite2_city() TO super_admin;

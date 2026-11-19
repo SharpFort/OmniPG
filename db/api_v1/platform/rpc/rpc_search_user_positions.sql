@@ -43,7 +43,6 @@ BEGIN
              JOIN tree t ON t.id = up.position_id
              WHERE (p_user_id IS NULL OR up.user_id = p_user_id)
                AND (p_query IS NULL OR u.username ILIKE '%' || p_query || '%'
-                    OR u.primary_email ILIKE '%' || p_query || '%'
                     OR u.name ILIKE '%' || p_query || '%')
                AND (p_position_name IS NULL OR t.pos_name ILIKE '%' || p_position_name || '%'
                     OR t.path_name ILIKE '%' || p_position_name || '%')), 0),
@@ -54,7 +53,9 @@ BEGIN
              FROM (
                  SELECT up.user_id, up.position_id, up.tenant_id, up.organization_id,
                         up.is_primary, up.created_at, up.created_by,
-                        u.username, u.primary_email AS email, u.name AS user_name,
+                        -- 2026-11-19 安全修复：移除 primary_email 输出（position:list 档位不足以授权邮箱 PII；
+                        -- 如前端确需展示，应升级权限码后再恢复）
+                        u.username, u.name AS user_name,
                         t.pos_name, t.path_name,
                         cu.username AS created_by_username
                  FROM user_position up
@@ -63,7 +64,6 @@ BEGIN
                  LEFT JOIN users cu ON cu.id = up.created_by
                  WHERE (p_user_id IS NULL OR up.user_id = p_user_id)
                    AND (p_query IS NULL OR u.username ILIKE '%' || p_query || '%'
-                        OR u.primary_email ILIKE '%' || p_query || '%'
                         OR u.name ILIKE '%' || p_query || '%')
                    AND (p_position_name IS NULL OR t.pos_name ILIKE '%' || p_position_name || '%'
                         OR t.path_name ILIKE '%' || p_position_name || '%')
