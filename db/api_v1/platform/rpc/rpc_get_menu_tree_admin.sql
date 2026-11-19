@@ -18,11 +18,10 @@ AS $$
 DECLARE
     v_result json;
 BEGIN
-    -- 鉴权：消费方 = 菜单管理页（menu:update/create/delete 任一）与角色-菜单绑定弹窗
-    -- （role-menu:bind）；超管在 has_permission 内短路放行。
-    -- TODO(075+ 迁移)：种子补 platform:menu:list 按钮权限码后收敛为单一判断，
-    -- 届时同时覆盖纯只读消费者（wiki RPC 清单标注的 menu:query 语义）。
-    IF NOT has_permission('platform:menu:update')
+    -- 鉴权：菜单树读权限码（075 种子新增 platform:menu:list）+ 菜单管理页写权限码
+    -- + 角色-菜单绑定弹窗；超管在 has_permission 内短路放行。
+    IF NOT has_permission('platform:menu:list')
+       AND NOT has_permission('platform:menu:update')
        AND NOT has_permission('platform:menu:create')
        AND NOT has_permission('platform:menu:delete')
        AND NOT has_permission('platform:role-menu:bind') THEN
@@ -56,7 +55,11 @@ BEGIN
         'api_url', mt.api_url, 'api_method', mt.api_method, 'is_affix', mt.is_affix,
         'is_active', mt.is_active, 'level', mt.level
     ) ORDER BY mt.level, mt.sort_order, mt.id), '[]'::json) INTO v_result
-    FROM (SELECT * FROM menu_tree LIMIT LEAST(COALESCE(p_limit, 500), 5000)) mt;
+    FROM (SELECT * FROM menu_tree
+          -- 先排序后截断 + 负数 limit 钳制（批次2c 验收修正：原 LIMIT 施加在无序子查询上、
+          -- p_limit<0 会裸抛 2201W）
+          ORDER BY level, sort_order, id
+          LIMIT GREATEST(LEAST(COALESCE(p_limit, 500), 5000), 1)) mt;
 
     RETURN v_result;
 END;
