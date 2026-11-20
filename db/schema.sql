@@ -1,5 +1,14 @@
 \restrict dbmate
 
+-- =============================================================================
+-- ⚠️ 历史快照声明（2026-11-20 加注）：本文件是 **dbmate 旧时代的一次性 dump
+-- 产物**（含旧版函数/视图形态与 public schema 落点），**不随源码演进更新，
+-- 不作任何权威依据**——权威源 = db/src + db/api_v1 + db/migrations + db/init
+-- （apply-src / dbmate 单遍收敛契约）。排查问题请以 live catalog
+-- （pg_proc/pg_views/pg_policies）或源文件为准，勿读本快照（曾误导排查：
+-- 其 current_user_dept_id/is_uuid_v7 等仍为旧 public.* 形态）。
+-- 保留原因：历史基线参考。如后续确认无引用，可整文件移除。
+-- =============================================================================
 -- Dumped from database version 18.4 (Ubuntu 18.4-1.pgdg26.04+1)
 -- Dumped by pg_dump version 18.4 (Ubuntu 18.4-1.pgdg26.04+1)
 

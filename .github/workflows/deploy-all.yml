@@ -47,11 +47,11 @@ jobs:
         env:
           SERVER_HOST: ${{ secrets.DB_SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
+          # e2e 凭据注入（四节 7 跟进，2026-11-20）：fail-fast 脚本不再回退默认凭据，
+          # CI 侧须配 Secrets（E2E_USER / E2E_PASSWORD / APISIX_ADMIN_KEY）；
+          # 注入风格与本文件 :43 段一致（双引号命令串，不经 heredoc 明文）
+          E2E_USER: ${{ secrets.E2E_USER }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          APISIX_ADMIN_KEY: ${{ secrets.APISIX_ADMIN_KEY }}
         run: |
-          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST << 'EOF'
-            set -euo pipefail
-            cd ~/OmniPG
-            
-            # 运行端到端测试
-            bash scripts/e2e-test.sh
-          EOF
+          ssh -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_HOST "export E2E_USER='$E2E_USER' E2E_PASSWORD='$E2E_PASSWORD' APISIX_ADMIN_KEY='$APISIX_ADMIN_KEY'; set -euo pipefail; cd ~/OmniPG; bash scripts/e2e-test.sh"
