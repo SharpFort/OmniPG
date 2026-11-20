@@ -11,8 +11,10 @@ SELECT
     COUNT(*) AS change_count,
     COUNT(DISTINCT user_id) AS unique_users
 FROM platform.audit_log
-GROUP BY DATE_TRUNC('day', created_at), table_name, operation
-ORDER BY log_date DESC, change_count DESC;
+GROUP BY DATE_TRUNC('day', created_at), table_name, operation;
+-- P-3k（2026-11-20，阶段 4）：移除视图内嵌 ORDER BY——PG 不保证其传导到外层
+-- 查询，消费方（rpc_get_audit_log_timeline 的 json_agg ORDER BY + 子查询排序）
+-- 与 PostgREST 直查（自带 order 参数）均已显式排序，内嵌层只增加冗余 Sort 节点
 -- 兜底：CREATE OR REPLACE 对已存在视图的 reloptions 不保证覆盖，显式 SET 确保幂等生效
 ALTER VIEW api_v1_platform.v_audit_log_timeline SET (security_invoker = true);
 COMMENT ON VIEW api_v1_platform.v_audit_log_timeline IS '审计时间线（按天聚合）';

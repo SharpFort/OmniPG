@@ -6,6 +6,9 @@ RETURNS json
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = platform, ext, pg_temp AS $$
 DECLARE
     v_org text := current_organization_id();
+    -- P-3f 附带（2026-11-20，阶段 4，P-2d 模式收官）：tenant 提局部变量
+    --（原 current_logto_tenant_id 在成员校验与建档 INSERT 两处重复解析 claims）
+    v_tenant text := current_logto_tenant_id();
     v_self   boolean;
     v_sql    text;
     v_col    text;
@@ -25,13 +28,13 @@ BEGIN
         IF NOT is_super_admin()
            AND NOT EXISTS (SELECT 1 FROM platform.user_tenants
                            WHERE user_id = p_user_id AND organization_id = v_org
-                             AND tenant_id = current_logto_tenant_id()) THEN
+                             AND tenant_id = v_tenant) THEN
             RAISE EXCEPTION 'user not in organization' USING ERRCODE = 'P0002';
         END IF;
     END IF;
     -- 1. 保证档案记录存在（原子 Upsert，防止首次建档丢失与并发冲突）
     INSERT INTO user_profile (user_id, organization_id, tenant_id, created_by)
-    VALUES (p_user_id, v_org, current_logto_tenant_id(), current_user_id())
+    VALUES (p_user_id, v_org, v_tenant, current_user_id())
     ON CONFLICT (user_id) DO NOTHING;
 
     -- 2. 动态扫描白名单字段，合并为单条 UPDATE 执行（消除 N 次单独更新性能瓶颈）

@@ -51,13 +51,13 @@
 | P-3c | `db/api_v1/platform/rpc/rpc_search_user_positions.sql:26` | 🟡 medium | ~~三个谓词均 `%...%` 前导通配 ILIKE，btree 失效；count+page 双扫描 → 每次 2 次全扫~~ ✅ 已修（2026-11-20 阶段 4，双扫描部分）：count/items 双段各完整重算一次递归树 → 合并单次树 + 单扫描分页；`current_organization_id/current_logto_tenant_id` 提局部变量（原递归 CTE 两分支逐行调用）。前导通配为模糊搜索设计语义保留——如需索引化另行评估 pg_trgm |
 | P-3d | `db/api_v1/platform/rpc/rpc_list_tenants.sql:24` | ⚪ low | member_count 相关标量子查询逐行执行（≤100 次/请求）且条件冗余（ocr_rpc） |
 | P-3e | `db/api_v1/platform/rpc/rpc_list_tenants.sql:28` | 🟡 medium | ~~ILIKE 拼接未转义 `%`/`_` → 调用方可强制全表扫描（DoS 面）~~ ✅ 已修（2026-11-20 阶段 4）：v_pattern 三重转义（\、%、_）后字面匹配，count + items 双谓词同步 |
-| P-3f | `db/api_v1/platform/rpc/rpc_update_user_profile.sql:53` | 🟡 medium | 每列一条 EXECUTE UPDATE：N 字段 = N 份行版本/WAL/触发 + N 次动态解析；应拼单条（ocr_rpc） |
+| P-3f | `db/api_v1/platform/rpc/rpc_update_user_profile.sql:53` | 🟡 medium | ~~每列一条 EXECUTE UPDATE：N 字段 = N 份行版本/WAL/触发 + N 次动态解析；应拼单条~~ ✅ **已满足**（清单过时——现实现即动态白名单扫描拼单条 UPDATE，注释明书"消除 N 次单独更新性能瓶颈"）；2026-11-20 顺带收官：current_logto_tenant_id 提局部变量（原成员校验/建档两处重复解析 claims） |
 | P-3g | `db/api_v1/platform/rpc/rpc_get_all_public_configs.sql:6` | 🟡 medium | ~~只读函数 VOLATILE → 不可优化/内联，PostgREST 视为潜在写者；标 STABLE~~ ✅ 已修（2026-11-20 阶段 4）：标 STABLE（provolatile=s 实证；前端初始化热路径） |
 | P-3h | `db/api_v1/platform/rpc/rpc_get_role_data_scope.sql:40` | ⚪ low | 同谓词对 iam_role_data_scope 两次扫描；`IS NOT DISTINCT FROM` 本身非 sargable（ocr_rpc） |
 | P-3i | `db/api_v1/platform/rpc/rpc_get_user_roles.sql:32` | ⚪ low | 同关系仅 organization 谓词不同扫描两次（视图两次展开+聚合）（ocr_rpc） |
 | P-3j | `db/api_v1/platform/rpc/rpc_list_webhook_events.sql:30` | ⚪ low | 列表行携带完整 payload jsonb（可含大 PII），≤100 行/页放大响应与聚合成本（ocr_rpc） |
-| P-3k | `db/api_v1/platform/views/v_audit_log_timeline.sql:13` | 🟡 medium | 视图内嵌 ORDER BY 不保证传导到外层查询，消费方再排序 = 双重排序成本（ocr_api_views） |
-| P-3l | `db/api_v1/platform/views/v_dict_list.sql:12` | 🟡 medium | 相关 json_agg 子查询逐行求值；rpc_search_users 对 v_user_list COUNT(*) 再强制全聚合 → 预聚合 + LEFT JOIN（ocr_api_views） |
+| P-3k | `db/api_v1/platform/views/v_audit_log_timeline.sql:13` | 🟡 medium | ~~视图内嵌 ORDER BY 不保证传导到外层查询，消费方再排序 = 双重排序成本~~ ✅ 已修（2026-11-20 阶段 4）：移除视图内嵌 ORDER BY——消费方（rpc_get_audit_log_timeline 的 json_agg ORDER BY + 子查询排序）与 PostgREST 直查（自带 order 参数）均已显式排序，内嵌层仅余冗余 Sort 节点 |
+| P-3l | `db/api_v1/platform/views/v_dict_list.sql:12` | 🟡 medium | ~~相关 json_agg 子查询逐行求值；rpc_search_users 对 v_user_list COUNT(*) 再强制全聚合~~ ✅ 已修（2026-11-20 阶段 4）：v_dict_list 改预聚合 + LEFT JOIN（dict_data 一次 GROUP BY 后连接，语义保持：status 聚合前过滤 / sort_no 聚合内排序 / 无条目 COALESCE '[]' / org NULL 经分组+IS NOT DISTINCT FROM 匹配）；rpc_search_users count/items 双段视图展开 → 单扫描分页（page CTE + count(*) OVER()） |
 | P-3m | `db/api_v1/platform/views/v_system_stats.sql:9` | 🟡 medium | users/iam_menu 各扫两遍共 4 次顺序扫描/请求，且该视图被轮询（ocr_api_views） |
 | P-3n | `db/api_v1/platform/views/v_login_log.sql:16` | 🟠 high | geo_locate 未 schema 限定（解析依赖调用方 search_path，兼安全问题）；视图行级调用函数放大成本（ocr_api_views） |
 | P-3o | `db/src/platform/views/zz_casbin_rule.sql:25` | 🟡 medium | UNION ALL 保留重复策略（api_url/api_method 无唯一性）→ casbin 加载重复行（ocr_src_views_triggers） |
