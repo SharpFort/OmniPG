@@ -12,7 +12,15 @@
 set -euo pipefail
 
 PG_DSN="${1:-postgresql://postgres@127.0.0.1:5432/app_db}"
-: "${MAXMIND_LICENSE_KEY:?请设置 MAXMIND_LICENSE_KEY 环境变量（MaxMind 免费账号）}"
+# 唯一凭据文件回退（2026-11-20 参数化批）：未在环境显式设置时自动读取
+# gateway/.env 的 MAXMIND_LICENSE_KEY（按需配置，空 = 未配置）
+if [ -z "${MAXMIND_LICENSE_KEY:-}" ]; then
+    GW_ENV="$(cd "$(dirname "$0")/.." && pwd)/gateway/.env"
+    if [ -f "$GW_ENV" ]; then
+        MAXMIND_LICENSE_KEY=$(grep -m1 -E "^MAXMIND_LICENSE_KEY=" "$GW_ENV" | head -1 | cut -d= -f2- | tr -d '\r' || true)
+    fi
+fi
+: "${MAXMIND_LICENSE_KEY:?请设置 MAXMIND_LICENSE_KEY（环境变量或 gateway/.env，MaxMind 免费账号 https://www.maxmind.com/en/geolite2/signup）}"
 
 URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City-CSV&license_key=${MAXMIND_LICENSE_KEY}&suffix=zip"
 TMP_DIR="$(mktemp -d)"

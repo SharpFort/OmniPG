@@ -29,6 +29,16 @@ env_val() {
     printf '%s' "$v"
 }
 
+# 唯一凭据文件回退（2026-11-20 参数化批）：DB_PASSWORD 等凭据键的权威源
+# 为 gateway/.env（轮换只改该文件）；.env.$ENV 的同名键降级为惰性备份
+gw_env_val() {
+    local f="$PROJECT_DIR/gateway/.env"
+    [ -f "$f" ] || return 0
+    local v
+    v=$(grep -m1 -E "^$1=" "$f" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true)
+    printf '%s' "$v"
+}
+
 # 本地写文件类命令无需凭据（验收修补）
 if [ "$COMMAND" = "create" ]; then
     if [ -z "${3:-}" ]; then
@@ -45,6 +55,7 @@ fi
 DATABASE_URL="${DATABASE_URL:-$(env_val DATABASE_URL)}"
 if [ -z "$DATABASE_URL" ]; then
     DB_URI="$(env_val DB_URI)"
+    DB_PASSWORD="${DB_PASSWORD:-$(gw_env_val DB_PASSWORD)}"
     DB_PASSWORD="${DB_PASSWORD:-$(env_val DB_PASSWORD)}"
     if [ -n "$DB_URI" ]; then
         DATABASE_URL="$DB_URI"
