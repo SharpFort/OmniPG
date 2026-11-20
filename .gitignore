@@ -14,6 +14,9 @@ __pycache__/
 .hermes_tmp/
 scripts/verify-webhook/out/
 
+# OpenCodeReview 扫描/验收原始结果（本地证据，体积大；蒸馏结论见 ocr_*.md 报告）
+/ocr_*.json
+
 # 渲染产物（scripts/render-config.sh 输出，不入库）
 .deploy-render/
 
