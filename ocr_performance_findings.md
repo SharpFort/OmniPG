@@ -33,8 +33,8 @@
 | P-2a | `db/src/platform/functions/geo_locate.sql:33` | 🟠 high | `g.network >>= v_cidr` inet 包含操作无法用 btree PK 服务，全库无 GiST 索引 → **每次 geo 定位全表扫描**；需 `CREATE INDEX ... USING gist (network)`（ocr_functions） |
 | P-2b | `db/src/platform/functions/geo_locate.sql:26` | 🟡 medium | BEGIN/EXCEPTION 块为死代码但保留（plpgsql 子事务开销），且函数未 STABLE 标注（ocr_functions） |
 | P-2c | `db/src/platform/functions/ip2region.sql:14` | 🟡 medium | 命中走 `idx_ip_region_start` 反向扫描便宜；**未命中**（范围外/脏数据）则退化为全表扫描，建议末尾哨兵行（ocr_functions） |
-| P-2d | `db/src/platform/functions/has_permission.sql:25/39` | ⚪ low | 每次 3 条独立语句、2 次展开 claims、RLS per-row 场景下重复解析 JWT；is_super_admin 内部又重复一次（ocr_diff + ocr_functions） |
-| P-2e | `db/src/platform/functions/get_user_menu.sql:34` | ⚪ low | v_roles 用 jsonb_array_elements_text 展开 3 次、函数 VOLATILE；入口一次转 text[] 后用 `= ANY(...)`（ocr_functions） |
+| P-2d | `db/src/platform/functions/has_permission.sql:25/39` | ⚪ low | ~~每次 3 条独立语句、2 次展开 claims、RLS per-row 场景下重复解析 JWT；is_super_admin 内部又重复一次~~ ✅ 已修（2026-11-20 阶段 4）：claims 单遍解析（6 处重复→1）+ 双角色解析合并单条 + 超管短路改 jsonb 包含判定；is_super_admin 改纯表达式零子查询（RLS 逐行友好，畸形 claims fail-closed） |
+| P-2e | `db/src/platform/functions/get_user_menu.sql:34` | ⚪ low | ~~v_roles 用 jsonb_array_elements_text 展开 3 次、函数 VOLATILE；入口一次转 text[] 后用 `= ANY(...)`~~ ✅ 已修（2026-11-20 阶段 4）：STABLE 此前已标；roles/tenant 单遍解析全程局部变量（原 6 处 current_logto_tenant_id 调用，CTE 谓词逐行）+ 双角色解析合并 |
 | P-2f | `db/src/platform/functions/resolve_role_ident.sql:14` | ⚪ low | 全局角色探测在 role_id 查询与 NOT EXISTS 子查询里各执行一次（ocr_functions） |
 | P-2g | `db/src/platform/functions/current_user_roles.sql:12` | ⚪ low | 缺 PARALLEL SAFE（纯 claims 解析），RLS 谓词内会禁用并行计划（ocr_functions） |
 | P-2h | `db/src/platform/functions/current_user_dept_id.sql:10` | 🟡 medium | 单 SELECT 的 plpgsql 包装阻碍内联；被 RLS 谓词与 current_visible_dept_ids 引用 3 次 → per-row 调用放大（ocr_functions） |

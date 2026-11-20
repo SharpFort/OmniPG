@@ -67,13 +67,15 @@
     | 全链路 APISIX 9080 | 5 | 125 | 29.4ms | 73.0ms | 153.9ms |
     | 全链路 APISIX 9080 | 50 | 168 | 269.2ms | 331.1ms | 1150ms |
   - **瓶颈定位**：并发 5→50 QPS 不升反降 = **双重连接池排队主导**（PostgREST 池 10 + pgbouncer `pool_mode=session` 池 20+5，50 并发大量排队）；APISIX 层增量 ~15ms/请求（jwt-auth 验签 + 转发）
-  - **✅ 事务池实验完成并转正（同日晚，提交见下方）**：pgbouncer `pool_mode=transaction` + `max_prepared_statements=200`（1.25 协议级跟踪），PostgREST `PGRST_DB_POOL=20` + `PGRST_DB_CHANNEL=""`（LISTEN 会话级特性弃用）。同口径复测：
+  - **✅ 事务池实验完成并转正（同日晚，提交 be2c269）**：pgbouncer `pool_mode=transaction` + `max_prepared_statements=200`（1.25 协议级跟踪），PostgREST `PGRST_DB_POOL=20` + `PGRST_DB_CHANNEL=""`（LISTEN 会话级特性弃用）。同口径复测：
+
     | 链路 | 并发 | session 基线 | transaction | 收益 |
     |---|---|---|---|---|
     | 直连 PostgREST 3100 | 5 | 250 QPS / p90 53.2ms | 280 QPS / p90 25.3ms | +12% QPS，p90 减半 |
     | 直连 PostgREST 3100 | 50 | 204 QPS / p50 177.6ms / p99 1016ms | **318 QPS / p50 132.0ms / p99 481ms** | **+56% QPS，p99 减半** |
     | 全链路 APISIX 9080 | 50 | 168 QPS / p99 1150ms | 200 QPS / p99 668ms | +19% QPS，p99 -42% |
     功能门禁：e2e 34/34（SET LOCAL claims/ROLE 事务池语义完好）；死别名 logto/casdoor 已清（库不存在）。**残余瓶颈**：p50@50 仍 132ms = PostgREST 20 池槽排队 + CPU 混合（8 核 WSL 与 Windows 共享）——下一个杠杆是 P-2/P-3 函数级优化（降低每请求 CPU/耗时）与池槽再调参
+  - **✅ P-2d/e 完成（2026-11-20，函数级优化第 1 批）**：`has_permission` claims 解析 6 处→1（超管短路改 jsonb 包含判定、双角色解析合并单条）；`is_super_admin` 改纯表达式零子查询（原经 current_user_roles 数组展开——RLS 策略逐行调用路径的防御性收益；畸形 claims 由报错改 fail-closed 恒 false，RLS 不再因畸形 claims 整查询报错）；`get_user_menu` roles/tenant 单遍解析全程局部变量（原 6 处 current_logto_tenant_id，CTE 谓词逐行）+ 双角色解析合并。**请求级效果在噪声带内**（C=50 饱和态直连 318→311 QPS，全链路 200→201——μs 级绝对成本对 13ms 请求不可见，符合 ⚪ low 定级与预告）；收益为结构性（大表 RLS 逐行 + 高频聚合）与语义加固。验证：pgTAP 171/171 + e2e 34/34 + 事务内语义抽检（超管短路 t/role_admin f/空角色 f/菜单树 50 项）。⚠️ 基准教训：psql 无显式事务时 `set_config(..., is_local=true)` 每语句即蒸发——微基准必须包 BEGIN（初版基准测了无 claims 早退路径，数字作废）
   - 压测工具：`.hermes_tmp/loadtest.mjs`（node 24 零依赖）+ `stage4_http_baseline.sh`（登录 + 双链路跑批入口，gitignored）；k6/autocannon WSL 未装，需要时 npx 引入或固化脚本入库
 - **阶段 5 门禁固化**：`check-extensions.sh` 已可入 CI；OCR GitHub Action（ocr --format sarif）沉淀到 .github/workflows
 

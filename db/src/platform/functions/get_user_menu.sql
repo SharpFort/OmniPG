@@ -17,6 +17,10 @@
 --      在 role_id/org_role_id 双通道同时命中时逐层乘性重复（目录×2/页面×4/按钮×8，
 --      82 菜单→402 行），叠加 LIMIT 200 截掉父目录致侧边栏菜单缺失/子页漂到顶层；
 --      同序号按 id 定序；默认上限 200→1000
+-- P-2e（2026-11-20，阶段 4 函数级优化）：claims 单遍解析——原版
+--      current_logto_tenant_id() 在角色解析 2 处 + 递归 CTE 两分支 4 处 = 6 处
+--      重复解析（CTE 谓词逐行调用）；现版 roles/tenant 一次取出全程局部变量，
+--      双角色解析合并为单条语句。
 
 DROP FUNCTION IF EXISTS platform.get_user_menu();
 CREATE OR REPLACE FUNCTION get_user_menu(p_limit INTEGER DEFAULT 1000)
@@ -28,23 +32,27 @@ SET search_path = platform, ext, pg_temp
 AS $$
 DECLARE
     v_roles_arr text[];
+    v_tenant    text;
     v_role_ids text[];
     v_org_role_ids text[];
     v_menu_tree json;
 BEGIN
-    v_roles_arr := current_user_roles();
+    -- P-2e：claims 单遍解析（roles + tenant 一次取出，全程局部变量）
+    SELECT ARRAY(SELECT jsonb_array_elements_text(
+               COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb -> 'roles', '[]'::jsonb))),
+           COALESCE(NULLIF(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'tenant_id', ''), 'default')
+      INTO v_roles_arr, v_tenant;
 
     IF v_roles_arr IS NULL OR cardinality(v_roles_arr) = 0 THEN
         RETURN '[]'::json;
     END IF;
 
-    -- D26: JWT 角色名 → Logto 角色标识（限定当前租户范围）
+    -- D26: JWT 角色名 → Logto 角色标识（限定当前租户范围；P-2e：双数组合并为单条语句）
     SELECT ARRAY(SELECT r.id FROM platform.role r
-                 WHERE r.name = ANY(v_roles_arr)
-                   AND r.tenant_id = current_logto_tenant_id()) INTO v_role_ids;
-    SELECT ARRAY(SELECT tr.id FROM platform.tenant_role tr
-                 WHERE tr.name = ANY(v_roles_arr)
-                   AND tr.tenant_id = current_logto_tenant_id()) INTO v_org_role_ids;
+                  WHERE r.name = ANY(v_roles_arr) AND r.tenant_id = v_tenant),
+           ARRAY(SELECT tr.id FROM platform.tenant_role tr
+                  WHERE tr.name = ANY(v_roles_arr) AND tr.tenant_id = v_tenant)
+      INTO v_role_ids, v_org_role_ids;
 
     WITH RECURSIVE menu_cte AS (
         SELECT
@@ -54,11 +62,11 @@ BEGIN
             m.is_affix
         FROM iam_menu m
         WHERE m.parent_id IS NULL AND m.is_active
-          AND m.tenant_id = current_logto_tenant_id()
+          AND m.tenant_id = v_tenant
           AND EXISTS (SELECT 1 FROM iam_role_menu rm
                       WHERE rm.menu_id = m.id
                         AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
-                        AND rm.tenant_id = current_logto_tenant_id())
+                        AND rm.tenant_id = v_tenant)
 
         UNION ALL
 
@@ -70,11 +78,11 @@ BEGIN
         FROM iam_menu m
         JOIN menu_cte c ON m.parent_id = c.id
         WHERE m.is_active
-          AND m.tenant_id = current_logto_tenant_id()
+          AND m.tenant_id = v_tenant
           AND EXISTS (SELECT 1 FROM iam_role_menu rm
                       WHERE rm.menu_id = m.id
                         AND (rm.role_id = ANY(v_role_ids) OR rm.org_role_id = ANY(v_org_role_ids))
-                        AND rm.tenant_id = current_logto_tenant_id())
+                        AND rm.tenant_id = v_tenant)
     )
     SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) INTO v_menu_tree
     FROM (
