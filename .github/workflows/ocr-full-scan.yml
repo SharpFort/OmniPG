@@ -1,0 +1,93 @@
+# =============================================================================
+# OCR 全库扫描 → SARIF（阶段 5 门禁固化，2026-11-20）
+# 触发: 仅 workflow_dispatch 手动触发——全库一轮 ≈ 27~32M tokens，
+#       不适合定时/PR 自动跑；小批量日常审计请本地用 `ocr scan --path <files>`
+#       （1~2M tokens）或 `ocr review --from <base>`（diff 审查）。
+# Secrets（Settings → Secrets and variables → Actions）:
+#   OCR_CONFIG_JSON = 本地 ~/.opencodereview/config.json 的完整 JSON 文本
+#   （provider/custom_providers 连同 api_key/url/model/extra_headers 一起，
+#    形如 {"provider":"opencode-go","providers":{...},"custom_providers":{...}}）
+# 输出: SARIF 双通道——code scanning 面板（github/codeql-action）+ artifact 兜底
+# 成本护栏: --max-tokens-budget（默认 32M；超预算组完成本轮后终止并正常退出）
+# =============================================================================
+name: OCR Full Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan_paths:
+        description: "扫描路径（逗号分隔，repo 相对）"
+        required: false
+        default: "db,gateway,infra,scripts"
+      max_tokens_budget:
+        description: "Token 预算上限（输入+输出；0 = 不限）"
+        required: false
+        default: "32000000"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OCR CLI
+        run: npm install -g open-code-review
+
+      - name: Write LLM config from secret
+        env:
+          OCR_CONFIG_JSON: ${{ secrets.OCR_CONFIG_JSON }}
+        run: |
+          if [ -z "$OCR_CONFIG_JSON" ]; then
+            echo "❌ 缺少 Secret OCR_CONFIG_JSON（本地 ~/.opencodereview/config.json 全文）" >&2
+            exit 1
+          fi
+          mkdir -p ~/.opencodereview
+          printf '%s' "$OCR_CONFIG_JSON" > ~/.opencodereview/config.json
+
+      - name: Run OCR full scan (SARIF)
+        run: |
+          ocr scan \
+            --path "${{ inputs.scan_paths }}" \
+            --format sarif \
+            --output ocr.sarif \
+            --max-tokens-budget ${{ inputs.max_tokens_budget }} \
+            --audience agent
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f ocr.sarif ]; then
+            COUNT=$(jq '[.runs[].results[]?] | length' ocr.sarif 2>/dev/null || echo '?')
+            {
+              echo "## OCR Full Scan 结果"
+              echo "- 扫描路径: \`${{ inputs.scan_paths }}\`"
+              echo "- 预算: ${{ inputs.max_tokens_budget }} tokens"
+              echo "- SARIF findings: **${COUNT}**"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## OCR Full Scan：未产出 SARIF（见日志）" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ocr.sarif
+
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-sarif
+          path: ocr.sarif
+          if-no-files-found: ignore
