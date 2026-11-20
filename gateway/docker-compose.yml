@@ -99,6 +99,14 @@ services:
       # Logto customizer 注入 pg_role claim（. 开头 = JSPath 语法）
       PGRST_JWT_ROLE_CLAIM_KEY: ".pg_role"
       PGRST_DB_PRE_REQUEST: ""
+      # 阶段 4 事务池实验（2026-11-20）：pgbouncer 已切 pool_mode=transaction（宿主
+      # /etc/pgbouncer/pgbouncer.ini + max_prepared_statements=200）。配套：
+      #   * db-pool 10→20：客户端连接经 pgbouncer 事务级复用共享后端池，排队大幅收敛
+      #     （基线：并发 50 直连 p50 177ms/QPS 204 → 见 ocr_remaining_tasks.md 五节）
+      #   * db-channel 置空：LISTEN 是会话级特性，事务池下不可靠；schema 缓存改为
+      #     重启生效（dev 可接受；需即时 reload 时切回 session 模式或直连重放）
+      PGRST_DB_POOL: "20"
+      PGRST_DB_CHANNEL: ""
       # Swagger try-it-out 直连 PostgREST（3100）：APISIX 仅有 /rpc/* 与 /api/v1/platform/* 路由，
       # 无 /v_* 通配路由，指向 9080 时视图端点 try-it-out 会 404；前端业务入口仍走 9080 网关
       PGRST_OPENAPI_SERVER_PROXY_URI: "http://localhost:3100"   # spec 的 servers 字段 = try-it-out 目标

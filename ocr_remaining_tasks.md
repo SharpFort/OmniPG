@@ -66,7 +66,14 @@
     | 直连 PostgREST 3100 | 50 | 204 | 177.6ms | 502.6ms | 1016ms |
     | 全链路 APISIX 9080 | 5 | 125 | 29.4ms | 73.0ms | 153.9ms |
     | 全链路 APISIX 9080 | 50 | 168 | 269.2ms | 331.1ms | 1150ms |
-  - **瓶颈定位**：并发 5→50 QPS 不升反降 = **双重连接池排队主导**（PostgREST 池 10 + pgbouncer `pool_mode=session` 池 20+5，50 并发大量排队）；APISIX 层增量 ~15ms/请求（jwt-auth 验签 + 转发）。**下一步优化候选**（复测对比驱动）：pgbouncer `pool_mode=transaction`（注意 PostgREST 与事务池的 prepared statements/`SET LOCAL` 语义配合）+ PostgREST `db-pool` 调大 → 同口径复测；再往下才是 P-2/P-3 函数级优化（has_permission 单次解析、sargable 化、视图预聚合）
+  - **瓶颈定位**：并发 5→50 QPS 不升反降 = **双重连接池排队主导**（PostgREST 池 10 + pgbouncer `pool_mode=session` 池 20+5，50 并发大量排队）；APISIX 层增量 ~15ms/请求（jwt-auth 验签 + 转发）
+  - **✅ 事务池实验完成并转正（同日晚，提交见下方）**：pgbouncer `pool_mode=transaction` + `max_prepared_statements=200`（1.25 协议级跟踪），PostgREST `PGRST_DB_POOL=20` + `PGRST_DB_CHANNEL=""`（LISTEN 会话级特性弃用）。同口径复测：
+    | 链路 | 并发 | session 基线 | transaction | 收益 |
+    |---|---|---|---|---|
+    | 直连 PostgREST 3100 | 5 | 250 QPS / p90 53.2ms | 280 QPS / p90 25.3ms | +12% QPS，p90 减半 |
+    | 直连 PostgREST 3100 | 50 | 204 QPS / p50 177.6ms / p99 1016ms | **318 QPS / p50 132.0ms / p99 481ms** | **+56% QPS，p99 减半** |
+    | 全链路 APISIX 9080 | 50 | 168 QPS / p99 1150ms | 200 QPS / p99 668ms | +19% QPS，p99 -42% |
+    功能门禁：e2e 34/34（SET LOCAL claims/ROLE 事务池语义完好）；死别名 logto/casdoor 已清（库不存在）。**残余瓶颈**：p50@50 仍 132ms = PostgREST 20 池槽排队 + CPU 混合（8 核 WSL 与 Windows 共享）——下一个杠杆是 P-2/P-3 函数级优化（降低每请求 CPU/耗时）与池槽再调参
   - 压测工具：`.hermes_tmp/loadtest.mjs`（node 24 零依赖）+ `stage4_http_baseline.sh`（登录 + 双链路跑批入口，gitignored）；k6/autocannon WSL 未装，需要时 npx 引入或固化脚本入库
 - **阶段 5 门禁固化**：`check-extensions.sh` 已可入 CI；OCR GitHub Action（ocr --format sarif）沉淀到 .github/workflows
 
@@ -74,7 +81,7 @@
 
 - **LLM/OCR 配置已就绪**：`ocr` CLI 全局已配置 OpenCode Go `deepseek-v4.1-flash`（含 `x-opencode-session` 头，见 `~/.opencodereview/config.json`）；DeepSeek 官方条目保留为后备
 - **机器验收成本实测**：全 workspace `ocr review` ≈ 27~32M tokens/轮；小批量改动用 `ocr scan --path <files>`（1~2M）更经济
-- **开工顺序建议**：~~修 Logto 回调~~ ✅ → ~~e2e 收尾阶段 3~~ ✅（34/34）→ ~~非凭据运维项~~ ✅（S-G1 bind / S-G2 SCRAM / S-G3 白名单）→ ~~pgTAP 补用例~~ ✅（171/171 + FOR KEY SHARE 断链修复）→ ~~四节 2/3 跟进~~ ✅ → **阶段 4 压测驱动优化**（基线已采集，下一步 pgbouncer 事务池实验）→ 凭据轮换批（三节 1/2/3/6，你指示最后做）→ 阶段 5 门禁固化
+- **开工顺序建议**：~~修 Logto 回调~~ ✅ → ~~e2e 收尾阶段 3~~ ✅（34/34）→ ~~非凭据运维项~~ ✅（S-G1 bind / S-G2 SCRAM / S-G3 白名单）→ ~~pgTAP 补用例~~ ✅（171/171 + FOR KEY SHARE 断链修复）→ ~~四节 2/3 跟进~~ ✅ → ~~pgbouncer 事务池实验~~ ✅（+56% QPS / p99 减半，e2e 34/34）→ **阶段 4 P-2/P-3 函数级优化**（池结构瓶颈已解，压测驱动逐项验证）→ 凭据轮换批（三节 1/2/3/6，你指示最后做）→ 阶段 5 门禁固化
 - **上下文文件**：本文档 + `ocr_review_summary.md` + 两份 findings 清单（含修复状态附录）即完整背景；dbmate 版本 2.34.1 已验证支持 076
 
 ---
