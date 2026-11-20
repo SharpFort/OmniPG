@@ -47,8 +47,8 @@
 | # | 位置 | 严重度 | 问题 |
 |---|---|---|---|
 | P-3a | `db/api_v1/platform/rpc/rpc_list_webhook_events.sql:24` | 🟡 medium | ~~`p_result IS NULL OR result = p_result` 两分支皆非 sargable → 每次调用全表扫~~ ✅ 已修（2026-11-20 阶段 4）：按参数分支化，过滤分支可走 result 索引（count + items 双扫描同步收益） |
-| P-3b | `db/api_v1/platform/rpc/rpc_search_login_logs.sql:41` | 🟡 medium | is_super_admin() 非 constant-fold，被扫描行逐行调用且页查询再来一轮，每次重解析 claims（ocr_rpc） |
-| P-3c | `db/api_v1/platform/rpc/rpc_search_user_positions.sql:26` | 🟡 medium | 三个谓词均 `%...%` 前导通配 ILIKE，btree 失效；count+page 双扫描 → 每次 2 次全扫（ocr_rpc） |
+| P-3b | `db/api_v1/platform/rpc/rpc_search_login_logs.sql:41` | 🟡 medium | ~~is_super_admin() 非 constant-fold，被扫描行逐行调用且页查询再来一轮，每次重解析 claims~~ ✅ 已修（2026-11-20 阶段 4）：is_super_admin 提为局部变量（请求内单次）+ count/items 双扫描合并单扫描（page CTE + `count(*) OVER()` 窗口计数） |
+| P-3c | `db/api_v1/platform/rpc/rpc_search_user_positions.sql:26` | 🟡 medium | ~~三个谓词均 `%...%` 前导通配 ILIKE，btree 失效；count+page 双扫描 → 每次 2 次全扫~~ ✅ 已修（2026-11-20 阶段 4，双扫描部分）：count/items 双段各完整重算一次递归树 → 合并单次树 + 单扫描分页；`current_organization_id/current_logto_tenant_id` 提局部变量（原递归 CTE 两分支逐行调用）。前导通配为模糊搜索设计语义保留——如需索引化另行评估 pg_trgm |
 | P-3d | `db/api_v1/platform/rpc/rpc_list_tenants.sql:24` | ⚪ low | member_count 相关标量子查询逐行执行（≤100 次/请求）且条件冗余（ocr_rpc） |
 | P-3e | `db/api_v1/platform/rpc/rpc_list_tenants.sql:28` | 🟡 medium | ~~ILIKE 拼接未转义 `%`/`_` → 调用方可强制全表扫描（DoS 面）~~ ✅ 已修（2026-11-20 阶段 4）：v_pattern 三重转义（\、%、_）后字面匹配，count + items 双谓词同步 |
 | P-3f | `db/api_v1/platform/rpc/rpc_update_user_profile.sql:53` | 🟡 medium | 每列一条 EXECUTE UPDATE：N 字段 = N 份行版本/WAL/触发 + N 次动态解析；应拼单条（ocr_rpc） |
