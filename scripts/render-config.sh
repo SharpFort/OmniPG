@@ -12,7 +12,8 @@
 # 产物:
 #   $render_dir/.env          -> 渲染后的环境变量（deploy-*.sh source 用；gateway/.env 来源）
 #   $render_dir/pigsty.yml    -> 渲染后的 Pigsty inventory（staging/production 用 tpl；development 与 infra/pigsty.yml 一致）
-#   $render_dir/userlist.txt  -> 渲染后的 pgBouncer 用户清单
+#   $render_dir/userlist.txt  -> SCRAM verifier 校验后复制（S-G2：不渲染令牌；
+#                                权威生成 = scripts/pgbouncer-userlist-scram.sh）
 # 安全: 渲染后若仍有白名单外的残留令牌（${admin_ip} 除外）即 fail-closed 退出。
 # =============================================================================
 
@@ -123,10 +124,30 @@ PIGSTY_SRC="$PROJECT_DIR/infra/pigsty.yml"
 [ -f "$PROJECT_DIR/infra/pigsty.yml.tpl" ] && PIGSTY_SRC="$PROJECT_DIR/infra/pigsty.yml.tpl"
 render_file "$PIGSTY_SRC" "$RENDER_DIR/pigsty.yml"
 
-# userlist.txt：优先 tpl
+# userlist.txt（S-G2 2026-11-20）：SCRAM verifier 形态——pgbouncer SCRAM passthrough
+# 要求 verifier 与库端 pg_authid 逐字节一致，不可由 ${PASSWORD} 明文令牌渲染
+# （verifier 含随机盐，离线渲染必与库端漂移）。权威生成通道 =
+# scripts/pgbouncer-userlist-scram.sh（部署时从 pg_authid 读取，明文不落地）；
+# 此处仅做格式校验 + tpl 角色集契约校验后原样复制。
 USERLIST_SRC="$PROJECT_DIR/infra/userlist.txt"
-[ -f "$PROJECT_DIR/infra/userlist.txt.tpl" ] && USERLIST_SRC="$PROJECT_DIR/infra/userlist.txt.tpl"
-render_file "$USERLIST_SRC" "$RENDER_DIR/userlist.txt"
+if [ ! -f "$USERLIST_SRC" ]; then
+    echo "❌ $USERLIST_SRC 不存在" >&2
+    exit 1
+fi
+BAD_LINES=$(grep -vE '^[[:space:]]*(#|--.*)?$' "$USERLIST_SRC" \
+    | grep -cvE '^"[A-Za-z_][A-Za-z0-9_]*" "SCRAM-SHA-256\$[0-9]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+"$' || true)
+if [ "$BAD_LINES" -gt 0 ]; then
+    echo "❌ userlist.txt 有 $BAD_LINES 行非 SCRAM verifier 形态（S-G2：明文/md5 不再允许；用 scripts/pgbouncer-userlist-scram.sh 从 pg_authid 重新生成）" >&2
+    exit 1
+fi
+TPL_USERS=$(grep -oE '^"[A-Za-z_][A-Za-z0-9_]*"' "$PROJECT_DIR/infra/userlist.txt.tpl" 2>/dev/null | tr -d '"' | sort -u || true)
+for u in $TPL_USERS; do
+    grep -q "^\"$u\"" "$USERLIST_SRC" || {
+        echo "❌ userlist.txt 缺少 tpl 契约角色: $u" >&2
+        exit 1
+    }
+done
+cp "$USERLIST_SRC" "$RENDER_DIR/userlist.txt"
 
 # ---------------------------------------------------------------
 # 4) fail-closed：残留令牌检查（允许 ${admin_ip}，它是 Pigsty 自身变量）
