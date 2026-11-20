@@ -29,10 +29,15 @@ BEGIN
             FROM (
                 SELECT o.id AS organization_id, o.name, o.description,
                        o.tenant_id, t.name AS tenant_name, o.created_at,
-                       (SELECT count(*) FROM platform.user_tenants ut
-                        WHERE ut.organization_id = o.id AND ut.tenant_id = o.tenant_id) AS member_count
+                       -- P-3d（2026-11-20，阶段 4）：member_count 相关标量子查询逐行求值
+                       -- （≤100 次/页）→ 预聚合 + LEFT JOIN；COALESCE 保原版"无成员=0"语义
+                       COALESCE(mc.member_count, 0) AS member_count
                 FROM platform.organizations o
                 LEFT JOIN platform.tenants t ON o.tenant_id = t.id
+                LEFT JOIN (SELECT organization_id, tenant_id, count(*) AS member_count
+                           FROM platform.user_tenants
+                           GROUP BY organization_id, tenant_id) mc
+                       ON mc.organization_id = o.id AND mc.tenant_id = o.tenant_id
                 WHERE (v_pattern IS NULL OR o.name ILIKE v_pattern)
                   AND (v_is_super OR o.tenant_id = v_tenant)
                 ORDER BY o.created_at DESC

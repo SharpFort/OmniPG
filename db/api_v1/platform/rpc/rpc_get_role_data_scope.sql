@@ -26,21 +26,26 @@ BEGIN
         RAISE EXCEPTION 'role not found' USING ERRCODE = 'P0002';
     END IF;
 
-    SELECT min(scope_type) INTO v_scope_type
-    FROM iam_role_data_scope
-    WHERE role_id IS NOT DISTINCT FROM v_role_id
-      AND org_role_id IS NOT DISTINCT FROM v_org_role_id;
-    -- custom 可多行，取任意非 NULL 类型即该角色类型（约束保证同角色类型一致）
-
-    SELECT COALESCE(json_agg(json_build_object('id', d.id, 'name', d.dept_name)
-                             ORDER BY d.dept_name), '[]'::json) INTO v_depts
-    FROM (SELECT d.id, d.dept_name
-      FROM iam_role_data_scope rs
-    JOIN department d ON d.id = rs.dept_id
-    WHERE rs.role_id IS NOT DISTINCT FROM v_role_id
-        AND rs.org_role_id IS NOT DISTINCT FROM v_org_role_id
-        AND rs.dept_id IS NOT NULL
-      LIMIT LEAST(COALESCE(p_limit, 200), 2000)) d;
+    -- P-3h（2026-11-20，阶段 4）：原同谓词对 iam_role_data_scope 两次扫描
+    -- （min(scope_type) 与 dept 列表聚合各一次）→ MATERIALIZED CTE 单次扫描基表，
+    -- 两个消费方读临时结果；IS NOT DISTINCT FROM 保持（绑定行 role_id/org_role_id
+    -- 可 NULL，分支化收益不抵复杂度）
+    WITH scoped AS MATERIALIZED (
+        SELECT rs.scope_type, rs.dept_id
+        FROM iam_role_data_scope rs
+        WHERE rs.role_id IS NOT DISTINCT FROM v_role_id
+          AND rs.org_role_id IS NOT DISTINCT FROM v_org_role_id
+    )
+    SELECT
+        (SELECT min(scope_type) FROM scoped),
+        -- custom 可多行，取任意非 NULL 类型即该角色类型（约束保证同角色类型一致）
+        (SELECT COALESCE(json_agg(json_build_object('id', d.id, 'name', d.dept_name)
+                                  ORDER BY d.dept_name), '[]'::json)
+         FROM (SELECT s.dept_id FROM scoped s
+               WHERE s.dept_id IS NOT NULL
+               LIMIT LEAST(COALESCE(p_limit, 200), 2000)) lim
+         JOIN department d ON d.id = lim.dept_id)
+      INTO v_scope_type, v_depts;
 
     RETURN json_build_object(
         'role_code', p_role_code,

@@ -25,13 +25,16 @@ BEGIN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
 
-    SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.role_code), '[]'::json) INTO v_global
+    -- P-3i（2026-11-20，阶段 4）：原同关系两次扫描（谓词仅 organization_id 不同）→
+    -- 单扫描 + 双 FILTER 条件聚合；谓词合并 (organization_id = '' OR = v_org)
+    SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.role_code)
+                     FILTER (WHERE x.organization_id = ''), '[]'::json),
+           COALESCE(json_agg(row_to_json(x) ORDER BY x.role_code)
+                     FILTER (WHERE x.organization_id = v_org), '[]'::json)
+      INTO v_global, v_org_roles
     FROM (SELECT role_code, role_id, organization_id, tenant_id FROM platform.user_role
-          WHERE user_id = p_user_id AND organization_id = '' AND tenant_id = v_tenant) x;
-
-    SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.role_code), '[]'::json) INTO v_org_roles
-    FROM (SELECT role_code, role_id, organization_id, tenant_id FROM platform.user_role
-          WHERE user_id = p_user_id AND organization_id = v_org AND tenant_id = v_tenant) x;
+          WHERE user_id = p_user_id AND tenant_id = v_tenant
+            AND (organization_id = '' OR organization_id = v_org)) x;
 
     RETURN json_build_object(
         'user_id',    p_user_id,
