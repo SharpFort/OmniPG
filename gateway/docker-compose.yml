@@ -105,6 +105,10 @@ services:
       #     （基线：并发 50 直连 p50 177ms/QPS 204 → 见 ocr_remaining_tasks.md 五节）
       #   * db-channel 置空：LISTEN 是会话级特性，事务池下不可靠；schema 缓存改为
       #     重启生效（dev 可接受；需即时 reload 时切回 session 模式或直连重放）
+      #     ↳ 2026-11-20 当晚回退：pgbouncer 切回 pool_mode=session（宿主 ini）——
+      #       v_categories 等查询经事务池稳定 08P01（PGRST_DB_MAX_PREPARED_STATEMENTS=0
+      #       也不兜底），LISTEN/NOTIFY reload 随 session 模式恢复；事务池实验记录见
+      #       ocr_remaining_tasks.md 五节，后续重试需先解决预编译语句错位。
       PGRST_DB_POOL: "20"
       PGRST_DB_CHANNEL: ""
       # Swagger try-it-out 直连 PostgREST（3100）：APISIX 仅有 /rpc/* 与 /api/v1/platform/* 路由，
