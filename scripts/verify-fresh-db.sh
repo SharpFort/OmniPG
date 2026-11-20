@@ -154,12 +154,10 @@ echo "[8/8] pgTAP 测试 ..."
 if command -v pg_prove >/dev/null 2>&1; then
     TAP_OUT=$(PGPASSWORD="$DB_PASSWORD" pg_prove -h 127.0.0.1 -U app_owner -d "$DB_NAME" --ext .sql -r "$REPO_DIR/db/tests/" 2>&1) || true
     echo "$TAP_OUT" | tail -8
-    # 预期差异：test_casbin_view 3-5 依赖 iam_role_menu 运行时绑定（种子不含运行时数据），
-    #   全新库必空 → casbin 视图 0 行。管理员 UI 配置绑定后自愈；其余用例必须全过。
-    if echo "$TAP_OUT" | grep -q "test_casbin_view.sql  (Wstat: 0 Tests: 8 Failed: 3)" \
-        && [ "$(echo "$TAP_OUT" | grep -cE '\(Wstat: .* Failed: [1-9]')" = "1" ]; then
-        echo "pgTAP: ✅ 112/115 通过；casbin 3 用例为预期差异（运行时绑定数据不在种子内）"
-    elif echo "$TAP_OUT" | grep -q "Result: PASS"; then
+    # casbin「预期失败 3 例」特判已移除（2026-11-20，四节 2 跟进）：075 菜单父级
+    #   回填后 test_casbin_view 在全新库全过（不再依赖运行时绑定数据）；
+    #   另 06_stage2_semantics_test 已补入（阶段 2 新语义 19 例）——任何失败均为错误。
+    if echo "$TAP_OUT" | grep -q "Result: PASS"; then
         echo "pgTAP: ✅ 全部通过"
     else
         echo "pgTAP: ❌ 存在非预期失败"

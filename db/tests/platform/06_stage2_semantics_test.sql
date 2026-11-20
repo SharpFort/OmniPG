@@ -62,15 +62,16 @@ SELECT is((SELECT created_at > now() - interval '1 hour' FROM t_audit_created WH
 
 -- ============================================================
 -- 3) rpc_create_dict_type 重名预检（23505）+ 权限门（42501）
---    organization_id 用真实 Logto 组织（e2e 同款 q8xan57gksx5）——dict_type 的
---    organization_id FK 指向 Logto 基表
+--    全局字典路径（p_tenant_scoped=false → org NULL）：不依赖 Logto 组织数据
+--    （fresh DB 安全），且正中唯一键 NULLS DISTINCT 缺口本体（068 遗留：
+--    organization_id=NULL 不受约束，重名仅靠本预检的应用层拦截）
 -- ============================================================
 SELECT set_config('request.jwt.claims',
-    '{"sub":"u_pgtap","tenant_id":"default","organization_id":"q8xan57gksx5","roles":["role_super_admin"]}', true);
-SELECT lives_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_dup_dict', 'pgtap重复预检', true, 0) $$,
-    '超管首次创建字典类型成功（重名预检放行）');
-SELECT throws_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_dup_dict', 'pgtap重复预检', true, 0) $$,
-    '23505', 'dict name already exists', '重名预检：同租户同组织重名字典返回 23505');
+    '{"sub":"u_pgtap","tenant_id":"default","roles":["role_super_admin"]}', true);
+SELECT lives_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_dup_dict', 'pgtap重复预检', false, 0) $$,
+    '超管首次创建全局字典成功（重名预检放行）');
+SELECT throws_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_dup_dict', 'pgtap重复预检', false, 0) $$,
+    '23505', 'dict name already exists', '重名预检：全局重名字典返回 23505（NULLS DISTINCT 缺口的应用层拦截）');
 
 SELECT set_config('request.jwt.claims', '{"sub":"u_pgtap","roles":[]}', true);
 SELECT throws_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_noperm', '无权限', true, 0) $$,

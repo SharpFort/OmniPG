@@ -34,7 +34,10 @@ dev:
 	cd gateway && docker compose up -d
 	@echo "等待服务启动..."
 	@sleep 10
-	cd gateway && bash -c '[ -f .env ] && export $$(grep -v "^#" .env | xargs); bash ../scripts/init-apisix-routes.sh'
+	# 白名单键导出（批次2d 契约，四节 3 跟进）：不再 export $$(grep|xargs) 全量
+	# .env——.env 含行内注释与 ${VAR} 占位符，全量 xargs 必错；仅导出
+	# init-apisix-routes.sh 实际消费的键
+	cd gateway && bash -c '[ -f .env ] && export $$(grep -E "^(APISIX_ADMIN_KEY|LOGTO_OIDC|LOGTO_WEBHOOK_SIGNING_KEY|PYTHON)=" .env | xargs); bash ../scripts/init-apisix-routes.sh'
 
 dev-down:
 	cd gateway && docker compose down
