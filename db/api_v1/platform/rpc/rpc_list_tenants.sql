@@ -9,13 +9,18 @@ DECLARE
     v_result json;
     v_tenant text := current_logto_tenant_id();
     v_is_super boolean := is_super_admin();
+    -- P-3e（2026-11-20，阶段 4）：通配符转义——防调用方以 % / _ 前导通配
+    -- 强制全表扫描（DoS 面），且修正搜索字面 %/_ 的语义（原拼接把用户输入的
+    -- %/_ 当通配符）；ILIKE 默认转义符为反斜杠
+    v_pattern text := CASE WHEN p_query IS NULL THEN NULL
+        ELSE '%' || replace(replace(replace(p_query, '\', '\\'), '%', '\%'), '_', '\_') || '%' END;
 BEGIN
     IF NOT has_permission('platform:tenant:list') THEN
         RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
     END IF;
     SELECT json_build_object(
         'total', (SELECT count(*) FROM platform.organizations o
-                  WHERE (p_query IS NULL OR o.name ILIKE '%' || p_query || '%')
+                  WHERE (v_pattern IS NULL OR o.name ILIKE v_pattern)
                     AND (v_is_super OR o.tenant_id = v_tenant)),
         'limit', GREATEST(1, LEAST(p_limit, 100)),
         'offset', GREATEST(0, p_offset),
@@ -28,7 +33,7 @@ BEGIN
                         WHERE ut.organization_id = o.id AND ut.tenant_id = o.tenant_id) AS member_count
                 FROM platform.organizations o
                 LEFT JOIN platform.tenants t ON o.tenant_id = t.id
-                WHERE (p_query IS NULL OR o.name ILIKE '%' || p_query || '%')
+                WHERE (v_pattern IS NULL OR o.name ILIKE v_pattern)
                   AND (v_is_super OR o.tenant_id = v_tenant)
                 ORDER BY o.created_at DESC
                 LIMIT GREATEST(1, LEAST(p_limit, 100)) OFFSET GREATEST(0, p_offset)

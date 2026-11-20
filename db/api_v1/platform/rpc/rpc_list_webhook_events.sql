@@ -21,19 +21,33 @@ BEGIN
         RAISE EXCEPTION 'invalid result filter' USING ERRCODE = '22023';
     END IF;
 
-    SELECT count(*) INTO v_total
-    FROM webhook_event_log
-    WHERE p_result IS NULL OR result = p_result;
-
-    SELECT COALESCE(json_agg(x ORDER BY x.created_at DESC), '[]'::json) INTO v_rows
-    FROM (
-        SELECT id, hook_id, event, logto_created, result, error, created_at, payload
+    -- P-3a（2026-11-20，阶段 4）：谓词分支化——原 `p_result IS NULL OR
+    -- result = p_result` 两分支皆非 sargable（OR 阻止 result 索引使用，
+    -- count + items 双扫描恒全表）；按参数分支后过滤分支可走索引
+    IF p_result IS NULL THEN
+        SELECT count(*) INTO v_total FROM webhook_event_log;
+        SELECT COALESCE(json_agg(x ORDER BY x.created_at DESC), '[]'::json) INTO v_rows
+        FROM (
+            SELECT id, hook_id, event, logto_created, result, error, created_at, payload
+            FROM webhook_event_log
+            ORDER BY created_at DESC
+            LIMIT GREATEST(1, LEAST(p_limit, 100))
+            OFFSET GREATEST(0, p_offset)
+        ) x;
+    ELSE
+        SELECT count(*) INTO v_total
         FROM webhook_event_log
-        WHERE p_result IS NULL OR result = p_result
-        ORDER BY created_at DESC
-        LIMIT GREATEST(1, LEAST(p_limit, 100))
-        OFFSET GREATEST(0, p_offset)
-    ) x;
+        WHERE result = p_result;
+        SELECT COALESCE(json_agg(x ORDER BY x.created_at DESC), '[]'::json) INTO v_rows
+        FROM (
+            SELECT id, hook_id, event, logto_created, result, error, created_at, payload
+            FROM webhook_event_log
+            WHERE result = p_result
+            ORDER BY created_at DESC
+            LIMIT GREATEST(1, LEAST(p_limit, 100))
+            OFFSET GREATEST(0, p_offset)
+        ) x;
+    END IF;
 
     RETURN json_build_object('total', v_total, 'rows', v_rows);
 END;

@@ -31,28 +31,28 @@
 | # | 位置 | 严重度 | 问题 |
 |---|---|---|---|
 | P-2a | `db/src/platform/functions/geo_locate.sql:33` | 🟠 high | `g.network >>= v_cidr` inet 包含操作无法用 btree PK 服务，全库无 GiST 索引 → **每次 geo 定位全表扫描**；需 `CREATE INDEX ... USING gist (network)`（ocr_functions） |
-| P-2b | `db/src/platform/functions/geo_locate.sql:26` | 🟡 medium | BEGIN/EXCEPTION 块为死代码但保留（plpgsql 子事务开销），且函数未 STABLE 标注（ocr_functions） |
-| P-2c | `db/src/platform/functions/ip2region.sql:14` | 🟡 medium | 命中走 `idx_ip_region_start` 反向扫描便宜；**未命中**（范围外/脏数据）则退化为全表扫描，建议末尾哨兵行（ocr_functions） |
+| P-2b | `db/src/platform/functions/geo_locate.sql:26` | 🟡 medium | ~~BEGIN/EXCEPTION 块为死代码但保留（plpgsql 子事务开销），且函数未 STABLE 标注~~ ✅ 已满足（2026-11-19 批清理：EXCEPTION 死代码已删、已标 STABLE STRICT） |
+| P-2c | `db/src/platform/functions/ip2region.sql:14` | 🟡 medium | 未命中（范围外/脏数据）退化为全表扫描，建议末尾哨兵行——⏸ 推迟数据导入批（ip_region_v4 当前 0 行，哨兵行随导入落地） |
 | P-2d | `db/src/platform/functions/has_permission.sql:25/39` | ⚪ low | ~~每次 3 条独立语句、2 次展开 claims、RLS per-row 场景下重复解析 JWT；is_super_admin 内部又重复一次~~ ✅ 已修（2026-11-20 阶段 4）：claims 单遍解析（6 处重复→1）+ 双角色解析合并单条 + 超管短路改 jsonb 包含判定；is_super_admin 改纯表达式零子查询（RLS 逐行友好，畸形 claims fail-closed） |
 | P-2e | `db/src/platform/functions/get_user_menu.sql:34` | ⚪ low | ~~v_roles 用 jsonb_array_elements_text 展开 3 次、函数 VOLATILE；入口一次转 text[] 后用 `= ANY(...)`~~ ✅ 已修（2026-11-20 阶段 4）：STABLE 此前已标；roles/tenant 单遍解析全程局部变量（原 6 处 current_logto_tenant_id 调用，CTE 谓词逐行）+ 双角色解析合并 |
-| P-2f | `db/src/platform/functions/resolve_role_ident.sql:14` | ⚪ low | 全局角色探测在 role_id 查询与 NOT EXISTS 子查询里各执行一次（ocr_functions） |
-| P-2g | `db/src/platform/functions/current_user_roles.sql:12` | ⚪ low | 缺 PARALLEL SAFE（纯 claims 解析），RLS 谓词内会禁用并行计划（ocr_functions） |
-| P-2h | `db/src/platform/functions/current_user_dept_id.sql:10` | 🟡 medium | 单 SELECT 的 plpgsql 包装阻碍内联；被 RLS 谓词与 current_visible_dept_ids 引用 3 次 → per-row 调用放大（ocr_functions） |
-| P-2i | `db/src/platform/functions/current_visible_dept_ids.sql:20` | 🟡 medium | 三分支全部执行后 UNION 去重，但 scope_type 单值至多一支命中 → 至多 3 次全扫；先分支再查询（ocr_functions） |
-| P-2j | `db/src/platform/functions/is_uuid_v7.sql:26` | 🟡 medium | 单表达式 plpgsql 不能内联；改 `LANGUAGE sql` 后规划器可在计划期常量折叠（ocr_functions） |
-| P-2k | `db/src/platform/functions/import_geolite2_city.sql:13` | 🟡 medium | TRUNCATE 持 ACCESS EXCLUSIVE 锁直至整段重灌完成 → 导入期间全部 geo 查询（登录路径）阻塞（ocr_functions） |
+| P-2f | `db/src/platform/functions/resolve_role_ident.sql:14` | ⚪ low | 全局角色探测在 role_id 查询与 NOT EXISTS 子查询里各执行一次——留后续批（真实消费方 4 个 RPC：rpc_set_role_menus/get_role_permissions/set_role_data_scope/get_role_data_scope） |
+| P-2g | `db/src/platform/functions/current_user_roles.sql:12` | ⚪ low | ~~缺 PARALLEL SAFE（纯 claims 解析），RLS 谓词内会禁用并行计划~~ ✅ 已满足（现为 STABLE PARALLEL SAFE——清单过时） |
+| P-2h | `db/src/platform/functions/current_user_dept_id.sql:10` | 🟡 medium | ~~单 SELECT 的 plpgsql 包装阻碍内联；被 RLS 谓词与 current_visible_dept_ids 引用 3 次~~ ⏸ **可用未接线推迟**（2026-11-20 实证）：db/api_v1 与 rls_policies 零调用（数据范围过滤已移 RPC 层），"被 RLS 谓词引用"与现实不符；且 plpgsql 为 apply-src 单遍重放契约所需（2026-08-16：sql 化会在冷库 CREATE 期解析绑定 current_user_id 失败）+ SECURITY DEFINER 本就阻止内联——清单建议与两条硬约束冲突，推迟接线批统一处理 |
+| P-2i | `db/src/platform/functions/current_visible_dept_ids.sql:20` | 🟡 medium | ~~三分支全部执行后 UNION 去重，scope_type 单值至多一支命中~~ ⏸ **可用未接线推迟**（2026-11-20 实证）：唯一消费链为函数自身（current_data_scope/current_user_dept_id），外部零调用方——重构无验证路径（pgTAP/e2e 不覆盖），推迟接线批 |
+| P-2j | `db/src/platform/functions/is_uuid_v7.sql:26` | 🟡 medium | ~~单表达式 plpgsql 不能内联；改 `LANGUAGE sql`~~ ✅ 已满足（现为 LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE）+ db/api_v1 零调用（仅 CHECK/数据质量场景） |
+| P-2k | `db/src/platform/functions/import_geolite2_city.sql:13` | 🟡 medium | TRUNCATE 持 ACCESS EXCLUSIVE 锁直至整段重灌完成——⏸ 推迟数据导入批（与 GeoLite2 导入流程改造同批） |
 
 ## P-3 RPC / 视图查询
 
 | # | 位置 | 严重度 | 问题 |
 |---|---|---|---|
-| P-3a | `db/api_v1/platform/rpc/rpc_list_webhook_events.sql:24` | 🟡 medium | `p_result IS NULL OR result = p_result` 两分支皆非 sargable → 每次调用全表扫 90 天留存的 webhook_event_log（ocr_rpc） |
+| P-3a | `db/api_v1/platform/rpc/rpc_list_webhook_events.sql:24` | 🟡 medium | ~~`p_result IS NULL OR result = p_result` 两分支皆非 sargable → 每次调用全表扫~~ ✅ 已修（2026-11-20 阶段 4）：按参数分支化，过滤分支可走 result 索引（count + items 双扫描同步收益） |
 | P-3b | `db/api_v1/platform/rpc/rpc_search_login_logs.sql:41` | 🟡 medium | is_super_admin() 非 constant-fold，被扫描行逐行调用且页查询再来一轮，每次重解析 claims（ocr_rpc） |
 | P-3c | `db/api_v1/platform/rpc/rpc_search_user_positions.sql:26` | 🟡 medium | 三个谓词均 `%...%` 前导通配 ILIKE，btree 失效；count+page 双扫描 → 每次 2 次全扫（ocr_rpc） |
 | P-3d | `db/api_v1/platform/rpc/rpc_list_tenants.sql:24` | ⚪ low | member_count 相关标量子查询逐行执行（≤100 次/请求）且条件冗余（ocr_rpc） |
-| P-3e | `db/api_v1/platform/rpc/rpc_list_tenants.sql:28` | 🟡 medium | ILIKE 拼接未转义 `%`/`_` → 调用方可强制全表扫描（DoS 面）（ocr_rpc） |
+| P-3e | `db/api_v1/platform/rpc/rpc_list_tenants.sql:28` | 🟡 medium | ~~ILIKE 拼接未转义 `%`/`_` → 调用方可强制全表扫描（DoS 面）~~ ✅ 已修（2026-11-20 阶段 4）：v_pattern 三重转义（\、%、_）后字面匹配，count + items 双谓词同步 |
 | P-3f | `db/api_v1/platform/rpc/rpc_update_user_profile.sql:53` | 🟡 medium | 每列一条 EXECUTE UPDATE：N 字段 = N 份行版本/WAL/触发 + N 次动态解析；应拼单条（ocr_rpc） |
-| P-3g | `db/api_v1/platform/rpc/rpc_get_all_public_configs.sql:6` | 🟡 medium | 只读函数 VOLATILE → 不可优化/内联，PostgREST 视为潜在写者；标 STABLE（ocr_rpc） |
+| P-3g | `db/api_v1/platform/rpc/rpc_get_all_public_configs.sql:6` | 🟡 medium | ~~只读函数 VOLATILE → 不可优化/内联，PostgREST 视为潜在写者；标 STABLE~~ ✅ 已修（2026-11-20 阶段 4）：标 STABLE（provolatile=s 实证；前端初始化热路径） |
 | P-3h | `db/api_v1/platform/rpc/rpc_get_role_data_scope.sql:40` | ⚪ low | 同谓词对 iam_role_data_scope 两次扫描；`IS NOT DISTINCT FROM` 本身非 sargable（ocr_rpc） |
 | P-3i | `db/api_v1/platform/rpc/rpc_get_user_roles.sql:32` | ⚪ low | 同关系仅 organization 谓词不同扫描两次（视图两次展开+聚合）（ocr_rpc） |
 | P-3j | `db/api_v1/platform/rpc/rpc_list_webhook_events.sql:30` | ⚪ low | 列表行携带完整 payload jsonb（可含大 PII），≤100 行/页放大响应与聚合成本（ocr_rpc） |

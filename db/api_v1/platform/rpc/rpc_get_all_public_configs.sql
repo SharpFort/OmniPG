@@ -3,7 +3,10 @@
 
 CREATE OR REPLACE FUNCTION api_v1_platform.get_all_public_configs()
 RETURNS json
+-- P-3g（2026-11-20，阶段 4）：标 STABLE——纯读函数原默认 VOLATILE，
+-- 阻止规划器优化/内联且 PostgREST 按潜在写者对待；前端初始化热路径
 LANGUAGE sql
+STABLE
 SECURITY DEFINER
 SET search_path = platform, ext, pg_temp
 AS $$
