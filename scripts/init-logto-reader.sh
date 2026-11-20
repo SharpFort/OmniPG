@@ -77,5 +77,32 @@ GRANT SELECT ON platform.users, platform.tenants, platform.organizations, platfo
 -- D26: 业务侧 FK 指向 Logto 基表所需的 REFERENCES 权限（仅约束创建所需，非 DML）
 GRANT REFERENCES ON public.users, public.organizations, public.roles, public.organization_roles, public.tenants
   TO app_owner;
+
+-- =============================================================================
+-- logto_locker（2026-11-20）：TOCTOU 行锁专用角色
+-- validate_user_profile_refs / validate_user_position_refs 的成员关系校验需
+-- FOR KEY SHARE（2b 批次 TOCTOU 加固）——行锁要求基表 UPDATE 权限，而 D25 只读
+-- 原则禁止 app_owner 本体持有 Logto 表写权。本 NOLOGIN 角色独占该权限，
+-- 经 SECURITY DEFINER 函数 platform.check_user_org_membership（owner=本角色）
+-- 生效；创建/重放见 db/src/platform/functions/identity_refs_guard.sql。
+-- 事故背景：2b 引入 FOR KEY SHARE 后该路径首次执行即 42501（SELECT-only 授权），
+-- 所有带组织的档案/岗位写入（岗位分配等核心管理流）在生产中断，由 pgTAP
+-- 零覆盖补齐用例暴露（06_stage2_semantics_test.sql 用例 18）。
+-- =============================================================================
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'logto_locker') THEN
+    CREATE ROLE logto_locker NOLOGIN BYPASSRLS;
+  END IF;
+END $$;
+
+GRANT logto_locker TO app_owner;
+
+GRANT USAGE, CREATE ON SCHEMA platform TO logto_locker;
+
+-- SELECT 与 reader 同面（列级）；UPDATE 为表级——仅为 FOR KEY SHARE 行锁（PG 要求），
+-- locker 不持有任何其他表权限，且仅可经 DEFINER 函数被触达
+GRANT SELECT (tenant_id, organization_id, user_id)
+  ON public.organization_user_relations TO logto_locker;
+GRANT UPDATE ON public.organization_user_relations TO logto_locker;
 SQL
 echo "[init-logto-reader] done"
