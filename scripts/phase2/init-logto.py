@@ -40,7 +40,9 @@ MGMT_ROLE_NAME = "14eqvuyw66mbhdcykbbaw"  # 'Logto Management API access'（defa
 # 配置区（可按需修改）
 # ---------------------------------------------------------------------------
 M2M_APP_NAME = "omnipg-management"
-M2M_APP_ID = "omnipg_m2m_app"
+# 与 main()/--m2m-app-id 默认值对齐（批次2d前置修复：原 'omnipg_m2m_app' 与
+# CLI 默认 'omnipg_management_m2m' 不一致，--m2m-app-id 不传时 step1 永远查不到既有应用）
+M2M_APP_ID = "omnipg_management_m2m"
 GLOBAL_ROLE = "role_super_admin"
 ORG_TEMPLATE_NAME = "default"
 ORG_TEMPLATE_ROLES = ["tenant_admin", "editor", "viewer"]
@@ -97,8 +99,11 @@ const getCustomJwtClaims = async ({ token, context }) => {
 # ---------------------------------------------------------------------------
 
 
-def http(method, path, token=None, body=None, endpoint=ENDPOINT):
-    url = endpoint + path
+def http(method, path, token=None, body=None, endpoint=None):
+    # endpoint 延迟解析（批次2d前置修复）：原 endpoint=ENDPOINT 在 import 时绑定默认值，
+    # main() 里 global ENDPOINT = args.endpoint 的重绑定对本函数默认值不生效
+    #——--endpoint 参数除 get_m2m_token 外全部静默失效
+    url = (endpoint or ENDPOINT) + path
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
     if token:
@@ -193,9 +198,11 @@ def step2_global_role(token):
 
 
 def step3_org_roles(token):
-    """创建组织角色（tenant_admin/editor/viewer）——v1.42 OSS 无组织模板，角色为独立资源"""
+    """创建组织角色（tenant_admin/editor/viewer）——v1.42 OSS 无组织模板，角色为独立资源
+    返回失败角色名列表（空 = 全部成功；批次2d前置修复：原实现 POST 失败仍记为已创建）"""
     print("[3] 组织角色...")
     created = []
+    failed = []
     _, roles = http("GET", "/api/organization-roles", token)
     existing = {r.get("name") for r in (roles or [])}
     for role_name in ORG_TEMPLATE_ROLES:
@@ -206,9 +213,13 @@ def step3_org_roles(token):
             "name": role_name,
             "description": f"组织角色 {role_name}（OmniPG）",
         })
+        if not role:
+            print(f"  !! 创建失败: {role_name}（HTTP 响应异常）", file=sys.stderr)
+            failed.append(role_name)
+            continue
         created.append(role_name)
-        print(f"  已创建: {role_name} (id={role.get('id') if role else '?'})")
-    return created
+        print(f"  已创建: {role_name} (id={role.get('id')})")
+    return failed
 
 
 def step4_demo_org(token, _template_id=None):
@@ -293,8 +304,11 @@ def step5_webhook(token, check_only=False):
 
 
 def _read_configured_signing_key():
-    """读取网关侧当前配置的 LOGTO_WEBHOOK_SIGNING_KEY（gateway/.env 优先，回退环境变量）"""
-    for path in (os.path.join(PROJECT_ROOT, "gateway", ".env"),):
+    """读取网关侧当前配置的 LOGTO_WEBHOOK_SIGNING_KEY
+    （批次2d前置修复：_sync_signing_key 写 gateway/.env 与 .env.development 两处，
+    原读取只看 gateway/.env——写读不对称会在 gateway/.env 缺行时永久误报漂移）"""
+    for path in (os.path.join(PROJECT_ROOT, "gateway", ".env"),
+                 os.path.join(PROJECT_ROOT, ".env.development")):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -403,11 +417,26 @@ def main():
 
     # 步骤顺序（D25）：webhook 仅 PostSignIn，逻辑上建角色/组织后生效即可；
     # 保留 webhook 先配置，避免登录日志事件在配置前发生。
-    step5_webhook(token)
-    step2_global_role(token)
-    step3_org_roles(token)
-    step4_demo_org(token)
-    step6_claims_script(token)
+    # 步骤结果聚合（批次2d前置修复）：原实现丢弃全部返回值、步骤全失败仍打印
+    # "全部完成 ✅" 且 exit 0——失败必须反映在退出码（CI 可感知）
+    failures = []
+
+    if step5_webhook(token) is None:
+        failures.append("step5_webhook")
+    if step2_global_role(token) is None:
+        failures.append("step2_global_role")
+    org_role_failed = step3_org_roles(token)
+    if org_role_failed:
+        failures.append("step3_org_roles(" + ",".join(org_role_failed) + ")")
+    if step4_demo_org(token) is None:
+        failures.append("step4_demo_org")
+    status6 = step6_claims_script(token)
+    if not (isinstance(status6, int) and 200 <= status6 < 300):
+        failures.append("step6_claims_script")
+
+    if failures:
+        print("\n⚠️ 失败步骤: " + "; ".join(failures) + "（详见上方输出）", file=sys.stderr)
+        sys.exit(1)
     print("\n全部完成 ✅")
 
 

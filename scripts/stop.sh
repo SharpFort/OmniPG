@@ -30,7 +30,7 @@ log_info "Docker Compose 已停止"
 
 # Step 2: 停止 pgBouncer
 log_step "停止 pgBouncer..."
-pkill pgbouncer 2>/dev/null || true
+pkill -x pgbouncer 2>/dev/null || true   # -x 精确匹配（原模式匹配会误杀宿主上其他 pgbouncer 实例）
 log_info "pgBouncer 已停止"
 
 # Step 3: 停止其他服务（保留核心）

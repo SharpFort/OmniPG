@@ -88,8 +88,16 @@ if [ "$MODE" = "all" ] || [ "$MODE" = "db" ]; then
         echo "  ✅ userlist.txt 已复制"
     fi
     if [ -f "$PROJECT_DIR/infra/redis.conf" ]; then
-        sudo cp "$PROJECT_DIR/infra/redis.conf" /etc/redis/redis.conf
-        echo "  ✅ redis.conf 已复制"
+        # 批次2d前置修复：redis.conf 原在此处（剧本执行前）无条件复制——
+        # (a) Redis 仅由 gateway 模式的 redis.yml 部署，all/db 模式的新机 /etc/redis
+        #     不存在，sudo cp 直接报错并在 set -e 下中止部署；
+        # (b) 剧本执行前覆盖会被 Pigsty redis 模块的模板再次覆盖，复制时机应在剧本后
+        if [ -d /etc/redis ]; then
+            sudo cp "$PROJECT_DIR/infra/redis.conf" /etc/redis/redis.conf
+            echo "  ✅ redis.conf 已复制（注意：如后续 redis.yml 剧本运行会以 Pigsty 模板覆盖，gateway 模式末尾会重新同步）"
+        else
+            echo "  ⚠️ /etc/redis 不存在（Redis 未部署）——跳过 redis.conf 复制；gateway 模式部署 Redis 后会自动同步"
+        fi
     fi
 fi
 
@@ -132,6 +140,11 @@ case "$MODE" in
                 echo "  ⚠️ $pb 不存在，跳过"
             fi
         done
+        # 批次2d前置：redis.conf 须在 redis.yml 之后再同步（剧本模板会覆盖先复制的版本）
+        if [ -f "$PROJECT_DIR/infra/redis.conf" ] && [ -d /etc/redis ]; then
+            sudo cp "$PROJECT_DIR/infra/redis.conf" /etc/redis/redis.conf
+            echo "  ✅ redis.conf 已在剧本后同步"
+        fi
         ;;
     *)
         echo "  ❌ 未知模式: $MODE (可选: all, db, gateway)"

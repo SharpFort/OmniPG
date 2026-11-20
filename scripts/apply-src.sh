@@ -67,8 +67,10 @@ for m in $MODULES; do
 done
 if [ -n "$MIG_DIRS" ]; then
     HITS=$(grep -rEn --include="*.sql" \
-        -E 'CREATE[[:space:]]+(OR[[:space:]]+REPLACE[[:space:]]+)?(FUNCTION|VIEW|MATERIALIZED[[:space:]]+VIEW|TRIGGER|TYPE|DOMAIN|POLICY|RULE)|COMMENT[[:space:]]+ON[[:space:]]+(FUNCTION|VIEW|TRIGGER|TYPE|DOMAIN)' \
+        -E 'CREATE[[:space:]]+(OR[[:space:]]+REPLACE[[:space:]]+)?(FUNCTION|PROCEDURE|VIEW|MATERIALIZED[[:space:]]+VIEW|TRIGGER|TYPE|DOMAIN|POLICY|RULE|AGGREGATE|OPERATOR|CAST)|COMMENT[[:space:]]+ON[[:space:]]+(FUNCTION|VIEW|TRIGGER|TYPE|DOMAIN)' \
         $MIG_DIRS | grep -vE ':[0-9]+:[[:space:]]*--' || true)
+    # 扫描面补全（批次2d前置）：PROCEDURE/AGGREGATE/OPERATOR/CAST 同为代码对象，
+    # 原白名单漏收——经动态 SQL（DO 块 EXECUTE）产出的对象另需人工审查（已知局限）
     if [ -n "$HITS" ]; then
         echo "ERROR: 迁移目录发现代码对象定义（§6.3 扫描失败）——代码型对象一律归位 db/src/ 或 db/api_v1/（17 号文档铁律）："
         echo "$HITS"
@@ -159,7 +161,11 @@ echo "All SQL files applied successfully."
 # ---------------------------------------------------------------------------
 if [ -n "${PG_SUPER_CMD:-}" ]; then
     echo "[apply-src] PG_SUPER_CMD 已设置，自动重跑 init-logto-reader 恢复投影视图 owner..."
-    DB_NAME="${DB_NAME:-app_db}" DB_PORT="${DB_PORT:-5432}" bash "$(dirname "$0")/init-logto-reader.sh"
+    # 随 $DB_URL 解析目标（批次2d前置修复）：原 DB_NAME/DB_PORT 取各自默认值——
+    # apply-src 指向非默认库/端口时恢复的是错误目标
+    URL_DB=$(printf '%s' "$DB_URL" | sed -E 's#.*/([^/?]+)(\?.*)?$#\1#')
+    URL_PORT=$(printf '%s' "$DB_URL" | sed -nE 's#.*:([0-9]+)/.*#\1#p')
+    DB_NAME="${URL_DB:-app_db}" DB_PORT="${URL_PORT:-5432}" bash "$(dirname "$0")/init-logto-reader.sh"
 else
     echo ""
     echo "⚠️  [apply-src] 全量重放已重建 platform.* 只读投影视图（owner 变回当前执行角色，"

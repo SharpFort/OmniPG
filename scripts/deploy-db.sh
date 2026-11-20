@@ -19,6 +19,11 @@
 set -euo pipefail
 
 ENV=${1:-development}
+# ENV 白名单（批次2d前置）：拼入 .env.$ENV / render 路径，未校验时可被路径穿越/shell 元字符滥用
+if [[ ! "$ENV" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+    echo "❌ 非法环境名: $ENV（仅小写字母/数字/-/_，≤32 字符）" >&2
+    exit 1
+fi
 DB_PORT=${2:-${DB_PORT:-5432}}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -37,13 +42,21 @@ set -a
 set +a
 
 DB_USER=${DB_USER:-app_owner}
-DB_PASSWORD=${DB_PASSWORD:-admin@password}
 DB_NAME=${DB_NAME:-app_db}
 DB_HOST=${DB_HOST:-localhost}
+# 凭据 fail-fast（批次2d前置 S-F3）：不再回退仓库内默认密码
+if [ -z "${DB_PASSWORD:-}" ]; then
+    echo "❌ 缺少 DB_PASSWORD（渲染产物 .deploy-render/.env 或环境变量提供）" >&2
+    exit 2
+fi
 
-# 设置数据库连接（全部来自环境变量，无硬编码密码；@ 等特殊字符须 URL 编码）
-DB_PASSWORD_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$DB_PASSWORD")
+# 设置数据库连接（全部来自环境变量，无硬编码密码；@ 等特殊字符须 URL 编码；
+# 密码经环境变量传给 python，不进 argv/ps 可见面——批次2d前置）
+DB_PASSWORD_ENC=$(env DB_PASSWORD="$DB_PASSWORD" python3 -c \
+    'import os,urllib.parse; print(urllib.parse.quote(os.environ["DB_PASSWORD"], safe=""))')
 DB_URI=${DB_URI:-"postgres://${DB_USER}:${DB_PASSWORD_ENC}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=disable"}
+# 单一连接目标（批次2d前置）：原 DB_URI/DATABASE_URL 双轨可能指向不同库——
+# dbmate 与 bootstrap 统一使用 DATABASE_URL（显式 --url，规避 DBMATE_DATABASE_URL 优先级）
 DATABASE_URL=${DATABASE_URL:-"$DB_URI"}
 
 cd "$PROJECT_DIR"
@@ -64,10 +77,11 @@ bash "$SCRIPT_DIR/init-logto-fk-references.sh" || {
 # 2. 应用 dbmate 迁移
 #   注: 40 号方案合并后 app_db.public 归 Logto（app_owner 无权限），dbmate 自动 dump 全库会
 #       因 public.tenants 等权限拒绝而失败，故 --no-dump-schema；db/schema.sql 由业务侧独立快照维护
+#   注: 显式 --url（批次2d前置）：dbmate 环境变量优先级 DBMATE_DATABASE_URL > DATABASE_URL，
+#       环境残留会静默指向错误目标
 echo ""
 echo "[2/4] 应用数据库迁移（--no-dump-schema）..."
-export DATABASE_URL="$DATABASE_URL"
-dbmate --no-dump-schema -d db/migrations/platform up
+dbmate --no-dump-schema -d db/migrations/platform --url "$DATABASE_URL" up
 
 # 3. 刷入幂等源码（含迁移代码对象扫描 + 迁移幂等重放）
 echo ""
@@ -85,7 +99,7 @@ bash "$SCRIPT_DIR/init-logto-reader.sh" || {
 # 4. 验证
 echo ""
 echo "[4/4] 验证部署..."
-dbmate -d db/migrations/platform status
+dbmate -d db/migrations/platform --url "$DATABASE_URL" status
 
 echo ""
 echo "============================================"

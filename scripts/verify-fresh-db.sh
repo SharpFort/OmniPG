@@ -135,8 +135,12 @@ JOIN pg_class c ON c.oid=p.polrelid
 WHERE c.relnamespace::regnamespace::text NOT IN ('cron','public','net','graphql');
 SELECT 'INDEX_COUNT|' || count(*) FROM pg_indexes WHERE schemaname='platform' AND tablename <> 'schema_migrations';
 EOF
-PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$REF_DB" -w -f /tmp/verify_compare.sql > /tmp/verify_ref.txt 2>&1
-PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$DB_NAME" -w -f /tmp/verify_compare.sql > /tmp/verify_new.txt 2>&1
+# 批次2d前置修复：比对查询加 ON_ERROR_STOP（连接/权限/语法错误原被 2>&1 吞进比对文本，
+# diff 会把"错误信息 vs 数据"误报为结构差异）；stderr 分离保留可见性
+PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$REF_DB" -w -v ON_ERROR_STOP=1 -f /tmp/verify_compare.sql > /tmp/verify_ref.txt 2>/tmp/verify_ref.err || {
+    echo "❌ 参照库比对查询失败:"; cat /tmp/verify_ref.err; exit 1; }
+PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d "$DB_NAME" -w -v ON_ERROR_STOP=1 -f /tmp/verify_compare.sql > /tmp/verify_new.txt 2>/tmp/verify_new.err || {
+    echo "❌ scratch 库比对查询失败:"; cat /tmp/verify_new.err; exit 1; }
 if diff -u /tmp/verify_ref.txt /tmp/verify_new.txt; then
     echo "结构比对: ✅ 完全一致（表/列/约束/种子/函数/视图/触发器/策略/索引）"
 else

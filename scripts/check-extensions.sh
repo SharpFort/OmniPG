@@ -34,7 +34,8 @@ def load(path):
         return yaml.safe_load(f)
 
 
-declared = set()  # 所有声明过的扩展名
+declared = set()  # 所有声明过的扩展名（跨清单并集）
+declared_by_file = {}  # 按清单文件分别记录（tpl 漂移检查用——批次2d前置修复）
 
 # 扩展说明文档文件名（2026-08-20 起 wiki 页面全部中文命名）：
 #   扩展名（infra/pigsty.yml 声明） -> 中文说明页文件名
@@ -57,18 +58,26 @@ EXT_DOC = {
 DOC_EXT = {doc: ext for ext, doc in EXT_DOC.items()}
 errors = []
 
-for yml in ("infra/pigsty.yml",):
+# 检查范围（批次2d前置修复）：原实现只盯 infra/pigsty.yml 单文件——
+# 仓库同时维护 pigsty.yml.tpl 渲染模板（CI Secrets 注入源），两者漂移无校验
+INVENTORY_FILES = ("infra/pigsty.yml", "infra/pigsty.yml.tpl")
+
+for yml in INVENTORY_FILES:
     if not os.path.exists(yml):
         continue
     data = load(yml)
     children = ((data or {}).get("all") or {}).get("children") or {}
+    file_set = declared_by_file.setdefault(yml, set())
     for child in children.values():
         vars_ = child.get("vars") or {}
         for ext in vars_.get("pg_extensions") or []:
             declared.add(str(ext))
+            file_set.add(str(ext))
         for db in vars_.get("pg_databases") or []:
             for e in db.get("extensions") or []:
-                declared.add(str(e["name"]) if isinstance(e, dict) else str(e))
+                name = str(e["name"]) if isinstance(e, dict) else str(e)
+                declared.add(name)
+                file_set.add(name)
 
 # 1) 退役禁令
 for banned in ("pgaudit", "pgsodium"):
@@ -92,6 +101,15 @@ for f in sorted(glob.glob(os.path.join(ext_dir, "*.md"))):
         errors.append(f"说明页 {f} 未在 EXT_DOC 中登记对应扩展（孤立文档？）")
     elif ext not in declared:
         errors.append(f"说明页 {f} 对应扩展 {ext} 未在 infra/*.yml 中声明（孤立文档？）")
+
+# 4) 清单间漂移（批次2d前置新增）：pigsty.yml 与 pigsty.yml.tpl 双维护，
+#    任一侧扩展清单落后都会让"单文件权威"承诺失效
+yml_set = declared_by_file.get("infra/pigsty.yml", set())
+tpl_set = declared_by_file.get("infra/pigsty.yml.tpl", set())
+for ext in sorted(yml_set - tpl_set):
+    errors.append(f"扩展 {ext} 仅在 infra/pigsty.yml 声明，pigsty.yml.tpl 缺失（渲染环境将装不上）")
+for ext in sorted(tpl_set - yml_set):
+    errors.append(f"扩展 {ext} 仅在 infra/pigsty.yml.tpl 声明，infra/pigsty.yml 缺失（清单漂移）")
 
 # 4) 01-extensions.sql 残留
 if os.path.exists("db/init/01-extensions.sql"):

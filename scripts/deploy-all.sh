@@ -50,8 +50,19 @@ echo ""
 echo "[4/5] 初始化 APISIX..."
 cd "$PROJECT_DIR/gateway"
 # 加载 .env 中的环境变量（APISIX_ADMIN_KEY 等）
+# 白名单键导出（批次2d前置）：原 `export $(grep|xargs)` 遇空格/JSON 断裂、
+# grep 无命中时 set -e 可能中止、且会导出全部键（含无关敏感项）
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            APISIX_ADMIN_KEY=*|LOGTO_WEBHOOK_SIGNING_KEY=*)
+                # 剥离行内注释（验收修补）：render-config.sh 只替换 ${VAR} 占位符、
+                # 不清理注释，渲染产物可能带 "KEY=value # 说明" 尾注
+                key="${line%%=*}"; value="${line#*=}"
+                value="${value%%[[:space:]]#*}"
+                export "$key=$value" ;;
+        esac
+    done < .env
 fi
 if ! bash "$SCRIPT_DIR/init-apisix-routes.sh"; then
     echo "❌ APISIX 初始化失败，请检查:"

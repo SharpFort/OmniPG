@@ -33,25 +33,36 @@ log_step "1/5 启动核心基础设施..."
 
 # PostgreSQL
 if ! systemctl is-active --quiet postgresql@18-main; then
-    pg_ctlcluster 18 main start 2>/dev/null || systemctl start postgresql@18-main
+    if ! pg_ctlcluster 18 main start 2>/dev/null; then
+        systemctl start postgresql@18-main || { log_error "PostgreSQL 启动失败"; exit 1; }
+    fi
     sleep 2
     log_info "PostgreSQL 已启动"
 else
     log_info "PostgreSQL 已在运行"
 fi
 
-# pgBouncer (Pigsty 内置)
+# pgBouncer (Pigsty 内置)——启动后验证存活（批次2d前置：原 sleep 2 后无条件报成功）
 if ! pgrep -x pgbouncer > /dev/null; then
-    sudo -u postgres /usr/sbin/pgbouncer /etc/pgbouncer/pgbouncer.ini &
-    sleep 2
-    log_info "pgBouncer 已启动 (端口 6432)"
+    if sudo -u postgres /usr/sbin/pgbouncer -d /etc/pgbouncer/pgbouncer.ini 2>/dev/null; then
+        sleep 1
+        if pgrep -x pgbouncer > /dev/null; then
+            log_info "pgBouncer 已启动 (端口 6432)"
+        else
+            log_error "pgBouncer 启动后未存活（检查 /etc/pgbouncer/pgbouncer.ini 与端口占用）"
+            exit 1
+        fi
+    else
+        log_error "pgBouncer 启动命令失败（检查 /etc/pgbouncer/pgbouncer.ini）"
+        exit 1
+    fi
 else
     log_info "pgBouncer 已在运行"
 fi
 
 # Redis
 if ! systemctl is-active --quiet redis-server; then
-    systemctl start redis-server
+    systemctl start redis-server || { log_error "Redis 启动失败"; exit 1; }
     sleep 1
     log_info "Redis 已启动"
 else
@@ -60,18 +71,21 @@ fi
 
 # etcd
 if ! systemctl is-active --quiet etcd; then
-    systemctl start etcd
+    systemctl start etcd || { log_error "etcd 启动失败"; exit 1; }
     sleep 1
     log_info "etcd 已启动"
 else
     log_info "etcd 已在运行"
 fi
 
-# Grafana
+# Grafana（辅助服务：失败不阻断启动，Step 4 验证会显红）
 if ! systemctl is-active --quiet grafana-server; then
-    systemctl start grafana-server
-    sleep 2
-    log_info "Grafana 已启动 (端口 3000)"
+    if systemctl start grafana-server; then
+        sleep 2
+        log_info "Grafana 已启动 (端口 3000)"
+    else
+        log_error "Grafana 启动失败（不阻断，Step 4 将显红）"
+    fi
 else
     log_info "Grafana 已在运行"
 fi
@@ -107,20 +121,30 @@ fi
 log_step "4/5 验证服务状态..."
 ERRORS=0
 
+# 凭据从渲染产物读取（批次2d前置：原 PGPASSWORD=admin@password 明文硬编码两处；
+# 输出信息中的密码同步脱敏）
+GW_ENV="$PROJECT_DIR/gateway/.env"
+env_val() { [ -f "$GW_ENV" ] || return 0; grep -m1 -E "^$1=" "$GW_ENV" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true; }
+DB_PASSWORD="${DB_PASSWORD:-$(env_val DB_PASSWORD)}"
+if [ -z "$DB_PASSWORD" ]; then
+    log_error "缺少 DB_PASSWORD（环境变量或 gateway/.env）"
+    exit 1
+fi
+
 # PostgreSQL
-if PGPASSWORD=admin@password psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     log_info "PostgreSQL: 连接成功"
 else
     log_error "PostgreSQL: 连接失败"
-    ((ERRORS++))
+    ERRORS=$((ERRORS+1))   # 不可用 ((ERRORS++))：变量为 0 时算术命令返回 1，set -e 中止（批次2d前置）
 fi
 
 # pgBouncer
-if PGPASSWORD=admin@password psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+if PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
     log_info "pgBouncer: 连接成功"
 else
     log_error "pgBouncer: 连接失败"
-    ((ERRORS++))
+    ERRORS=$((ERRORS+1))
 fi
 
 # Redis
@@ -128,7 +152,7 @@ if redis-cli ping | grep -q PONG; then
     log_info "Redis: PONG"
 else
     log_error "Redis: 无响应"
-    ((ERRORS++))
+    ERRORS=$((ERRORS+1))
 fi
 
 # etcd
@@ -143,7 +167,7 @@ if curl -s http://localhost:3000/api/health 2>/dev/null | grep -q "ok"; then
     log_info "Grafana: healthy (端口 3000)"
 else
     log_error "Grafana: unhealthy"
-    ((ERRORS++))
+    ERRORS=$((ERRORS+1))
 fi
 
 # -----------------------------------
@@ -154,7 +178,7 @@ echo "=========================================="
 echo "  服务访问地址"
 echo "=========================================="
 echo ""
-echo "  PostgreSQL:      localhost:5432 (app_owner/admin@password)"
+echo "  PostgreSQL:      localhost:5432 (app_owner，密码见 gateway/.env)"
 echo "  pgBouncer:       localhost:6432 (Pigsty 内置)"
 echo "  Redis:           localhost:6379"
 echo "  etcd:            https://localhost:2379"

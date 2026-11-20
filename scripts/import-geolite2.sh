@@ -18,7 +18,8 @@ URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City-CS
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-echo "==> 下载 GeoLite2-City-CSV（${URL}）"
+# 密钥脱敏（批次2d前置 S-F6）：URL 含 license_key 查询参数，原样回显会进终端回滚/CI 日志
+echo "==> 下载 GeoLite2-City-CSV（license_key=****已隐去）"
 curl -fsSL "$URL" -o "$TMP_DIR/geolite2.zip"
 cd "$TMP_DIR"
 unzip -q geolite2.zip
@@ -27,7 +28,7 @@ DIR="$(find . -maxdepth 1 -type d -name 'GeoLite2-City-CSV_*' | head -1)"
 echo "解压目录: $DIR"
 
 echo "==> COPY staging（Blocks-IPv4 + Locations-zh-CN，全 14 列）"
-psql "$PG_DSN" <<SQL
+psql "$PG_DSN" -v ON_ERROR_STOP=1 <<SQL
 TRUNCATE ip_geolite2_blocks;
 TRUNCATE ip_geolite2_locations;
 \COPY ip_geolite2_blocks (network, geoname_id, registered_country_geoname_id, represented_country_geoname_id, is_anonymous_proxy, is_satellite_provider, postal_code, latitude, longitude, accuracy_radius)
@@ -38,8 +39,25 @@ FROM '$TMP_DIR/$DIR/GeoLite2-City-Locations-zh-CN.csv'
 WITH (FORMAT csv, HEADER true, NULL '');
 SQL
 
+# staging 空表守卫（批次2d前置）：import_geolite2_city() 会 TRUNCATE 正式表——
+# 下载半途失败/COPY 静默零行时调用它等于清空 GeoIP 数据
+BLOCKS_CNT=$(psql "$PG_DSN" -t -A -c "SELECT count(*) FROM ip_geolite2_blocks;")
+LOCS_CNT=$(psql "$PG_DSN" -t -A -c "SELECT count(*) FROM ip_geolite2_locations;")
+echo "  staging: blocks=${BLOCKS_CNT} locations=${LOCS_CNT}"
+if [ "${BLOCKS_CNT:-0}" -eq 0 ] || [ "${LOCS_CNT:-0}" -eq 0 ]; then
+    echo "❌ staging 为空（下载/COPY 失败）——拒绝调用 import_geolite2_city()（其会 TRUNCATE 正式表）" >&2
+    exit 1
+fi
+
 echo "==> 调用 PG 函数 import_geolite2_city() 转换（staging → 正式表）"
-psql "$PG_DSN" -c "SELECT import_geolite2_city() AS rows_imported;"
+psql "$PG_DSN" -v ON_ERROR_STOP=1 -c "SELECT import_geolite2_city() AS rows_imported;"
+
+IMPORTED=$(psql "$PG_DSN" -t -A -c "SELECT count(*) FROM ip_geolite2_city;")
+echo "  ip_geolite2_city: ${IMPORTED} 行"
+if [ "${IMPORTED:-0}" -eq 0 ]; then
+    echo "❌ 正式表为零行——导入结果异常" >&2
+    exit 1
+fi
 
 echo "==> 抽样验证 geo_locate()"
 psql "$PG_DSN" -c "SELECT geo_locate('114.114.114.114'::inet) AS cn_sample;"

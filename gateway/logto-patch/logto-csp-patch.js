@@ -30,10 +30,24 @@ const BUILD_DIR = '/etc/logto/packages/core/build';
 const extras = (process.env.LOGTO_EXTRA_FRAME_ANCESTOR || 'http://localhost:3006 http://localhost:3007')
   .split(/\s+/)
   .filter(Boolean);
+// origin 白名单校验（批次2d前置修复）：值被直接内插进编译产物 JS 源码——
+// 含引号/反斜杠/JS 元字符的值会破坏生成代码；非法项剔除并告警
+const ORIGIN_RE = /^https?:\/\/[A-Za-z0-9._~:-]+$/;
+const validOrigins = extras.filter((o) => ORIGIN_RE.test(o));
+const invalidOrigins = extras.filter((o) => !ORIGIN_RE.test(o));
+if (invalidOrigins.length) {
+  console.warn('[logto-csp-patch] WARN 忽略非法 origin（须匹配 ' + ORIGIN_RE + '）: ' + invalidOrigins.join(' '));
+}
+if (validOrigins.length === 0) {
+  // 空列表会产生 `"'self'", , ...adminOrigins` 的非法 JS（批次2d前置修复）
+  console.warn('[logto-csp-patch] WARN: 无有效 LOGTO_EXTRA_FRAME_ANCESTOR——跳过 frame-ancestors 注入');
+}
 
 const TARGET = 'frameAncestors: ["\'self\'", ...adminOrigins]';
 const REPLACEMENT =
-  'frameAncestors: ["\'self\'", ' + extras.map((o) => '"' + o + '"').join(', ') + ', ...adminOrigins]';
+  validOrigins.length > 0
+    ? 'frameAncestors: ["\'self\'", ' + validOrigins.map((o) => '"' + o + '"').join(', ') + ', ...adminOrigins]'
+    : null;
 const BASIC_TARGET = 'basicSecurityHeaderSettings = {';
 const BASIC_REPLACEMENT = 'basicSecurityHeaderSettings = { frameguard: false,';
 
@@ -51,11 +65,13 @@ for (const file of files) {
   let changed = false;
 
   // 1) CSP frame-ancestors
-  if (src.includes(REPLACEMENT)) {
+  if (REPLACEMENT === null) {
+    // 无有效 origin——跳过本项（上方已 WARN），不影响 frameguard 补丁
+  } else if (src.includes(REPLACEMENT)) {
     console.log('[logto-csp-patch] ' + file + ': frame-ancestors already patched');
   } else if (src.includes(TARGET)) {
     src = src.split(TARGET).join(REPLACEMENT);
-    console.log('[logto-csp-patch] ' + file + ': patched (frame-ancestors += ' + extras.join(' ') + ')');
+    console.log('[logto-csp-patch] ' + file + ': patched (frame-ancestors += ' + validOrigins.join(' ') + ')');
     changed = true;
   } else {
     console.warn('[logto-csp-patch] WARN ' + file + ': frame-ancestors target not found');
