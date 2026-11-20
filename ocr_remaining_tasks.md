@@ -1,7 +1,7 @@
 # OmniPG 代码审查与修复——剩余未完成事项（新对话交接文档）
 
 > **交接目的**：本文档为自包含交接件。新对话/新 Agent 无需历史上下文，按本文档即可继续。
-> 生成时间：2026-11-20 · 生成者：OpenCode（GLM-5.3）编排 · 累计 7 个功能提交待推送
+> 生成时间：2026-11-20（同日 e2e 收尾更新）· 生成者：OpenCode（GLM-5.3）编排 · 累计 8 个功能提交待推送
 
 ---
 
@@ -13,25 +13,17 @@
    - ✅ 迁移 13/13 全应用（含 075 唯一索引 NULLS NOT DISTINCT/菜单父级回填 2 行/`platform:menu:list` 种子、076 GiST(inet_ops)，`transaction:false` 在 dbmate 2.34.1 验证可用）
    - ✅ apply-src 单遍收敛 + reader owner 恢复
    - ✅ pgTAP **152/152 全过**（提交 `099e5a6` 含 casbin 断言去行序依赖修正）
-   - ⚠️ e2e **15/34**——唯一根因见下节【阻塞项】
+   - ✅ e2e **34/34 全过**（2026-11-20 回调 URI 修复后收尾，提交 `27d8d30`；过程中发现并修复 Logto 只读投影写权限缺口，见二节）
 
-## 二、当前唯一阻塞：Logto SPA 回调 URI（等你操作）
+## 二、已解决：Logto SPA 回调 URI + 只读投影写权限收口（2026-11-20）
 
-**现象**：`/oidc/auth` 返回 400 `oidc.invalid_redirect_uri`——Logto SPA 应用 `0d4o8wb6qk9bar0egelb4` 的注册 Redirect URIs 不再包含 e2e 使用的 `http://localhost:5173/auth/callback`。登录无法建立 → 19 个依赖 TOKEN 的 e2e 用例连锁失败（15 个不依赖登录的用例全过，含 webhook HMAC 验签双用例）。
-**注意**：这不是阶段 2 代码回归（Logto 应用注册属环境配置）；旧版 e2e 断言恒真，此问题可能存在已久但从未暴露。
+**状态：✅ 已解决**——Logto Console 补回 `http://localhost:5173/auth/callback` 后 `/oidc/auth` 由 400 `oidc.invalid_redirect_uri` 恢复 303；重跑 e2e 后 19 个 TOKEN 依赖用例全部恢复。
 
-**修复路径（三选一）**：
-1. Logto Console（http://localhost:3002）→ Applications → 前端 SPA → Redirect URIs 添加 `http://localhost:5173/auth/callback`
-2. 提供 `LOGTO_M2M_SECRET`（写入 gateway/.env 或对话中给出）→ 经 Management API PATCH redirectUris
-3. 若前端回调地址实际已变更（非 5173/auth/callback）→ 告知正确值，改 e2e 脚本 `scripts/e2e-test.sh` 顶部 `REDIRECT_URI`
-
-**修复后重跑**（WSL 内）：`E2E_USER=admin E2E_PASSWORD=<Logto管理员密码> bash scripts/e2e-test.sh`
-重跑后重点观察（阶段 2 行为变化的首次真实验证）：
-- `Menu Loaded` 断言（`length >= 1`，075 父级回填后菜单树应非空）
-- `get_menu_tree_admin` 新鉴权门（`platform:menu:list` 或 menu:update/create/delete/role-menu:bind 任一）
-- `search_user_positions` 无邮箱列
-- security_invoker 视图（audit_log/department/cron_job_log/login_log/organizations）各登录角色行可见性
-- `app_config` 视图 is_public 过滤、`v_dept_list` 租户/组织谓词
+**重跑中暴露并修复的新问题**（提交 `27d8d30`；首次真实运行才显形，旧版断言恒真时代从未执行）：
+- `Users Readonly` POST `/api/v1/platform/users` 返回 500（55000）而非 4xx：`zz_grant_all.sql:80` 的 `GRANT ALL ON ALL TABLES IN SCHEMA api_v1_platform TO super_admin` 使 N4「镜像只读」对 super_admin 漏收权；且 users 是 JOIN 视图，PG 在**改写阶段**即抛 55000（早于 ACL 检查）——单纯 REVOKE 无法改变错误类型，恒映射 500。
+- 修复（双层）：**077 迁移**收回六投影（users/role/tenants/tenant_role/organizations/user_tenants）全部登录角色 DML（ACL 层统一 403）+ **`reject_projection_write()` INSTEAD OF 触发器**（RAISE 42501 → PostgREST 403；`zz_readonly_guards.sql` 随 views 段每遍重放，对冲视图文件首行 `DROP VIEW ... CASCADE` 连带删触发器）。role/tenants 此前 PASS 实为基表 RLS 侥幸兜底 + payload 列不存在的 PGRST204，非设计保证。
+- **机理备注**：PostgREST（14.15）schema 缓存已判定 users 不可插入（OpenAPI 仅暴露 GET）但 POST 仍放行至 PG 执行——readonly 语义必须由 DB 层保证，不能依赖网关/PostgREST 拦截。
+- **遗留提醒**：Logto 管理员密码仍为旧值（本次 e2e 以旧密码登录成功）——运维清单第 3 项轮换仍未执行，gateway/.env 仍未写入 `E2E_USER/E2E_PASSWORD` 正式凭据。
 
 ## 三、运维动作清单（你执行；S-F/S-G 编号见 ocr_security_findings.md）
 
@@ -58,7 +50,7 @@
 5. docs/15/17 号文档的 apply-src 迁移顺序描述与新顺序（init 前置、migrations 不再重放）同步
 6. **strict 租户函数"可用未接线"**：`current_logto_tenant_id_strict()` 已定义（db/src/platform/functions/current_logto_tenant_id.sql），当前仅 `write_audit_log` 采用；RLS 全面切换须等 Logto claims 注入完成后统一接线（切换点：rls_policies.sql 各谓词 + organizations/app_config 视图谓词）
 7. e2e 恒真断言虽已真实化，但 `.github/workflows/deploy-all.yml:56`、`deploy-gateway.yml:74` 引用 e2e 未注入 E2E 凭据——CI 侧需补 Secrets（E2E_USER/E2E_PASSWORD/APISIX_ADMIN_KEY）
-8. 调试脚本保留在 `.hermes_tmp/`（已 gitignore）：`phase3_e2e.sh`（重跑入口）、`phase3_login_debug.sh`、`phase3_auth_debug.sh`（回调修复后可复验）
+8. 调试脚本（`.hermes_tmp/`，已 gitignore）：`probe_users_write.sh`（登录 + 投影写探测复验入口——077/触发器行为回归时一键复验）、`verify_077.sql`、`grant_probe.sql`、`role_probe.sql`、`auth_probe.sql`（授权面探查）
 
 ## 五、阶段 4/5 规划（按原流程，未开始）
 
@@ -69,7 +61,7 @@
 
 - **LLM/OCR 配置已就绪**：`ocr` CLI 全局已配置 OpenCode Go `deepseek-v4.1-flash`（含 `x-opencode-session` 头，见 `~/.opencodereview/config.json`）；DeepSeek 官方条目保留为后备
 - **机器验收成本实测**：全 workspace `ocr review` ≈ 27~32M tokens/轮；小批量改动用 `ocr scan --path <files>`（1~2M）更经济
-- **开工顺序建议**：你修 Logto 回调（二节）→ 新对话重跑 e2e 收尾阶段 3 → 运维动作（三节）→ pgTAP 补用例（四节 1）→ 阶段 4
+- **开工顺序建议**：~~修 Logto 回调~~ ✅ → ~~重跑 e2e 收尾阶段 3~~ ✅（34/34）→ 运维动作（三节）→ pgTAP 补用例（四节 1）→ 阶段 4
 - **上下文文件**：本文档 + `ocr_review_summary.md` + 两份 findings 清单（含修复状态附录）即完整背景；dbmate 版本 2.34.1 已验证支持 076
 
 ---
