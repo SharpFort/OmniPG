@@ -8,4 +8,4 @@ SELECT r.name AS role_code, r.id AS role_id, r.tenant_id, r.type::text AS role_t
 FROM platform.role r
 LEFT JOIN platform.user_role ur ON ur.role_id = r.id AND ur.tenant_id = r.tenant_id AND ur.organization_id = ''
 LEFT JOIN platform.users u ON u.id = ur.user_id
-WHERE r.tenant_id = current_logto_tenant_id();
+WHERE r.tenant_id = current_logto_tenant_id_strict();

@@ -16,6 +16,6 @@ FROM platform.app_config
 WHERE is_public = TRUE
   -- 租户谓词（2026-11-19 补丁）：app_config 无 RLS，视图必须自带边界；
   -- 无 claims 会话（web_anon）→ 'default'，与 get_all_public_configs 行为一致
-  AND tenant_id = current_logto_tenant_id();
+  AND tenant_id = current_logto_tenant_id_strict();
 
 COMMENT ON VIEW api_v1_platform.app_config IS '系统配置视图（公开配置，is_public + 租户过滤；不含敏感描述）';

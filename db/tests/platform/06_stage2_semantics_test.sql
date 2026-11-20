@@ -11,7 +11,7 @@
 --      路径——RLS/FK 均先于唯一约束求值，不依赖种子行，fresh DB 兼容；
 --      跨组织写入由 validate_user_profile_refs 先于 RLS 拒绝（23503 双层防线））
 BEGIN;
-SELECT plan(19);
+SELECT plan(20);
 
 -- ============================================================
 -- 1) current_logto_tenant_id_strict() 三态 + 兼容版回退（批次 2a fail-closed）
@@ -116,9 +116,21 @@ SELECT is(
        AND policyname = 'profile_tenant_policy'
        AND with_check IS NOT NULL
        AND position('current_user_id()' in with_check) > 0
-       AND position('current_logto_tenant_id()' in with_check) > 0
+       AND position('current_logto_tenant_id_strict()' in with_check) > 0
        AND position('current_organization_id()' in with_check) > 0),
-    1::bigint, 'WITH CHECK 谓词含 user/tenant/org 三重绑定（introspection 兜底）');
+    1::bigint, 'WITH CHECK 谓词含 user/tenant/org 三重绑定，且租户谓词为 strict 版（2026-11-20 接线）');
+
+-- ============================================================
+-- 5) strict 接线行为实证（2026-11-20 接线批）
+--    事务内 FORCE RLS 使表 owner（app_owner）同受谓词（无 SET OPTION 角色
+--    可切换，part-4 同款手法）；显式清空 claims（part-4 的数据驱动注入会
+--    延续）后 strict() = NULL → 租户谓词不命中 → 全拒（fail-closed）；
+--    正向可见性由 e2e 全套（真实 JWT）覆盖
+-- ============================================================
+SELECT set_config('request.jwt.claims', '', true);
+ALTER TABLE platform.department FORCE ROW LEVEL SECURITY;
+SELECT is((SELECT count(*) FROM platform.department), 0::bigint,
+    'strict 接线：无 claims 会话对租户表全拒（FORCE RLS 下 fail-closed）');
 
 SELECT * FROM finish();
 ROLLBACK;

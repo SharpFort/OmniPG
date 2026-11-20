@@ -50,7 +50,7 @@
 3. ~~`Makefile` `dev` 目标（:37）仍是 `export $(grep|xargs)` 老模式~~ ✅ 完成（77ecb65）：改白名单键导出（仅 init-apisix-routes.sh 消费的 4 键），对齐批次 2d 契约
 4. `scripts/phase2/init-logto.py` webhook 创建的 `config.headers` 为空 `{}`——APISIX 验签已闭环，降为加固项
 5. docs/15/17 号文档的 apply-src 迁移顺序描述与新顺序（init 前置、migrations 不再重放）同步
-6. **strict 租户函数"可用未接线"**：`current_logto_tenant_id_strict()` 已定义（db/src/platform/functions/current_logto_tenant_id.sql），当前仅 `write_audit_log` 采用；RLS 全面切换须等 Logto claims 注入完成后统一接线（切换点：rls_policies.sql 各谓词 + organizations/app_config 视图谓词）
+6. ~~**strict 租户函数"可用未接线"**~~ ✅ **已接线（2026-11-20，接线批）**：RLS 25 处谓词（rls_policies 18 + api_v1 视图层 7）由兼容版切 strict 版——前置条件实测满足（Logto Customizer 已注入 tenant_id claim，真实 JWT 含 `"tenant_id": "default"`，交接文档"claims 注入 TODO"描述过时）；影响面（设计意图）：无 claims 人工会话对租户表全拒（apply-src/迁移走 owner 绕 RLS 不受影响；web_anon 仅持 4 个 DEFINER RPC EXECUTE 无表/视图 SELECT 授权，匿名契约经 DEFINER 保持）；**函数层保留兼容版**（web_anon 的 get_all_public_configs 等 DEFINER 路径依赖 default 回退契约，rls_policies 头注释已写明）。验收：pgTAP **172/172**（introspection 断言升级 + 新增 FORCE-RLS fail-closed 实证用例）+ e2e 34/34。⚠️ **重放教训**：视图文件是 `DROP+CREATE` 开头——局部重放会重置 ACL，**必须连 privileges/zz_grant_all.sql 一并重放**（本次仅重放 8 个视图文件 → e2e 32/34 显红 Role List 403 → 重放 zz_grant_all 恢复）；apply-src 全量重放因 views→privileges 顺序天然无此问题
 7. e2e 恒真断言虽已真实化，但 `.github/workflows/deploy-all.yml:56`、`deploy-gateway.yml:74` 引用 e2e 未注入 E2E 凭据——CI 侧需补 Secrets（E2E_USER/E2E_PASSWORD/APISIX_ADMIN_KEY）
 8. 调试脚本（`.hermes_tmp/`，已 gitignore）：`loadtest.mjs` + `stage4_http_baseline.sh`（阶段 4 压测基线复跑入口）、`probe_users_write.sh`（登录 + 投影写探测复验——077/触发器行为回归时一键复验）、`pgbouncer-userlist-scram.sh`（已转正入库 scripts/）、其余 SQL 探针（verify_077/grant_probe/role_probe/auth_probe/logto_grants/conn_census 等）
 

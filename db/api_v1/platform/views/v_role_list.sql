@@ -19,5 +19,5 @@ SELECT
     (SELECT count(*) FROM platform.user_role ur WHERE ur.role_id = r.id AND ur.tenant_id = r.tenant_id AND ur.organization_id = '') AS users_count
 FROM platform.role r
 LEFT JOIN platform.tenants t ON r.tenant_id = t.id
-WHERE r.tenant_id = current_logto_tenant_id();
+WHERE r.tenant_id = current_logto_tenant_id_strict();
 COMMENT ON VIEW api_v1_platform.v_role_list IS '角色列表视图（D27：tenant_id=Logto 租户；按租户+全局段计数）';
