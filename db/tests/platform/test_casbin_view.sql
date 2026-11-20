@@ -24,10 +24,15 @@ SELECT results_eq(
 );
 
 -- 验证 v0 列输出的是 role_code（非 UUID）
+-- 2026-11-20 阶段3修正：原断言 `LIMIT 1` 无 ORDER BY——依赖视图行序（UNION 去重 +
+-- 父级目录绑定回填后行序变化即失败）。改为全体行"非 UUID 形态"校验（顺序无关；
+-- Logto 自动生成的数字开头角色名如 14eqvuyw… 亦为合法 role_code，不受影响；
+-- 空集恒真由下一条用例的 role_super_admin 存在性断言兜底）
 SELECT results_eq(
-    $$ SELECT v0 FROM casbin_rule WHERE v0 IS NOT NULL LIMIT 1 $$,
-    ARRAY['role_super_admin'::varchar],
-    'v0 列输出角色代码（role_code）'
+    $$ SELECT COALESCE(bool_and(v0 !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), true)
+         FROM casbin_rule WHERE v0 IS NOT NULL $$,
+    ARRAY[true]::boolean[],
+    'v0 列输出角色代码（role_code，非 UUID）'
 );
 
 -- ============================================================

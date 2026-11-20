@@ -54,21 +54,18 @@ deploy-gateway:
 # =============================================================================
 
 # =============================================================================
-# 数据库迁移（dbmate；URL 由 gateway/.env 的 DB_PASSWORD 拼装，迁移目录 migrations/platform）
+# 数据库迁移（阶段3前置修复：委托 scripts/migrate.sh——含 --no-dump-schema、
+# 显式 --url（DBMATE_DATABASE_URL 优先级）、.env 契约与 fail-fast；
+# 原内联 dbmate 调用在迁移后会 dump db/schema.sql 并因 public 权限失败）
 # =============================================================================
-
-DB_PASSWORD := $(shell sed -n 's/^DB_PASSWORD=//p' gateway/.env)
-DB_PASSWORD_ENC := $(shell python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$(DB_PASSWORD)")
-DB_URL := postgres://app_owner:$(DB_PASSWORD_ENC)@127.0.0.1:5432/app_db?sslmode=disable
-
 migrate:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform up
+	bash scripts/migrate.sh up $(ENV)
 
 migrate-rollback:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform rollback
+	bash scripts/migrate.sh down $(ENV)
 
 migrate-status:
-	cd db && DATABASE_URL="$(DB_URL)" dbmate -d migrations/platform status
+	bash scripts/migrate.sh status $(ENV)
 
 # =============================================================================
 # 测试
@@ -76,8 +73,10 @@ migrate-status:
 
 test: test-db test-e2e
 
+# 阶段3前置修复：凭据经 gateway/.env（原依赖 WSL 侧 .pgpass 侥幸工作）；
+# 移除 `|| true`——测试失败必须传导到 make 退出码（原恒 exit 0 是假绿灯）
 test-db:
-	cd db && pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/ || true
+	cd db && PGPASSWORD="$$(sed -n 's/^DB_PASSWORD=//p' ../gateway/.env | tr -d '\r')" pg_prove -h 127.0.0.1 -U app_owner -d app_db --ext .sql -r tests/
 
 test-e2e:
 	bash scripts/e2e-test.sh
