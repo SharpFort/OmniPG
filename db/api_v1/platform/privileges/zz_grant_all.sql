@@ -126,3 +126,24 @@ GRANT SELECT ON platform.login_log TO role_admin, tenant_admin, super_admin;
 -- INVOKER 化，role_admin 经视图写入时以自身身份执行——需基表 INSERT/UPDATE，
 -- 行级边界由 department RLS WITH CHECK（租户+组织）保证
 GRANT INSERT, UPDATE ON platform.department TO role_admin;
+
+-- 3) Logto 只读投影写权限收口（2026-11-20，e2e Users Readonly 显红驱动）：
+--    N4「镜像只读原则」补全——:65-66 只对 role_admin 收了 users/role 的写权，
+--    :80 的 ALL TABLES 兜底使 super_admin 仍持全部投影的 INSERT/UPDATE/DELETE/TRUNCATE。
+--    后果：users 为 JOIN 视图不可自动更新 → 写请求在执行层报 55000 → PostgREST 返 500；
+--    role/tenants/tenant_role 虽可更新但被基表 RLS 兜底返回 403，属侥幸通过而非设计保证。
+--    终态：Logto 侧数据（users/role/tenants/tenant_role/organizations/user_tenants）的
+--    唯一写入口是 Logto 本体（public 表）与 SECURITY DEFINER 同步函数——任何登录角色
+--    经 API 写投影一律在 ACL 层 403 拒绝（含 super_admin）。
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
+    api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
+    api_v1_platform.tenant_role, api_v1_platform.organizations,
+    api_v1_platform.user_tenants
+    FROM super_admin;
+-- role_admin 同步收口 organizations/user_tenants/tenant_role（N4 只覆盖了 users/role；
+-- role_admin 本无这三者的 DML 授权，此处幂等声明以防未来兜底授权引入回归）
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
+    api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
+    api_v1_platform.tenant_role, api_v1_platform.organizations,
+    api_v1_platform.user_tenants
+    FROM role_admin, role_editor, role_guest, tenant_admin;
