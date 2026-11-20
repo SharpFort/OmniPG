@@ -15,20 +15,31 @@
 --   SECURITY DEFINER 同步函数（webhook_logto/sync_login_log_write 等，不受影响）。
 -- 幂等性：REVOKE 对不存在的授权是空操作，可安全重放；本迁移可回滚（down 恢复
 --   super_admin 的 ALL 授权以还原 :80 语义）。
+-- 容错（2026-11-20 收尾批，verify-fresh-db 冷启动驱动）：六投影为 apply-src 段
+--   产物，官方冷启动顺序（迁移先行）执行至此视图未建——视图缺席时跳过
+--   （apply-src 重放后 zz_grant_all.sql:80 之后的收权段会重放本 REVOKE 语义）
 -- 关联：e2e-test.sh readonly_rejected 断言（批次2d）；ocr 阶段 3 验收项 Users Readonly。
 -- migrate:up
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
-    api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
-    api_v1_platform.tenant_role, api_v1_platform.organizations,
-    api_v1_platform.user_tenants
-    FROM super_admin;
+DO $$ BEGIN
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
+        api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
+        api_v1_platform.tenant_role, api_v1_platform.organizations,
+        api_v1_platform.user_tenants
+        FROM super_admin;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '077: api_v1_platform 投影视图未建（apply-src 段产物）——REVOKE 跳过';
+END $$;
 
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
-    api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
-    api_v1_platform.tenant_role, api_v1_platform.organizations,
-    api_v1_platform.user_tenants
-    FROM role_admin, role_editor, role_guest, tenant_admin;
+DO $$ BEGIN
+    REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON
+        api_v1_platform.users, api_v1_platform.role, api_v1_platform.tenants,
+        api_v1_platform.tenant_role, api_v1_platform.organizations,
+        api_v1_platform.user_tenants
+        FROM role_admin, role_editor, role_guest, tenant_admin;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '077: api_v1_platform 投影视图未建（apply-src 段产物）——REVOKE 跳过';
+END $$;
 
 -- migrate:down
 

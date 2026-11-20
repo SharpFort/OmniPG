@@ -27,18 +27,30 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 超管绑定（role 镜像表滞后不能走 rpc_set_role_menus 时直接 INSERT；表无 FK 强校验）
-INSERT INTO platform.iam_role_menu (menu_id, role_id, created_by)
-SELECT m.id, r.id, 'd27c-migration'
-FROM platform.iam_menu m, platform.role r
-WHERE m.id = '019ffbf6-d6d4-7290-8f0d-c7a5e1b4d901' AND r.name = 'role_super_admin'
-ON CONFLICT DO NOTHING;
+-- 容错（2026-11-20 收尾批，verify-fresh-db 冷启动覆盖 071+ 驱动）：platform.role
+--   为 apply-src 段产物（067 退役镜像表后由 db/src/platform/views 重建为投影）——
+--   官方冷启动顺序（迁移先行）执行至此视图未建；主库演进式顺序则已存在。
+--   视图缺席时跳过绑定（菜单行已就位，apply-src 重放后可经 rpc_set_role_menus 补绑）
+DO $$ BEGIN
+    INSERT INTO platform.iam_role_menu (menu_id, role_id, created_by)
+    SELECT m.id, r.id, 'd27c-migration'
+    FROM platform.iam_menu m, platform.role r
+    WHERE m.id = '019ffbf6-d6d4-7290-8f0d-c7a5e1b4d901' AND r.name = 'role_super_admin'
+    ON CONFLICT DO NOTHING;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '071: platform.role 视图未建（apply-src 段产物）——超管绑定跳过';
+END $$;
 
--- 租户管理员绑定（只读页面，无按钮行）
-INSERT INTO platform.iam_role_menu (menu_id, org_role_id, created_by)
-SELECT m.id, tr.id, 'd27c-migration'
-FROM platform.iam_menu m, platform.tenant_role tr
-WHERE m.id = '019ffbf6-d6d4-7290-8f0d-c7a5e1b4d901' AND tr.name = 'tenant_admin'
-ON CONFLICT DO NOTHING;
+-- 租户管理员绑定（只读页面，无按钮行；同上容错：tenant_role 亦为投影视图）
+DO $$ BEGIN
+    INSERT INTO platform.iam_role_menu (menu_id, org_role_id, created_by)
+    SELECT m.id, tr.id, 'd27c-migration'
+    FROM platform.iam_menu m, platform.tenant_role tr
+    WHERE m.id = '019ffbf6-d6d4-7290-8f0d-c7a5e1b4d901' AND tr.name = 'tenant_admin'
+    ON CONFLICT DO NOTHING;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '071: platform.tenant_role 视图未建（apply-src 段产物）——租户管理员绑定跳过';
+END $$;
 
 -- migrate:down
 

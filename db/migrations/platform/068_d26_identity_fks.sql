@@ -10,11 +10,16 @@
 
 -- =============================================================================
 -- 0. 退役 D25 触发器化角色校验与每日孤儿清理（FK 已原生覆盖）
+--    容错（2026-11-20 收尾批，verify-fresh-db 冷启动验证驱动）：pg_cron 的
+--    job 表仅存在于集群 cron.database_name 指向的库（本集群 = app_db）——
+--    结构验证 scratch 库上必然 42P01；主库正常退役，scratch 库优雅跳过
 -- =============================================================================
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'd25-purge-identity-refs') THEN
         PERFORM cron.unschedule('d25-purge-identity-refs');
     END IF;
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '068: cron.job 不在本库（集群 cron.database_name 指向主库）——退役检查跳过';
 END $$;
 
 DROP FUNCTION IF EXISTS platform.purge_orphan_identity_refs();

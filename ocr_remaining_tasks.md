@@ -1,7 +1,7 @@
 # OmniPG 代码审查与修复——剩余未完成事项（新对话交接文档）
 
 > **交接目的**：本文档为自包含交接件。新对话/新 Agent 无需历史上下文，按本文档即可继续。
-> 生成时间：2026-11-20（同日晚：非凭据运维项/pgTAP 补齐/阶段 4 基线更新）· 生成者：OpenCode（GLM-5.3）编排 · 累计 11 个功能提交待推送
+> 生成时间：2026-11-20（终版收尾：全部功能提交已推送 origin/main，f931575 之后为收尾批）· 生成者：OpenCode（GLM-5.3）编排 · **待推送：0（收尾批后见 git log）**
 
 ---
 
@@ -23,7 +23,7 @@
 - `Users Readonly` POST `/api/v1/platform/users` 返回 500（55000）而非 4xx：`zz_grant_all.sql:80` 的 `GRANT ALL ON ALL TABLES IN SCHEMA api_v1_platform TO super_admin` 使 N4「镜像只读」对 super_admin 漏收权；且 users 是 JOIN 视图，PG 在**改写阶段**即抛 55000（早于 ACL 检查）——单纯 REVOKE 无法改变错误类型，恒映射 500。
 - 修复（双层）：**077 迁移**收回六投影（users/role/tenants/tenant_role/organizations/user_tenants）全部登录角色 DML（ACL 层统一 403）+ **`reject_projection_write()` INSTEAD OF 触发器**（RAISE 42501 → PostgREST 403；`zz_readonly_guards.sql` 随 views 段每遍重放，对冲视图文件首行 `DROP VIEW ... CASCADE` 连带删触发器）。role/tenants 此前 PASS 实为基表 RLS 侥幸兜底 + payload 列不存在的 PGRST204，非设计保证。
 - **机理备注**：PostgREST（14.15）schema 缓存已判定 users 不可插入（OpenAPI 仅暴露 GET）但 POST 仍放行至 PG 执行——readonly 语义必须由 DB 层保证，不能依赖网关/PostgREST 拦截。
-- **遗留提醒**：Logto 管理员密码仍为旧值（本次 e2e 以旧密码登录成功）——运维清单第 3 项轮换仍未执行，gateway/.env 仍未写入 `E2E_USER/E2E_PASSWORD` 正式凭据。
+- **遗留提醒**：Logto 管理员密码仍为旧值（正式上线时按三节流程轮换）；~~gateway/.env 仍未写入 E2E_USER/E2E_PASSWORD 正式凭据~~ ✅ 已写入（参数化批 f931575：唯一凭据文件 gateway/.env 统一维护三处密码 + MaxMind 槽位，轮换入口 scripts/rotate-credentials.sh）
 
 ## 三、运维动作清单（你执行；S-F/S-G 编号见 ocr_security_findings.md）
 
@@ -48,11 +48,12 @@
    - 验收：**pgTAP 171/171**（152 既有 + 19 新增零回归）
 2. ~~`scripts/verify-fresh-db.sh:155-157`：casbin "预期失败 3 例"特判分支已过时~~ ✅ 完成（77ecb65）：收敛为 `Result: PASS` 直判
 3. ~~`Makefile` `dev` 目标（:37）仍是 `export $(grep|xargs)` 老模式~~ ✅ 完成（77ecb65）：改白名单键导出（仅 init-apisix-routes.sh 消费的 4 键），对齐批次 2d 契约
-4. `scripts/phase2/init-logto.py` webhook 创建的 `config.headers` 为空 `{}`——APISIX 验签已闭环，降为加固项
-5. docs/15/17 号文档的 apply-src 迁移顺序描述与新顺序（init 前置、migrations 不再重放）同步
-6. ~~**strict 租户函数"可用未接线"**~~ ✅ **已接线（2026-11-20，接线批）**：RLS 25 处谓词（rls_policies 18 + api_v1 视图层 7）由兼容版切 strict 版——前置条件实测满足（Logto Customizer 已注入 tenant_id claim，真实 JWT 含 `"tenant_id": "default"`，交接文档"claims 注入 TODO"描述过时）；影响面（设计意图）：无 claims 人工会话对租户表全拒（apply-src/迁移走 owner 绕 RLS 不受影响；web_anon 仅持 4 个 DEFINER RPC EXECUTE 无表/视图 SELECT 授权，匿名契约经 DEFINER 保持）；**函数层保留兼容版**（web_anon 的 get_all_public_configs 等 DEFINER 路径依赖 default 回退契约，rls_policies 头注释已写明）。验收：pgTAP **172/172**（introspection 断言升级 + 新增 FORCE-RLS fail-closed 实证用例）+ e2e 34/34。⚠️ **重放教训**：视图文件是 `DROP+CREATE` 开头——局部重放会重置 ACL，**必须连 privileges/zz_grant_all.sql 一并重放**（本次仅重放 8 个视图文件 → e2e 32/34 显红 Role List 403 → 重放 zz_grant_all 恢复）；apply-src 全量重放因 views→privileges 顺序天然无此问题
-7. e2e 恒真断言虽已真实化，但 `.github/workflows/deploy-all.yml:56`、`deploy-gateway.yml:74` 引用 e2e 未注入 E2E 凭据——CI 侧需补 Secrets（E2E_USER/E2E_PASSWORD/APISIX_ADMIN_KEY）
-8. 调试脚本（`.hermes_tmp/`，已 gitignore）：`loadtest.mjs` + `stage4_http_baseline.sh`（阶段 4 压测基线复跑入口）、`probe_users_write.sh`（登录 + 投影写探测复验——077/触发器行为回归时一键复验）、`pgbouncer-userlist-scram.sh`（已转正入库 scripts/）、其余 SQL 探针（verify_077/grant_probe/role_probe/auth_probe/logto_grants/conn_census 等）
+4. ~~`scripts/phase2/init-logto.py` webhook 创建的 `config.headers` 为空 `{}`~~ ✅ **核实为正确设计，结案**（2026-11-20 收尾核查）：Logto webhook **自动**以服务端生成的 signingKey 对 body 做 HMAC-SHA256 并携带 `logto-signature-sha-256` 头；APISIX 验签 lua（init-apisix-routes.sh:115）取同名头；headers 字段仅承载自定义额外头，空 {} 正确。且 init-logto.py 把 Logto 实际 signingKey **反向同步** gateway/.env（事实源 = Logto，防 key 漂移 401 事故）——链路闭环，e2e 验签双用例 PASS 佐证
+5. ~~docs/15/17 号文档的 apply-src 迁移顺序描述与新顺序同步~~ ✅ 完成（收尾批）：15 号头部执行工具行 + 17 号 §3.5 补 2026-11-19 批次 2d 修订注记（migrations 不再重放，权威通道 = dbmate）
+6. ~~**strict 租户函数"可用未接线"**~~ ✅ **已接线（2026-11-20，接线批）**：RLS 25 处谓词（rls_policies 18 + api_v1 视图层 7）由兼容版切 strict 版——前置条件实测满足（Logto Customizer 已注入 tenant_id claim，真实 JWT 含 `"tenant_id": "default"`，交接文档"claims 注入 TODO"描述过时）；影响面（设计意图）：无 claims 人工会话对租户表全拒（apply-src/迁移走 owner 绕 RLS 不受影响；web_anon 仅持 4 个 DEFINER RPC EXECUTE 无表/视图 SELECT 授权，匿名契约经 DEFINER 保持）；**函数层保留兼容版**（web_anon 的 get_all_public_configs 等 DEFINER 路径依赖 default 回退契约，rls_policies 头注释已写明）。验收：pgTAP **172/172**（introspection 断言升级 + 新增 FORCE-RLS fail-closed 实证用例）+ e2e 34/34。⚠️ **重放教训（两要素，冷启动验证终版补全）**：视图文件是 `DROP+CREATE` 开头——局部重放会重置 ACL 并连带删除挂其上的触发器，**必须连 `privileges/zz_grant_all.sql` 与 `views/zz_readonly_guards.sql` 两个收尾文件一并重放**（接线批当时只补了前者 → `trg_organizations_readonly` 缺失 1 天，organizations 视图写拒绝裸奔——由 verify-fresh 包含性比对（第 14 轮）抓出修复）；apply-src 全量重放因 views→privileges 顺序天然无此问题
+7. ~~e2e 恒真断言虽已真实化，但 `.github/workflows/deploy-all.yml:56`、`deploy-gateway.yml:74` 引用 e2e 未注入 E2E 凭据~~ ✅ workflow 侧完成（收尾批）：两处 e2e 段改为双引号命令串注入 `E2E_USER/E2E_PASSWORD/APISIX_ADMIN_KEY`（对齐 :43 段风格，不经 heredoc 明文）——**CI Secrets 仍需你手动配置**（Settings → Secrets：E2E_USER / E2E_PASSWORD / APISIX_ADMIN_KEY；未配则 deploy workflow 的 e2e 步骤按凭据 fail-fast 退出）
+8. 调试脚本：`scripts/loadtest.mjs` **已转正入库**（收尾批）；`.hermes_tmp/`（gitignored）余 stage4_http_baseline.sh（登录 + 双链路压测跑批入口）、probe_users_write.sh（投影写探测复验）、其余 SQL 探针（verify_077/grant_probe/role_probe/auth_probe/logto_grants/conn_census 等）。另：db/schema.sql 已加历史快照声明（防误导——其内容为 dbmate 旧时代 dump，不作权威）
+9. **✅ verify-fresh-db.sh 冷启动验证首次全链贯通（2026-11-20 终版收尾，20 轮填坑，EXIT=0）**：该验证链此前基线停在 064-066 时代、从未覆盖 067+。本次贯通：**[3.5] 新步**（参照库 public 形状 pg_dump schema-only 同步 + REFERENCES/SELECT 授权对齐主库实态 + tenants/roles 查找数据 + **Logto RLS 关闭**——dump 带入的租户隔离策略会过滤 app_owner-owned 重放视图，主库语义由 reader BYPASSRLS 承担）；**迁移容错批**（067/068 cron 段——pg_cron job 表仅存于集群 cron.database_name 指向库；071/077 投影视图引用段——冷启动顺序迁移先行时刻未建，主库演进序不受影响）；**zz_role_bindings.sql（新）**——071 守卫跳过的种子绑定幂等补齐；**identity_refs_guard** \if 分支补 locker schema 授权（角色集群级、权限库级）；**比对脚本三修**（PG18 char 拼接严格性 / ORDER BY 输入列化 / 口径修订：列集按列名序、iam_menu 运行时累积不比、TRG+POL 包含性验证干净链⊆演进库）；**06 测试空库兜底**（COALESCE claims）。终验：主库 pgTAP 172/172 + e2e 34/34 + scratch pgTAP 172/172。**误判记录（诚实档案）**：初判"主库 d25-purge 调度缺失为回归"并补回——实查 068 为设计性退役（FK 原生覆盖 + 函数已 DROP），误注册即时撤销
 
 ## 五、阶段 4/5 规划（阶段 4 已启动：基线采集完成，2026-11-20）
 

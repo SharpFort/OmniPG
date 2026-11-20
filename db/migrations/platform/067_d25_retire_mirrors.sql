@@ -52,12 +52,18 @@ DO $$ DECLARE v_tbl text; BEGIN
 END $$;
 
 -- 5. 登记每日孤儿清理任务（替代 ON DELETE CASCADE / RESTRICT 语义）
+--    容错（2026-11-20 收尾批，verify-fresh-db 冷启动验证驱动）：pg_cron 的
+--    job 表仅存在于集群 cron.database_name 指向的库（本集群 = app_db）——
+--    结构验证 scratch 库（app_db_verify）上注册必然 42P01；主库正常注册，
+--    scratch 库优雅跳过（dbmate 无 checksum，已应用记录不受编辑影响）
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'd25-purge-identity-refs') THEN
         PERFORM cron.unschedule('d25-purge-identity-refs');
     END IF;
     PERFORM cron.schedule('d25-purge-identity-refs', '30 3 * * *',
                           $cron$SELECT platform.purge_orphan_identity_refs()$cron$);
+EXCEPTION WHEN undefined_table THEN
+    RAISE NOTICE '067: cron.job 不在本库（集群 cron.database_name 指向主库）——调度注册跳过';
 END $$;
 
 -- migrate:down

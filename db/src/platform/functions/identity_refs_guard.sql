@@ -15,7 +15,7 @@
 --   DEFINER 函数内，app_owner 本体仍无 Logto 表写权，D25 只读边界保持。
 --   冷库回退：locker 角色/授权在 Logto 初始化（init-logto-reader.sh）后才存在，
 --   本文件以 psql \gset+\if 条件创建 locker 函数；函数缺席时 guards 回退
---   无锁 EXISTS（TOCTOU 窗口由 d25-purge-identity-refs cron 兜底清理）。
+--   无锁 EXISTS（仅 Logto 未初始化的冷库场景；完整性主路径 = 068 起的原生 FK）。
 
 -- ---------------------------------------------------------------------------
 -- 0) locker 函数：owner=logto_locker（FOR KEY SHARE 行锁 + BYPASSRLS 读 Logto RLS 表）
@@ -23,6 +23,10 @@
 -- ---------------------------------------------------------------------------
 SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'logto_locker') AS locker_exists \gset
 \if :locker_exists
+-- 角色为集群级（pg_roles 可见），但 schema 权限是库级的（init-logto-reader.sh
+-- 仅在主库授 locker 的 CREATE）——冷启动验证库上须由 schema owner（app_owner）
+-- 幂等补授，否则 DEFINER 函数创建 permission denied for schema platform
+GRANT USAGE, CREATE ON SCHEMA platform TO logto_locker;
 SET ROLE logto_locker;
 CREATE OR REPLACE FUNCTION platform.check_user_org_membership(p_user_id text, p_organization_id text)
 RETURNS boolean
@@ -69,7 +73,7 @@ BEGIN
                     USING ERRCODE = '23503';
             END IF;
         ELSE
-            -- 冷库回退（Logto 未初始化）：无锁 EXISTS，孤儿归属由 d25-purge-identity-refs 清理
+            -- 冷库回退（Logto 未初始化）：无锁 EXISTS；完整性主路径 = 068 起的原生 FK（d25-purge 调度已于 068 设计性退役）
             IF NOT EXISTS (SELECT 1 FROM platform.user_tenants
                            WHERE user_id = NEW.user_id AND organization_id = NEW.organization_id) THEN
                 RAISE EXCEPTION 'user % is not a member of organization %', NEW.user_id, NEW.organization_id

@@ -83,13 +83,15 @@ SELECT throws_ok($$ SELECT api_v1_platform.rpc_create_dict_type('pgtap_noperm', 
 --    claims 取自既有档案行（无行时回退虚拟值——4.1/4.2 的 RLS 拒绝先于 FK 求值，
 --    4.3 的 guard 拒绝先于 RLS 与 FK，均不依赖行/用户真实存在）
 -- ============================================================
-SELECT set_config('request.jwt.claims', (SELECT jsonb_build_object(
+SELECT set_config('request.jwt.claims', COALESCE(
+    (SELECT jsonb_build_object(
         'sub', COALESCE(p.user_id, 'u_pgtap_virtual'),
         'tenant_id', COALESCE(p.tenant_id, 'default'),
         'organization_id', COALESCE(p.organization_id, 'o_none'),
         'roles', '[]'::jsonb)::text
     FROM platform.user_profile p
-    ORDER BY p.user_id LIMIT 1), true);
+    ORDER BY p.user_id LIMIT 1),
+    '{"sub":"u_pgtap_virtual","tenant_id":"default","organization_id":"o_none","roles":[]}'), true);
 
 ALTER TABLE platform.user_profile FORCE ROW LEVEL SECURITY;
 
