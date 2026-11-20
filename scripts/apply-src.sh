@@ -7,7 +7,10 @@ set -e
 #   --bootstrap : 仅执行 bootstrap 子集（init + src/*/types），供 deploy-db.sh
 #                 冷启动前置——扩展/枚举必须先于迁移存在（§3.4 依赖倒置陷阱：
 #                 059/060 迁移引用 platform.scope_type/iam_gender 等 src 枚举）
-# 全量顺序: §6.3 迁移代码对象扫描（P0-5 零容忍）→ src → api_v1 → init → migrations
+# 全量顺序（2026-11-19 批次2d 修订）: §6.3 迁移代码对象扫描（P0-5 零容忍）
+#   → init（schema bootstrap，前置——冷库单遍即过）→ src → api_v1
+#   （migrations 不再重放：psql 会连 "-- migrate:down" 段一起执行，
+#     迁移权威通道 = dbmate / scripts/migrate.sh）
 # 模块声明（2026-08-16: net 模块退役——net.request_status 零引用删除；pg_net
 #   schema 属扩展所有，项目对象不入驻）:
 #   platform（基础/系统层，无前缀函数落 platform schema）
@@ -75,15 +78,20 @@ fi
 echo "[scan] 迁移目录代码对象扫描通过（零残留）"
 
 # ---------------------------------------------------------------------------
-# 全量幂等重放（src types → src 其余 → api_v1 → init → migrations）
+# 全量幂等重放（init → src types → src 其余 → api_v1 → migrations）
+#   init 前置（2026-11-19 批次2d 修复）：02-schemas.sql 创建 platform/api_v1_platform/ext
+#   schema，原先排在全部 src/api_v1 之后——冷库首遍必失败，依赖"三遍收敛"兜底
+#   才能通过（浪费一整遍且掩盖真实错误）；schema 先行后冷库单遍即过
 #   types 前置：枚举必须先于函数/视图存在（无 bootstrap 直接全量也安全）
 #   api_v1 分类排序（rpc → views → 其余）：privileges/zz_grant_all.sql 引用视图，
 #     按字母序 privileges < views 会先执行而炸（2026-08-14 实测）——显式排后
-#   migrations 重放 = 幂等性验证（ddl 均 IF NOT EXISTS / DO 块守卫，两遍不炸）
 # ---------------------------------------------------------------------------
 # 多遍收敛重放（2026-08-16 拍板）：LANGUAGE sql 函数体在 CREATE 时即解析绑定，
 #   单遍 find|sort 无法保证依赖顺序；失败文件重试至多 3 遍（幂等文件重放安全），
 #   三遍仍失败 = 真错误（依赖缺失/语法错），终止并列出。
+# 2026-11-19 批次2d 修复：重试收敛仅适用于 src/api_v1 幂等源码；init 与 migrations
+#   单遍失败即终止——迁移文件可能非整文件幂等（部分应用后盲目重放有风险，dbmate
+#   才是迁移的权威执行通道，apply-src 的迁移段仅作结构比对前的一致性重放）
 apply_files_converge() {
     local pending="$1"
     local pass retry f
@@ -105,15 +113,42 @@ apply_files_converge() {
     fi
 }
 
+apply_files_single_pass() {
+    local f
+    for f in $1; do
+        echo "Applying: "$f""
+        psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$f" || { echo "ERROR: $f 失败（init/migrations 不重试）"; return 1; }
+    done
+}
+
+INIT_FILES="$(find "$DB_DIR/init" -name "*.sql" 2>/dev/null | sort)"
+if [ -z "$INIT_FILES" ]; then
+    echo "ERROR: db/init 下未发现 SQL 文件（schema bootstrap 缺失）" >&2
+    exit 1
+fi
+apply_files_single_pass "$INIT_FILES" || exit 1
+
 FILES="$(for m in $MODULES; do find "$DB_DIR/src/$m/types" -name "*.sql" 2>/dev/null | sort; done) \
 $(for m in $MODULES; do find "$DB_DIR/src/$m" -name "*.sql" -not -path "*/types/*" 2>/dev/null | sort; done) \
 $(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/rpc" -name "*.sql" 2>/dev/null | sort; done) \
 $(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m/views" -name "*.sql" 2>/dev/null | sort; done) \
-$(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m" -name "*.sql" -not -path "*/rpc/*" -not -path "*/views/*" 2>/dev/null | sort; done) \
-$(find "$DB_DIR/init" -name "*.sql" 2>/dev/null | sort) \
-$(for m in $MODULES; do find "$DB_DIR/migrations/$m" -name "*.sql" 2>/dev/null | sort; done)"
+$(for m in $API_MODULES; do find "$DB_DIR/api_v1/$m" -name "*.sql" -not -path "*/rpc/*" -not -path "*/views/*" 2>/dev/null | sort; done)"
+if [ -z "$FILES" ]; then
+    echo "ERROR: src/api_v1 下未发现 SQL 文件" >&2
+    exit 1
+fi
 
 apply_files_converge "$FILES" || exit 1
+
+# ---------------------------------------------------------------------------
+# 迁移重放段（2026-11-19 批次2d 验收修复：整体移除）
+#   psql -f 会执行迁移文件的全部内容——"-- migrate:down" 对 psql 仅为注释，
+#   原来的"幂等重放"每跑一遍就把 up 段建的对象再按 down 段删一遍（074 的索引
+#   由此在每次 apply-src 后消失）。迁移的唯一权威执行通道是 dbmate
+#   （scripts/migrate.sh up，含事务边界与执行记录）；apply-src 不再触碰
+#   migrations/（§6.3 的零容忍扫描仍然保留，只读不执行）。
+#   verify-fresh-db.sh 的冷启动流程亦不受影响：[4] dbmate up 负责迁移。
+# ---------------------------------------------------------------------------
 
 echo "All SQL files applied successfully."
 

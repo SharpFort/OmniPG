@@ -144,35 +144,48 @@ echo ""
 echo "[5/5] 验证服务状态..."
 ERRORS=0
 
-# PostgreSQL
-if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
-    echo "  ✅ PostgreSQL: 连接成功"
+# PostgreSQL（仅 db/all 模式部署了 PG；gateway 模式跳过——2026-11-19 批次2d 修复：
+#   原实现无视 MODE 无条件验证，gateway 模式必然误报失败）
+if [ "$MODE" != "gateway" ]; then
+    if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+        echo "  ✅ PostgreSQL: 连接成功"
+    else
+        echo "  ❌ PostgreSQL: 连接失败"
+        ERRORS=$((ERRORS+1))   # 不可用 ((ERRORS++))：变量为 0 时算术命令返回 1，set -e 直接中止（C-11）
+    fi
+
+    # pgBouncer
+    if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
+        echo "  ✅ pgBouncer: 连接成功"
+    else
+        echo "  ❌ pgBouncer: 连接失败"
+        ERRORS=$((ERRORS+1))
+    fi
 else
-    echo "  ❌ PostgreSQL: 连接失败"
-    ((ERRORS++))
+    echo "  ⏭️ PostgreSQL/pgBouncer: gateway 模式跳过"
 fi
 
-# pgBouncer
-if PGPASSWORD=${DB_PASSWORD:-admin@password} psql -h 127.0.0.1 -p 6432 -U app_owner -d app_db -c "SELECT 1" &>/dev/null; then
-    echo "  ✅ pgBouncer: 连接成功"
+# Redis（仅 gateway/all 模式部署了 Redis；db 模式跳过）
+if [ "$MODE" != "db" ]; then
+    if redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo "  ✅ Redis: PONG"
+    else
+        echo "  ❌ Redis: 无响应"
+        ERRORS=$((ERRORS+1))
+    fi
 else
-    echo "  ❌ pgBouncer: 连接失败"
-    ((ERRORS++))
+    echo "  ⏭️ Redis: db 模式跳过"
 fi
 
-# Redis
-if redis-cli ping 2>/dev/null | grep -q PONG; then
-    echo "  ✅ Redis: PONG"
+# etcd（仅 all/db 模式部署 etcd 剧本；gateway 模式跳过——2026-11-19 批次2d 修复）
+if [ "$MODE" != "gateway" ]; then
+    if curl -sk https://127.0.0.1:2379/health 2>/dev/null | grep -q "true\|ok\|healthy"; then
+        echo "  ✅ etcd: healthy"
+    else
+        echo "  ⚠️ etcd: 可能需要检查"
+    fi
 else
-    echo "  ❌ Redis: 无响应"
-    ((ERRORS++))
-fi
-
-# etcd
-if curl -sk https://127.0.0.1:2379/health 2>/dev/null | grep -q "true\|ok\|healthy"; then
-    echo "  ✅ etcd: healthy"
-else
-    echo "  ⚠️ etcd: 可能需要检查"
+    echo "  ⏭️ etcd: gateway 模式跳过"
 fi
 
 echo ""

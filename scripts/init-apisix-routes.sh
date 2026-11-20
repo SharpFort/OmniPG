@@ -56,14 +56,26 @@ echo "  jwt-auth → RS256 + Logto JWKS"
 echo "[3] Global CORS..."
 curl -s -X PUT http://localhost:9180/apisix/admin/global_rules/1 \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":true}}}'
-echo "  OK"
+  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":false}}}'
+echo "  OK（2026-11-19 批次2d 修复：allow_credentials=false——前端为 Bearer 认证不依赖 Cookie，" \
+     "原 *+credentials 组合违反 CORS 规范、带凭请求会被浏览器整体拒绝）"
 
 # ---------------------------------------------------------------------------
 # [4] Routes
 # ---------------------------------------------------------------------------
 echo "[4] Routes..."
-put() { curl -s -X PUT "http://localhost:9180/apisix/admin/routes/$1" -H "$AUTH" -H 'Content-Type: application/json' -d "$2"; }
+put() {
+    # 发布结果校验（验收修补）：原 curl -s 无 -f，4xx/5xx 也返回 0 且响应体被丢弃——
+    # 错误 admin key / 非法路由 payload 会静默"成功"
+    local resp code body
+    resp=$(curl -sS -w '\n%{http_code}' -X PUT "http://localhost:9180/apisix/admin/routes/$1" -H "$AUTH" -H 'Content-Type: application/json' -d "$2" 2>&1)
+    code="${resp##*$'\n'}"
+    body="${resp%$'\n'*}"
+    if [[ ! "$code" =~ ^2[0-9]{2}$ ]]; then
+        echo "  ✗ 路由发布失败 [$1] HTTP $code: $body" >&2
+        exit 1
+    fi
+}
 
 # 4.1 Logto JWKS 代理（前端 SDK / OIDC 客户端拉取公钥）
 put logto_jwks '{"uri":"/.well-known/jwks","upstream":{"type":"roundrobin","nodes":{"app-logto:3001":1}},"priority":100}'

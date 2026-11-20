@@ -19,8 +19,24 @@
 # =============================================================================
 set -euo pipefail
 
+# 标识符白名单校验（2026-11-19 批次2d 修复 C-14）：DB_NAME 被内插进
+# DROP DATABASE ... WITH (FORCE)、CREATE DATABASE 与连接 URI——
+# 未校验时误传生产库名可摧毁数据库、构造串可注入 SQL/破坏 URI
 DB_NAME=${1:-app_db_verify}
+if [[ ! "$DB_NAME" =~ ^[a-z_][a-z0-9_]{0,62}$ ]]; then
+    echo "❌ 非法库名: ${DB_NAME}（仅小写字母/数字/下划线，≤63 字符，字母或下划线开头）" >&2
+    exit 1
+fi
+# 非默认 scratch 名需显式确认（denylist 无法枚举所有真实库名——2026-11-19 验收修补）
+if [ "$DB_NAME" != "app_db_verify" ] && [ "${CONFIRM_DESTRUCTIVE:-}" != "1" ]; then
+    echo "❌ 非默认 scratch 库名需 CONFIRM_DESTRUCTIVE=1 确认（将 DROP DATABASE \"${DB_NAME}\" WITH (FORCE)）" >&2
+    exit 1
+fi
 REF_DB=${REF_DB:-app_db}
+if [ "$DB_NAME" == "$REF_DB" ]; then
+    echo "❌ 拒绝对参照库执行 DROP: ${DB_NAME}" >&2
+    exit 1
+fi
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DB_PASSWORD=$(sed -n 's/^DB_PASSWORD=//p' "$REPO_DIR/gateway/.env" | tr -d '\r')
 DB_PASSWORD_ENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$DB_PASSWORD")
