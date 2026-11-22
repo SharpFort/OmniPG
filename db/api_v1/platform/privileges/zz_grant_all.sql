@@ -18,7 +18,10 @@ GRANT SELECT ON api_v1_platform.organizations TO authenticated;    -- D27: Logto
 GRANT SELECT ON api_v1_platform.user_tenants TO authenticated;     -- D27: tenant_id/organization_id 双列
 GRANT SELECT ON api_v1_platform.tenant_role TO authenticated;      -- D25: 原 organization_role 改名
 GRANT SELECT ON api_v1_platform.iam_role_menu TO authenticated;
-GRANT SELECT ON api_v1_platform.audit_log TO authenticated;
+-- 2026-11-22 收口（citywalk 扫描 D 组 P0-2）：audit_log 视图为 invoker+基表 RLS
+-- （租户+组织级而非管理员级），old_data/new_data 含变更前后完整快照；同数据的
+-- v_audit_log_detail/login_log 已于 2026-11-19 收归管理员，本体属孤立遗漏
+GRANT SELECT ON api_v1_platform.audit_log TO role_admin, tenant_admin, super_admin;
 GRANT SELECT ON api_v1_platform.cron_job_log TO authenticated;
 GRANT SELECT ON api_v1_platform.app_config TO authenticated;
 -- 2026-11-19 收口：config_admin 暴露全部配置值（含 security.* 等非公开键），不再授予
@@ -32,7 +35,9 @@ GRANT SELECT ON api_v1_platform.v_dept_list TO authenticated;
 GRANT SELECT ON api_v1_platform.v_system_stats TO authenticated;
 GRANT SELECT ON api_v1_platform.v_user_role_detail TO authenticated;
 GRANT SELECT ON api_v1_platform.v_role_menu_detail TO authenticated;
-GRANT SELECT ON api_v1_platform.v_audit_log_timeline TO authenticated;
+-- 2026-11-22（P0-2 连带）：v_audit_log_timeline 改授管理员（行级边界=platform.audit_log
+-- 基表 RLS，快照同级敏感；原 authenticated 授权在文末收权段同步 REVOKE）
+GRANT SELECT ON api_v1_platform.v_audit_log_timeline TO role_admin, tenant_admin, super_admin;
 -- 2026-11-19 收口：v_audit_log_detail join platform.users/tenants/organizations（owner 链路含
 -- BYPASSRLS reader），仅管理员角色可用；已授库由文末收权段 REVOKE
 GRANT SELECT ON api_v1_platform.v_audit_log_detail TO role_admin, tenant_admin, super_admin;
@@ -119,11 +124,27 @@ REVOKE SELECT ON platform.login_log FROM authenticated, role_guest, role_editor;
 REVOKE SELECT ON api_v1_platform.users, api_v1_platform.v_user_roles
     FROM authenticated, role_guest, role_editor;
 
+-- 5) 2026-11-22（P0-2）：audit_log 本体视图+基表收归管理员，与 v_audit_log_detail
+--    对齐（见上方 3.2 段注释）。基表全角色授权（§2 原 L134-136）同步收敛——
+--    invoker 视图行级边界=audit_log_read_policy（租户+组织级），快照数据不应
+--    对非管理员开放；role_admin/tenant_admin/super_admin 经 §2 收敛后授权保持可读
+REVOKE SELECT ON api_v1_platform.audit_log
+    FROM authenticated, role_guest, role_editor;
+REVOKE SELECT ON platform.audit_log FROM authenticated, role_guest, role_editor;
+-- 连带收口：v_audit_log_timeline（invoker）与 SECURITY INVOKER RPC get_audit_log_timeline
+-- 的行级边界同为本基表——基表收权后该链路对非管理员必然 42501，显式收权使语义
+-- 一致（audit 系数据全量对齐管理员-only；99_revoke_public 先行批量授权，此处终态收口）
+REVOKE SELECT ON api_v1_platform.v_audit_log_timeline
+    FROM authenticated, role_guest, role_editor;
+REVOKE EXECUTE ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp, INTEGER)
+    FROM authenticated, role_guest, role_editor;
+
 -- 2) security_invoker 视图基表授权：INVOKER 视图以调用方身份访问基表，
 --    调用方必须持有基表 SELECT；行级边界由 db/src/platform/privileges/rls_policies.sql 提供。
 --    覆盖角色对齐 99_revoke_public.sql 约定（authenticated 基线 + 5 个登录角色）。
-GRANT SELECT ON platform.audit_log
-    TO authenticated, role_guest, role_editor, role_admin, tenant_admin, super_admin;
+-- audit_log 基表（2026-11-22 P0-2 收敛）：仅管理员（invoker 视图链可达角色）——
+-- 原「全六角色」授权使 authenticated/role_guest/role_editor 持基表 SELECT
+GRANT SELECT ON platform.audit_log TO role_admin, tenant_admin, super_admin;
 -- users/v_user_roles invoker 链基表授权（2026-11-22 P0-1）：
 --   * platform.users / user_profile ← api_v1_platform.users（授权角色=视图可达角色：管理员）
 --   * platform.user_role ← v_user_roles（可达角色仅 super_admin）
