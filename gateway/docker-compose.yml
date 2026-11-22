@@ -39,7 +39,10 @@ services:
       app-net:
         ipv4_address: 172.20.0.8
     environment:
-      ALLOW_NONE_AUTHENTICATION: "yes"    # ⚠️ 仅开发环境；生产改用 ETCD_ROOT_PASSWORD
+      # 2026-11-22 安全收口（citywalk 扫描 P2-1）：etcd 为 APISIX 配置唯一真源，
+      # 匿名可写 = 路由面裸奔。启用 root 密码鉴权（APISIX 侧连接串同步带凭据，
+      # 见 apisix/config.yaml deployment.etcd）；缺失即拒绝起栈（fail-closed）
+      ETCD_ROOT_PASSWORD: "${ETCD_ROOT_PASSWORD:?ETCD_ROOT_PASSWORD must be set in gateway/.env (etcd 无鉴权已收口)}"
       ETCD_ADVERTISE_CLIENT_URLS: "http://app-etcd:2379"
       ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
     volumes:
@@ -62,6 +65,8 @@ services:
       # env 缺失即静默回落 = 任何 LAN 内攻击者可改写全部路由。compose 层 :? 语法
       # 缺失直接拒绝起栈（fail-closed），init-apisix-routes.sh 同款双保险
       APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?APISIX_ADMIN_KEY must be set in gateway/.env (fail-closed, no default key)}
+      # etcd 鉴权（P2-1）：config.yaml deployment.etcd.password 经 ${{...}} 取本变量
+      ETCD_ROOT_PASSWORD: ${ETCD_ROOT_PASSWORD:?ETCD_ROOT_PASSWORD must be set in gateway/.env}
     ports:
       - "9080:9080"               # 数据面 HTTP —— 唯一对外端口
       # 2026-11-22 安全收口（P1-1）：Admin API 回环绑定——9180 可改写全部路由（含
@@ -175,8 +180,11 @@ services:
       # 导致容器 Exited(127) "mount a directory onto a file"；目录挂载无此问题
       - "./logto-patch:/tmp/logto-patch:ro"
     ports:
-      - "3001:3001"   # Core API / OIDC / Management API
-      - "3002:3002"   # Admin Console
+      # 2026-11-22 安全收口（citywalk 扫描 P2-1）：Logto Management API 与 Admin
+      # Console 即 IAM 根，回环绑定；本机 OIDC 流（e2e/init 脚本/前端 dev）不受影响。
+      # 需跨机访问时经 SSH 隧道，或恢复 0.0.0.0 前置于 APISIX 加认证反代
+      - "127.0.0.1:3001:3001"   # Core API / OIDC / Management API
+      - "127.0.0.1:3002:3002"   # Admin Console
     environment:
       TRUST_PROXY_HEADER: "1"
       DB_URL: "postgres://logto:${LOGTO_DB_PASSWORD:-logto_dev_pass_2026}@host.docker.internal:5433/app_db?sslmode=disable"

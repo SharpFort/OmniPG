@@ -54,3 +54,8 @@ deployment:
       - "http://app-etcd:2379"       # compose 内 etcd 容器（不映射宿主端口，避免与 Pigsty etcd 冲突）
     prefix: /apisix
     timeout: 30
+    # 2026-11-22 鉴权收口（citywalk 扫描 P2-1）：etcd 已启用 root 密码
+    # （compose ETCD_ROOT_PASSWORD），APISIX 连接串同步带凭据；网关容器注入同名
+    # 环境变量，config.yaml 经 ${{...}} 模板取值
+    user: root
+    password: ${{ETCD_ROOT_PASSWORD}}
