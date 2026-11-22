@@ -10,7 +10,8 @@ init-logto.py — Logto OSS 配置自动化（T3，06-开发路线 §3 T3）
   4. 创建演示组织（租户）+ 关联模板
   5. 创建/更新 webhook（仅订阅 PostSignIn 登录日志事件；镜像同步事件已退役 D25）
      signingKey 由 Logto 服务端生成且 Management API 不可写入，故以 Logto 实际 key 为
-     事实源，自动回写 gateway/.env 与 .env.development（回写后需重跑 init-apisix-routes.sh）。
+     事实源，自动回写 gateway/.env（git-ignored；2026-11-22 P2-3 起 .env.development
+     为入库模板不再回写。回写后需重跑 init-apisix-routes.sh）。
      背景事故：两边 key 漂移时 APISIX 验签恒 401，PostSignIn 全部投递失败、登录日志为空
      （2026-08-29 排查：39 次 PostSignIn 投递全部 401）
   6. 配置 access-token Custom Token Claims 脚本（D19：roles + pg_role 注入）
@@ -51,8 +52,8 @@ DEMO_ORG_DESC = "OmniPG 默认租户（由 init-logto.py 创建）"
 WEBHOOK_NAME = "omnipg-webhook"
 # Webhook HMAC 验签 key 的事实源是 Logto hook 的 signingKey（Management API 只读，
 # 2026-08-29 实测 PATCH 传 signingKey 返回 200 但字段被忽略，key 始终由 Logto 生成）。
-# step5 会把 Logto 实际 key 回写 gateway/.env 与 .env.development，杜绝与网关
-# init-apisix-routes.sh 验签 key 漂移导致的 401（2026-08-29 登录日志 401 事故根因）。
+# step5 会把 Logto 实际 key 回写 gateway/.env（杜绝与网关 init-apisix-routes.sh 验签
+# key 漂移导致的 401；2026-11-22 前还回写入库的 .env.development，P2-3 收口已移除）。
 # 此处仅作为 gateway/.env 缺失时的兜底比对值。
 WEBHOOK_SIGNING_KEY = os.environ.get("LOGTO_WEBHOOK_SIGNING_KEY", "")
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
@@ -305,26 +306,26 @@ def step5_webhook(token, check_only=False):
 
 def _read_configured_signing_key():
     """读取网关侧当前配置的 LOGTO_WEBHOOK_SIGNING_KEY
-    （批次2d前置修复：_sync_signing_key 写 gateway/.env 与 .env.development 两处，
-    原读取只看 gateway/.env——写读不对称会在 gateway/.env 缺行时永久误报漂移）"""
-    for path in (os.path.join(PROJECT_ROOT, "gateway", ".env"),
-                 os.path.join(PROJECT_ROOT, ".env.development")):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("LOGTO_WEBHOOK_SIGNING_KEY="):
-                        return line.strip().split("=", 1)[1]
-        except OSError:
-            pass
+    （2026-11-22 P2-3 收口：真实 key 只存 git-ignored 的 gateway/.env——
+    .env.development 已改为入库模板，不再承载真实密钥，也不参与读写）"""
+    path = os.path.join(PROJECT_ROOT, "gateway", ".env")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("LOGTO_WEBHOOK_SIGNING_KEY="):
+                    return line.strip().split("=", 1)[1]
+    except OSError:
+        pass
     return WEBHOOK_SIGNING_KEY or None
 
 
 def _sync_signing_key(actual_key):
-    """把 Logto 实际 signingKey 回写 .env.development 与 gateway/.env，返回更新的文件列表"""
+    """把 Logto 实际 signingKey 回写 gateway/.env（git-ignored），返回更新的文件列表
+    （2026-11-22 P2-3：不再回写 .env.development——入库模板写真实 key = 密钥入库，
+    此前该行为会在每次运行时把已占位符化的模板重新填回真实值）"""
     new_line = f"LOGTO_WEBHOOK_SIGNING_KEY={actual_key}\n"
     updated = []
-    for path in (os.path.join(PROJECT_ROOT, ".env.development"),
-                 os.path.join(PROJECT_ROOT, "gateway", ".env")):
+    for path in (os.path.join(PROJECT_ROOT, "gateway", ".env"),):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
