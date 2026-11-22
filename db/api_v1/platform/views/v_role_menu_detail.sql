@@ -23,5 +23,8 @@ SELECT
 FROM iam_role_menu rm
 LEFT JOIN platform.role r ON r.id = rm.role_id AND r.tenant_id = rm.tenant_id
 LEFT JOIN platform.tenant_role tr ON tr.id = rm.org_role_id AND tr.tenant_id = rm.tenant_id
-JOIN iam_menu m ON m.id = rm.menu_id;
-COMMENT ON VIEW api_v1_platform.v_role_menu_detail IS '角色-菜单明细视图（D27：双列输出）';
+JOIN iam_menu m ON m.id = rm.menu_id
+-- 租户谓词（2026-11-22 上游安全修复，同批排查）：无谓词时其他租户的角色↔菜单
+-- 绑定关系可枚举（菜单树全局，绑定按租户）；超管全量，其余仅本租户（fail-closed）
+WHERE is_super_admin() OR rm.tenant_id = current_logto_tenant_id_strict();
+COMMENT ON VIEW api_v1_platform.v_role_menu_detail IS '角色-菜单明细视图（D27：双列输出；租户谓词限定）';

@@ -34,6 +34,9 @@ GRANT SELECT ON api_v1_platform.v_role_list TO authenticated;
 GRANT SELECT ON api_v1_platform.v_dept_list TO authenticated;
 GRANT SELECT ON api_v1_platform.v_system_stats TO authenticated;
 GRANT SELECT ON api_v1_platform.v_user_role_detail TO authenticated;
+-- 2026-11-22 收口（citywalk 扫描 D 组「执行建议3」排查）：系统统计面板为管理端
+-- 数据（计数已按超管/本租户口径谓词化，见 v_system_stats*.sql），不再授 C 端角色
+GRANT SELECT ON api_v1_platform.v_system_stats TO role_admin, tenant_admin, super_admin;
 GRANT SELECT ON api_v1_platform.v_role_menu_detail TO authenticated;
 -- 2026-11-22（P0-2 连带）：v_audit_log_timeline 改授管理员（行级边界=platform.audit_log
 -- 基表 RLS，快照同级敏感；原 authenticated 授权在文末收权段同步 REVOKE）
@@ -41,7 +44,8 @@ GRANT SELECT ON api_v1_platform.v_audit_log_timeline TO role_admin, tenant_admin
 -- 2026-11-19 收口：v_audit_log_detail join platform.users/tenants/organizations（owner 链路含
 -- BYPASSRLS reader），仅管理员角色可用；已授库由文末收权段 REVOKE
 GRANT SELECT ON api_v1_platform.v_audit_log_detail TO role_admin, tenant_admin, super_admin;
-GRANT SELECT ON api_v1_platform.v_system_stats_realtime TO authenticated;
+-- 2026-11-22 收口（同 v_system_stats）：实时统计含 audit_24h 审计计数，收归管理员
+GRANT SELECT ON api_v1_platform.v_system_stats_realtime TO role_admin, tenant_admin, super_admin;
 
 -- 034 补齐（023/024 建视图时漏授；login_log/v_user_roles/v_role_users 有意不授——
 -- login_log 租户管理员走 rpc_search_login_logs；v_user_roles/v_role_users RLS=超管OR本人，仅超管可用）
@@ -137,6 +141,10 @@ REVOKE SELECT ON platform.audit_log FROM authenticated, role_guest, role_editor;
 REVOKE SELECT ON api_v1_platform.v_audit_log_timeline
     FROM authenticated, role_guest, role_editor;
 REVOKE EXECUTE ON FUNCTION api_v1_platform.get_audit_log_timeline(timestamp, timestamp, INTEGER)
+    FROM authenticated, role_guest, role_editor;
+
+-- 6) 2026-11-22（「执行建议3」同模式排查）：系统统计面板收归管理员（见 3.2 段注释）
+REVOKE SELECT ON api_v1_platform.v_system_stats, api_v1_platform.v_system_stats_realtime
     FROM authenticated, role_guest, role_editor;
 
 -- 2) security_invoker 视图基表授权：INVOKER 视图以调用方身份访问基表，

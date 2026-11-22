@@ -15,5 +15,8 @@ SELECT
     NULL::text                          AS created_by,
     NULL::text                          AS updated_by,
     NULL::text                          AS deleted_by
-FROM platform.role r;
-COMMENT ON VIEW api_v1_platform.role IS '角色表视图（D27：Logto roles；tenant_id=Logto 租户；organization_id 恒 NULL）';
+FROM platform.role r
+-- 租户谓词（2026-11-22 上游安全修复）：无谓词时其他租户角色目录可枚举；
+-- 超管全量，其余仅本租户（fail-closed）
+WHERE is_super_admin() OR r.tenant_id = current_logto_tenant_id_strict();
+COMMENT ON VIEW api_v1_platform.role IS '角色表视图（D27：Logto roles；tenant_id=Logto 租户；organization_id 恒 NULL；租户谓词限定）';
