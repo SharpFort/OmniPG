@@ -129,7 +129,11 @@ services:
       PGRST_PRE_ERROR_EXTENDED: "true"
       PGRST_DB_TX_END: "commit"
     ports:
-      - "3100:3000"
+      # 2026-11-22 安全收口（citywalk 扫描 P1-2）：回环绑定——直连 3100 绕过 APISIX
+      # jwt-auth 以 web_anon 执行（files 等模块部分视图/RPC 对 web_anon 显式授权）。
+      # 本机 Swagger try-it-out（spec servers 指向 localhost:3100）不受影响；
+      # 生产 profile 可直接移除本映射
+      - "127.0.0.1:3100:3000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
