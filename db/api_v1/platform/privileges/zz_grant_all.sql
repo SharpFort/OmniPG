@@ -7,7 +7,10 @@
 --     注意: sys_tenant/sys_user_session/sys_user_role_request 视图已退役（T7）
 -- =============================================================================
 GRANT SELECT ON api_v1_platform.department TO authenticated;
-GRANT SELECT ON api_v1_platform.users TO authenticated;
+-- 2026-11-22 收口（citywalk 扫描 D 组 P0-1）：users 原授 authenticated——视图无谓词时
+-- 经 owner 链（platform.users 投影 owner=BYPASSRLS reader）泄露全租户用户目录；
+-- 视图已改 security_invoker+租户谓词，授权收归管理员（见文末收权段同步 REVOKE）
+GRANT SELECT ON api_v1_platform.users TO role_admin, tenant_admin, super_admin;
 GRANT SELECT ON api_v1_platform.role TO authenticated;
 GRANT SELECT ON api_v1_platform.iam_menu TO authenticated;
 GRANT SELECT ON api_v1_platform.tenants TO authenticated;          -- D27: Logto Tenant
@@ -109,11 +112,26 @@ REVOKE SELECT ON api_v1_platform.login_log, api_v1_platform.v_login_log,
 -- 重放全角色授权，这里同步收口（终态：login_log 底表仅 role_admin/super_admin）
 REVOKE SELECT ON platform.login_log FROM authenticated, role_guest, role_editor;
 
+-- 4) 2026-11-22 上游安全修复批（citywalk 全量扫描 D 组复核，P0-1）：
+--    api_v1_platform.users / v_user_roles 已改 security_invoker+谓词（views/*.sql），
+--    与 citywalk 侧临时收权（90_platform_view_hardening.sql）终态对齐——
+--    C 端角色不再可读用户目录，管理端经 admin 角色不受影响
+REVOKE SELECT ON api_v1_platform.users, api_v1_platform.v_user_roles
+    FROM authenticated, role_guest, role_editor;
+
 -- 2) security_invoker 视图基表授权：INVOKER 视图以调用方身份访问基表，
 --    调用方必须持有基表 SELECT；行级边界由 db/src/platform/privileges/rls_policies.sql 提供。
 --    覆盖角色对齐 99_revoke_public.sql 约定（authenticated 基线 + 5 个登录角色）。
 GRANT SELECT ON platform.audit_log
     TO authenticated, role_guest, role_editor, role_admin, tenant_admin, super_admin;
+-- users/v_user_roles invoker 链基表授权（2026-11-22 P0-1）：
+--   * platform.users / user_profile ← api_v1_platform.users（授权角色=视图可达角色：管理员）
+--   * platform.user_role ← v_user_roles（可达角色仅 super_admin）
+--   platform.users/user_role 为 BYPASSRLS reader 拥有的投影，行级边界=api 视图谓词；
+--   platform schema 不在 PGRST_DB_SCHEMAS，无 HTTP 直达面
+GRANT SELECT ON platform.users, platform.user_profile
+    TO role_admin, tenant_admin, super_admin;
+GRANT SELECT ON platform.user_role TO super_admin;
 GRANT SELECT ON platform.department
     TO authenticated, role_guest, role_editor, role_admin, tenant_admin, super_admin;
 GRANT SELECT ON platform.cron_job_log
