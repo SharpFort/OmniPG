@@ -34,12 +34,16 @@ deployment:
   admin:
     admin_key_required: true
     enable_admin_cors: true          # Admin API CORS（内置 Dashboard 跨域需要）
-    enable_admin_ui: true            # 内嵌 Dashboard UI（http://<apisix>:9180/ui）
-    allow_admin:                     # 仅内网管理：私网段 + 回环；生产可按需再加公司出口/VPN 段
+    # 内嵌 Dashboard UI（http://localhost:9180/ui）。⚠️ Dashboard 无独立认证、
+    # 与 Admin API 同 key 全权——9180 已回环绑定（compose 127.0.0.1:9180），
+    # 生产部署应置 false 或经独立认证的反代暴露（citywalk 扫描 P1-1 修法 3）
+    enable_admin_ui: true
+    # 2026-11-22 收紧（P1-1 修法 4）：仅回环 + compose 内网桥段（172.20.0.0/16，
+    # 含 docker-proxy 网关 172.20.0.1）。移除 10/8、192.168/16——9180 已回环绑定，
+    # LAN 管理不应放行；确需远程管理走 SSH 隧道/VPN 再按需加网段
+    allow_admin:
       - 127.0.0.0/8
-      - 10.0.0.0/8
       - 172.16.0.0/12
-      - 192.168.0.0/16
     admin_key:
       - name: admin
         key: ${{APISIX_ADMIN_KEY}}   # 由 docker-compose 注入（gateway/.env → 容器环境变量）

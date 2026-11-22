@@ -6,7 +6,15 @@
 #       新增 POST /rpc/ensure_user（JIT 建档，authenticated 调）
 set -euo pipefail
 
-ADMIN_KEY="${APISIX_ADMIN_KEY:-edd1c9f034335f136f87ad84b625c8f1}"
+# 2026-11-22 安全收口（citywalk 扫描 P1-1）：公知默认 key 兜底删除——
+# edd1c9f034335f136f87ad84b625c8f1 为 APISIX 官方示例 key（全网公开），
+# 缺 env 静默回落 = 路由面裸奔。缺失即拒绝执行（fail-closed，对齐 N15 webhook
+# key 同款姿势）；与 compose ${APISIX_ADMIN_KEY:?} 构成双保险
+ADMIN_KEY="${APISIX_ADMIN_KEY:-}"
+if [ -z "$ADMIN_KEY" ]; then
+  echo "✗✗ 缺少 APISIX_ADMIN_KEY（gateway/.env）——公知默认 key 兜底已移除：拒绝执行" >&2
+  exit 1
+fi
 AUTH="X-API-KEY: ${ADMIN_KEY}"
 
 # ---------------------------------------------------------------------------
