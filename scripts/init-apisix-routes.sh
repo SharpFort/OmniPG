@@ -43,8 +43,14 @@ echo "  OK"
 # ---------------------------------------------------------------------------
 echo "[2] Fetch Logto JWKS..."
 LOGTO_OIDC="http://localhost:3001/oidc/.well-known/openid-configuration"
-JWKS_URI=$(curl -sf "$LOGTO_OIDC" | ${PYTHON:-python3} -c "import sys,json; print(json.load(sys.stdin)['jwks_uri'])" 2>/dev/null || echo "http://localhost:3001/oidc/jwks")
-echo "  JWKS URI: $JWKS_URI"
+LOGTO_DISCOVERY=$(curl -sf "$LOGTO_OIDC")
+if [ -z "$LOGTO_DISCOVERY" ]; then
+  echo "  ERROR: Cannot fetch Logto discovery; is Logto running at localhost:3001?"
+  exit 2
+fi
+JWKS_URI=$(echo "$LOGTO_DISCOVERY" | ${PYTHON:-python3} -c "import sys,json; print(json.load(sys.stdin)['jwks_uri'])" 2>/dev/null || echo "http://localhost:3001/oidc/jwks")
+LOGTO_ISSUER=$(echo "$LOGTO_DISCOVERY" | ${PYTHON:-python3} -c "import sys,json; print(json.load(sys.stdin)['issuer'])" 2>/dev/null)
+echo "  JWKS URI: $JWKS_URI / issuer: $LOGTO_ISSUER"
 JWKS_JSON=$(curl -sf "$JWKS_URI")
 if [ -z "$JWKS_JSON" ]; then
   echo "  ERROR: Cannot fetch Logto JWKS; is Logto running at localhost:3001?"
@@ -52,11 +58,60 @@ if [ -z "$JWKS_JSON" ]; then
 fi
 echo "  JWKS fetched OK"
 
-# jwt-auth 插件元数据：RS256 + JWKS JSON（APISIX key 字段接受 JSON 字符串）
+# jwt-auth consumer 引导（2026-11-22 修复，P1 批验证填坑）：
+#   APISIX 3.x jwt-auth 的验签/查表都走 consumer 凭据——plugin_metadata/jwt-auth
+#   在 3.17 源码中无消费方（原 [2] 步骤为无效写操作），真实生效的 consumer 此前
+#   仅存于 etcd（Dashboard 手工创建），清卷/冷启动即丢失 → 认证路由全量 401
+#   （"Invalid user key in JWT token"）。此处代码化重建：
+#   * key = iss claim（同环境全部 Logto token 恒定 → 单 consumer 覆盖全部用户；
+#     key_claim_name 已同步改 iss，见 [4] 路由段）
+#   * algorithm/public_key = 从 JWKS EC P-384 公钥现场派生 PEM（无第三方依赖）
+#   * 幂等 PUT：JWKS 轮换后重跑本脚本即更新
+CONSUMER_JSON=$(LOGTO_ISSUER="$LOGTO_ISSUER" JWKS_JSON="$JWKS_JSON" ${PYTHON:-python3} -c '
+import json, os, base64
+# JWKS EC(P-384) JWK → SubjectPublicKeyInfo PEM（纯标准库手工 DER，无第三方依赖；
+# 签名格式差异说明：JOSE/ES384 签名为 P1363 裸 R||S，lua-resty-jwt 内部处理）
+def b64u(s): return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+k = next(x for x in json.loads(os.environ["JWKS_JSON"])["keys"] if x.get("use","sig") == "sig" and x["kty"] == "EC")
+def der_len(n):
+    if n < 128: return bytes([n])
+    if n < 256: return bytes([0x81, n])
+    return bytes([0x82, n >> 8, n & 0xFF])
+def tlv(tag, value): return bytes([tag]) + der_len(len(value)) + value
+def enc_base128(n):
+    g = [n & 0x7F]; n >>= 7
+    while n: g.append((n & 0x7F) | 0x80); n >>= 7
+    return bytes(reversed(g))
+def oid(s):
+    p = [int(x) for x in s.split(".")]
+    return bytes([p[0]*40+p[1]]) + b"".join(enc_base128(n) for n in p[2:])
+point = b"\x04" + b64u(k["x"]).rjust(48, b"\x00") + b64u(k["y"]).rjust(48, b"\x00")
+spki = tlv(0x30, tlv(0x30, tlv(0x06, oid("1.2.840.10045.2.1")) + tlv(0x06, oid("1.3.132.0.34"))) + tlv(0x03, b"\x00" + point))
+b64 = base64.b64encode(spki).decode()
+pem = "-----BEGIN PUBLIC KEY-----\n" + "\n".join(b64[i:i+64] for i in range(0,len(b64),64)) + "\n-----END PUBLIC KEY-----\n"
+print(json.dumps({"username":"logto-users","plugins":{"jwt-auth":{"key":os.environ["LOGTO_ISSUER"],"algorithm":k.get("alg","ES384"),"public_key":pem}}}))
+')
+if [ -n "$CONSUMER_JSON" ]; then
+  RESP=$(curl -sS -w '\n%{http_code}' -X PUT http://localhost:9180/apisix/admin/consumers \
+    -H "$AUTH" -H 'Content-Type: application/json' -d "$CONSUMER_JSON" 2>&1)
+  CODE="${RESP##*$'\n'}"
+  if [[ "$CODE" =~ ^2[0-9]{2}$ ]]; then
+    echo "  jwt-auth consumer logto-users OK（key=iss, ES384 公钥自 JWKS 派生）"
+  else
+    echo "  ✗ consumer 引导失败 HTTP $CODE: ${RESP%$'\n'*}" >&2
+    exit 1
+  fi
+else
+  echo "  ✗ JWKS 解析失败（非 EC 签名密钥？）——consumer 引导 fail-closed" >&2
+  exit 1
+fi
+
+# jwt-auth 插件元数据（历史兼容保留；3.17 的 jwt-auth 不读取 metadata，真实
+# 验签走上方 consumer 凭据——留此 PUT 仅作环境快照参考）
 curl -s -X PUT http://localhost:9180/apisix/admin/plugin_metadata/jwt-auth \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d "{\"algorithm\":\"RS256\",\"key\":$(echo "$JWKS_JSON" | ${PYTHON:-python3} -c 'import sys,json; print(json.dumps(json.dumps(json.load(sys.stdin))))')}"
-echo "  jwt-auth → RS256 + Logto JWKS"
+  -d "{\"algorithm\":\"RS256\",\"key\":$(echo "$JWKS_JSON" | ${PYTHON:-python3} -c 'import sys,json; print(json.dumps(json.dumps(json.load(sys.stdin))))')}" >/dev/null
+echo "  plugin_metadata written（兼容留档）"
 
 # ---------------------------------------------------------------------------
 # [3] Global CORS + 基础限流
@@ -177,17 +232,17 @@ print(json.dumps(route))
 put webhook_logto "$WEBHOOK_JSON"
 
 # 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth；P1-3: 登录期突发 20 r/s）
-put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":20,"burst":50,"key":"remote_addr","rejected_code":503}}}'
+put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"iss"},"limit-req":{"rate":20,"burst":50,"key":"remote_addr","rejected_code":503}}}'
 
 # 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema；P1-3: 50 r/s）
-put api_v1_platform '{"uri":"/api/v1/platform/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/platform/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
+put api_v1_platform '{"uri":"/api/v1/platform/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/platform/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"iss"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
 # （2026-08-15: api_v1_sales / api_v1_inventory 测试模块退役，路由移除；后续模块按需重建）
 
 # 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高；P1-3: 50 r/s）
-put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
+put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"iss"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
 
 # 4.7 Catch-all（AuthN 准入）
-put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
+put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{"key_claim_name":"iss"}}}'
 
 # ---------------------------------------------------------------------------
 # [5] 汇总
