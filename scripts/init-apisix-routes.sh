@@ -59,14 +59,25 @@ curl -s -X PUT http://localhost:9180/apisix/admin/plugin_metadata/jwt-auth \
 echo "  jwt-auth → RS256 + Logto JWKS"
 
 # ---------------------------------------------------------------------------
-# [3] Global CORS
+# [3] Global CORS + 基础限流
 # ---------------------------------------------------------------------------
-echo "[3] Global CORS..."
+echo "[3] Global CORS + rate limit..."
+# 限流（2026-11-22 安全收口，citywalk 扫描 P1-3）：
+#   此前 global_rules 仅 cors，7 条路由零限流——认证后的爆破/枚举（证件号探测、
+#   通知轰炸）在网关层无闸门。分层设计：
+#   * 全局兜底：limit-req 100 r/s/IP + burst 200（漏桶平滑；单 IP 超限 503）
+#   * 认证 API（rpc_all / api_v1_platform）：per-route 50 r/s + burst 100
+#   * JIT 建档（ensure_user，登录期突发）：20 r/s + burst 50
+#   * webhook（Logto 容器单源 IP，登录风暴批量事件）：单独放宽 200 r/s
+#   * JWKS / logto_proxy：仅受全局兜底约束（预期公开，单独放宽）
+#   key=remote_addr：宿主 9080 为 0.0.0.0 DNAT 直通，客户端真实源 IP 保留；
+#   若前置 LB/反代需改用 X-Forwarded-For 派生 key 并信任 proxy 端
 curl -s -X PUT http://localhost:9180/apisix/admin/global_rules/1 \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":false}}}'
+  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":false},"limit-req":{"rate":100,"burst":200,"key":"remote_addr","rejected_code":503}}}'
 echo "  OK（2026-11-19 批次2d 修复：allow_credentials=false——前端为 Bearer 认证不依赖 Cookie，" \
-     "原 *+credentials 组合违反 CORS 规范、带凭请求会被浏览器整体拒绝）"
+     "原 *+credentials 组合违反 CORS 规范、带凭请求会被浏览器整体拒绝；" \
+     "2026-11-22 P1-3：global_rules 补 limit-req 全局兜底）"
 
 # ---------------------------------------------------------------------------
 # [4] Routes
@@ -156,22 +167,24 @@ route = {
             "phase": "access",
             "functions": [lua_fn],
             "conf": {"signing_key": os.environ["WEBHOOK_SIGNING_KEY"]},
-        }
+        },
+        # P1-3：Logto 容器单源 IP 批量事件（登录风暴），单独放宽至 200 r/s
+        "limit-req": {"rate": 200, "burst": 500, "key": "remote_addr", "rejected_code": 503},
     },
 }
 print(json.dumps(route))
 ')"
 put webhook_logto "$WEBHOOK_JSON"
 
-# 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth）
-put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
+# 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth；P1-3: 登录期突发 20 r/s）
+put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":20,"burst":50,"key":"remote_addr","rejected_code":503}}}'
 
-# 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema）
-put api_v1_platform '{"uri":"/api/v1/platform/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/platform/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"}}}'
+# 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema；P1-3: 50 r/s）
+put api_v1_platform '{"uri":"/api/v1/platform/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/platform/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
 # （2026-08-15: api_v1_sales / api_v1_inventory 测试模块退役，路由移除；后续模块按需重建）
 
-# 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高）
-put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
+# 4.6 RPC 路由（所有带 jwt-auth 的 RPC，匹配 /rpc/* 但排除 webhook_logto — 确保 webhook_logto 优先级更高；P1-3: 50 r/s）
+put rpc_all '{"uri":"/rpc/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":40,"plugins":{"jwt-auth":{"key_claim_name":"sub"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
 
 # 4.7 Catch-all（AuthN 准入）
 put catch_all '{"uri":"/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":10,"plugins":{"jwt-auth":{"key_claim_name":"sub"}}}'
