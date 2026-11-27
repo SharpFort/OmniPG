@@ -129,7 +129,7 @@ echo "[3] Global CORS + rate limit..."
 #   若前置 LB/反代需改用 X-Forwarded-For 派生 key 并信任 proxy 端
 curl -s -X PUT http://localhost:9180/apisix/admin/global_rules/1 \
   -H "$AUTH" -H 'Content-Type: application/json' \
-  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256","expose_headers":"X-Total-Count,Content-Range","max_age":3600,"allow_credentials":false},"limit-req":{"rate":100,"burst":200,"key":"remote_addr","rejected_code":503}}}'
+  -d '{"plugins":{"cors":{"allow_origins":"*","allow_methods":"GET,POST,PUT,PATCH,DELETE,OPTIONS","allow_headers":"Authorization,Content-Type,X-Requested-With,logto-signature-sha-256,Accept-Profile,Content-Profile,Prefer,Range,Range-Unit,apikey","expose_headers":"X-Total-Count,Content-Range,Range-Unit,Location,X-Request-Id","max_age":3600,"allow_credentials":false},"limit-req":{"rate":100,"burst":200,"key":"remote_addr","rejected_code":503}}}'
 echo "  OK（2026-11-19 批次2d 修复：allow_credentials=false——前端为 Bearer 认证不依赖 Cookie，" \
      "原 *+credentials 组合违反 CORS 规范、带凭请求会被浏览器整体拒绝；" \
      "2026-11-22 P1-3：global_rules 补 limit-req 全局兜底）"
@@ -233,6 +233,125 @@ put webhook_logto "$WEBHOOK_JSON"
 
 # 4.4 JIT 建档 — /rpc/ensure_user（POST，需要 JWT auth；P1-3: 登录期突发 20 r/s）
 put ensure_user '{"uri":"/rpc/ensure_user","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":80,"methods":["POST"],"plugins":{"jwt-auth":{"key_claim_name":"iss"},"limit-req":{"rate":20,"burst":50,"key":"remote_addr","rejected_code":503}}}'
+
+# 4.4b 公开匿名只读通道 — /public/*（无 jwt-auth，强制剥离 Authorization 落 web_anon）
+#      GET/HEAD 仅放行具体公开视图 ^/public/[a-zA-Z0-9_]+$（禁止裸 /public/ 暴露 OpenAPI）
+#      POST 仅放行公开只读 RPC ^/public/rpc/[a-zA-Z0-9_]+$（禁止直接 POST 视图/表写入）
+#      网关黑名单：硬拦截 rpc_dev_* / admin_* / rpc_admin_* / v_admin_* / *_admin（返 403）
+cat > .public_anon_guard.lua <<'LUA'
+return function(conf, ctx)
+  local method = ngx.req.get_method()
+  if method == 'OPTIONS' then
+    return
+  end
+  local uri = ngx.var.uri or ''
+  if ngx.re.find(uri, '^/public/rpc/(rpc_dev_|admin_|rpc_admin_)', 'joi')
+     or ngx.re.find(uri, '^/public/(v_admin_|.*_admin$)', 'joi') then
+    return ngx.exit(403)
+  end
+  if method == 'GET' or method == 'HEAD' then
+    if not ngx.re.find(uri, '^/public/[a-zA-Z0-9_]+$', 'jo') then
+      return ngx.exit(403)
+    end
+  elseif method == 'POST' then
+    if not ngx.re.find(uri, '^/public/rpc/[a-zA-Z0-9_]+$', 'jo') then
+      return ngx.exit(405)
+    end
+  else
+    return ngx.exit(405)
+  end
+  ngx.req.clear_header('Authorization')
+end
+LUA
+PUBLIC_ANON_LUA="$(cat .public_anon_guard.lua)"
+rm -f .public_anon_guard.lua
+export PUBLIC_ANON_LUA
+PUBLIC_ANON_JSON="$(${PYTHON:-python3} -c '
+import json, os
+route = {
+    "uri": "/public/*",
+    "upstream": {"type": "roundrobin", "nodes": {"app-postgrest:3000": 1}},
+    "priority": 55,
+    "methods": ["GET", "HEAD", "POST", "OPTIONS"],
+    "plugins": {
+        "serverless-pre-function": {
+            "phase": "rewrite",
+            "functions": [os.environ["PUBLIC_ANON_LUA"]],
+        },
+        "proxy-rewrite": {
+            "regex_uri": ["^/public/(.*)", "/$1"],
+            "headers": {"remove": ["Authorization"]},
+        },
+        "limit-req": {
+            "rate": 80,
+            "burst": 160,
+            "key": "remote_addr",
+            "rejected_code": 503,
+        },
+    },
+}
+print(json.dumps(route))
+')"
+put public_anon "$PUBLIC_ANON_JSON"
+
+# 4.4c C 端会员专用通道 — /app/*（强制 jwt-auth ES384；硬拦截管理端与开发自省后缀）
+#      GET/HEAD 仅放行具体视图 ^/app/[a-zA-Z0-9_]+$；POST 仅放行 ^/app/rpc/[a-zA-Z0-9_]+$
+#      注意：serverless-pre-function 使用 rewrite 阶段（priority 10000 > proxy-rewrite 1008），
+#            确保在 proxy-rewrite 剥离 /app 前缀之前校验原始 URI。
+cat > .app_portal_guard.lua <<'LUA'
+return function(conf, ctx)
+  local method = ngx.req.get_method()
+  if method == 'OPTIONS' then
+    return
+  end
+  local uri = ngx.var.uri or ''
+  if ngx.re.find(uri, '^/app/rpc/(rpc_dev_|admin_|rpc_admin_)', 'joi')
+     or ngx.re.find(uri, '^/app/(v_admin_|.*_admin$)', 'joi') then
+    return ngx.exit(403)
+  end
+  if method == 'GET' or method == 'HEAD' then
+    if not ngx.re.find(uri, '^/app/[a-zA-Z0-9_]+$', 'jo') then
+      return ngx.exit(403)
+    end
+  elseif method == 'POST' then
+    if not ngx.re.find(uri, '^/app/rpc/[a-zA-Z0-9_]+$', 'jo') then
+      return ngx.exit(405)
+    end
+  else
+    return ngx.exit(405)
+  end
+end
+LUA
+APP_PORTAL_LUA="$(cat .app_portal_guard.lua)"
+rm -f .app_portal_guard.lua
+export APP_PORTAL_LUA
+APP_PORTAL_JSON="$(${PYTHON:-python3} -c '
+import json, os
+route = {
+    "uri": "/app/*",
+    "upstream": {"type": "roundrobin", "nodes": {"app-postgrest:3000": 1}},
+    "priority": 56,
+    "methods": ["GET", "HEAD", "POST", "OPTIONS"],
+    "plugins": {
+        "jwt-auth": {"key_claim_name": "iss"},
+        "serverless-pre-function": {
+            "phase": "rewrite",
+            "functions": [os.environ["APP_PORTAL_LUA"]],
+        },
+        "proxy-rewrite": {
+            "regex_uri": ["^/app/(.*)", "/$1"],
+        },
+        "limit-req": {
+            "rate": 60,
+            "burst": 120,
+            "key": "remote_addr",
+            "rejected_code": 503,
+        },
+    },
+}
+print(json.dumps(route))
+')"
+put app_portal "$APP_PORTAL_JSON"
 
 # 4.5 API v1 路由（业务 API，需 jwt-auth + proxy-rewrite 去掉前缀映射 schema；P1-3: 50 r/s）
 put api_v1_platform '{"uri":"/api/v1/platform/*","upstream":{"type":"roundrobin","nodes":{"app-postgrest:3000":1}},"priority":50,"plugins":{"proxy-rewrite":{"regex_uri":["^/api/v1/platform/(.*)","/$1"]},"jwt-auth":{"key_claim_name":"iss"},"limit-req":{"rate":50,"burst":100,"key":"remote_addr","rejected_code":503}}}'
